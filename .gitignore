@@ -1,0 +1,23 @@
+# Dependencies and local caches
+node_modules/
+.m2/
+
+# Build and tooling output
+dist/
+build/
+target/
+.vite/
+.cache/
+coverage/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: gallery-api
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  profiles:
+    default: dev
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:13306/vie_gallery?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC}
+    username: ${DB_USERNAME:vie}
+    password: ${DB_PASSWORD:vie_local}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    validate-on-migrate: true
+  session:
+    store-type: redis
+    timeout: ${SESSION_TTL:7d}
+    redis:
+      namespace: vie:session:v2
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        name: VIE_SESSION
+        http-only: true
+        same-site: lax
+        secure: ${SESSION_COOKIE_SECURE:false}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

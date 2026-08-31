@@ -1,0 +1,63 @@
+services:
+  gallery-api:
+    image: eclipse-temurin:17-jre
+    command: ["java", "-jar", "/app/gallery-api.jar"]
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/vie_gallery?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
+      DB_USERNAME: vie
+      DB_PASSWORD: vie_local
+      REDIS_URL: redis://redis:6379
+      SESSION_COOKIE_SECURE: "false"
+    ports: ["8080:8080"]
+    volumes: ["../apps/gallery-api/gallery-api-boot/target/gallery-api-boot-0.1.0-SNAPSHOT.jar:/app/gallery-api.jar:ro"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: vie_gallery
+      MYSQL_USER: vie
+      MYSQL_PASSWORD: vie_local
+      MYSQL_ROOT_PASSWORD: root_local
+    ports: ["${MYSQL_PORT:-3306}:3306"]
+    volumes: ["mysql_data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+  redis:
+    image: redis:7.4-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: vie_local
+      MINIO_ROOT_PASSWORD: vie_local_secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio_data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+volumes:
+  mysql_data:
+  minio_data:
