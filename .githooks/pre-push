@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+expected_name='creatawork'
+expected_email='113406486+creatawork@users.noreply.github.com'
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [ "$local_oid" = 0000000000000000000000000000000000000000 ] && continue
+  if [ "$remote_oid" = 0000000000000000000000000000000000000000 ]; then
+    range="$local_oid"
+  else
+    range="$remote_oid..$local_oid"
+  fi
+
+  while read -r name email; do
+    if [ "$name" != "$expected_name" ] || [ "$email" != "$expected_email" ]; then
+      echo "Push rejected: every commit must be authored by $expected_name <$expected_email>." >&2
+      exit 1
+    fi
+  done <<EOF
+$(git log "$range" --format='%an %ae')
+EOF
+done

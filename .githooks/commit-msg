@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+expected_name='creatawork'
+expected_email='113406486+creatawork@users.noreply.github.com'
+actual_name=$(git config user.name || true)
+actual_email=$(git config user.email || true)
+
+if [ "$actual_name" != "$expected_name" ] || [ "$actual_email" != "$expected_email" ]; then
+  echo "Commit rejected: set user.name to $expected_name and user.email to $expected_email." >&2
+  exit 1
+fi
+
+if grep -Eiq 'co-authored-by|generated[- ]by|ai[ -]?agent|openai|claude|codex' "$1"; then
+  echo "Commit rejected: AI attribution or agent metadata is not allowed in commit messages." >&2
+  exit 1
+fi
