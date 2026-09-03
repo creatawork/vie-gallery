@@ -31,10 +31,10 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (exception.code()) {
             case "AUTH_REQUIRED", "AUTH_INVALID_CREDENTIALS" -> HttpStatus.UNAUTHORIZED;
             case "AUTH_USER_DISABLED", "AUTH_TENANT_NOT_FOUND" -> HttpStatus.FORBIDDEN;
-            case "RESOURCE_NOT_FOUND" -> HttpStatus.NOT_FOUND;
-            case "VALIDATION_FAILED" -> HttpStatus.BAD_REQUEST;
-            case "DEPENDENCY_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
-            case "AUTH_EMAIL_UNAVAILABLE", "GALLERY_SLUG_CONFLICT" -> HttpStatus.CONFLICT;
+            case "RESOURCE_NOT_FOUND", "GALLERY_NOT_FOUND", "PHOTO_NOT_FOUND", "TASK_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+            case "VALIDATION_FAILED", "FILE_INVALID", "FILE_TYPE_UNSUPPORTED", "IMAGE_DECODE_FAILED", "IMAGE_DIMENSIONS_INVALID" -> HttpStatus.BAD_REQUEST;
+            case "DEPENDENCY_UNAVAILABLE", "STORAGE_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
+            case "AUTH_EMAIL_UNAVAILABLE", "GALLERY_SLUG_CONFLICT", "QUOTA_EXCEEDED", "FILE_TOO_LARGE" -> HttpStatus.CONFLICT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(errors.create(request, exception.code(), exception.getMessage()));

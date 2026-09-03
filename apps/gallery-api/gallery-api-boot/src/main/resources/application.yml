@@ -20,6 +20,10 @@ spring:
   data:
     redis:
       url: ${REDIS_URL:redis://localhost:6379}
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE:100MB}
+      max-request-size: ${MAX_REQUEST_SIZE:500MB}
 server:
   port: 8080
   servlet:
@@ -38,3 +42,19 @@ management:
     health:
       probes:
         enabled: true
+
+gallery:
+  storage:
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${STORAGE_ACCESS_KEY:vie_local}
+    secret-key: ${STORAGE_SECRET_KEY:vie_local_secret}
+    bucket: ${STORAGE_BUCKET:vie-gallery}
+  quota:
+    max-bytes: ${QUOTA_MAX_BYTES:5368709120}
+    max-photos: ${QUOTA_MAX_PHOTOS:10000}
+    max-file-size: ${MAX_FILE_SIZE_BYTES:104857600}
+    max-pixels: ${MAX_IMAGE_PIXELS:40000000}
+    max-batch: ${MAX_BATCH_FILES:50}
+  processing:
+    poll-interval: ${PHOTO_PROCESSING_POLL_INTERVAL:5000}
+    max-retries: ${PHOTO_PROCESSING_MAX_RETRIES:3}
