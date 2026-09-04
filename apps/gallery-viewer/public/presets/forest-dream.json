@@ -1,0 +1,50 @@
+{
+  "presetName": "forest-dream",
+  "layout": {
+    "mode": "sphere"
+  },
+  "background": {
+    "type": "sky",
+    "sky": {
+      "theme": "forest",
+      "timeOfDay": "auto"
+    }
+  },
+  "particles": {
+    "enabled": true,
+    "types": ["sakura"]
+  },
+  "effects": {
+    "bloom": {
+      "enabled": true,
+      "strength": 0.6
+    },
+    "fog": {
+      "enabled": true,
+      "color": "#a8e6cf",
+      "density": 0.0015
+    }
+  },
+  "interaction": {
+    "clickRipple": true
+  },
+  "audio": {
+    "bgm": {
+      "enabled": true,
+      "track": "forest-ambient"
+    },
+    "sfx": {
+      "enabled": true
+    }
+  },
+  "theme": {
+    "engine": "custom",
+    "customColors": {
+      "primary": "#2d5016",
+      "secondary": "#7fb069",
+      "accent": "#a8e6cf",
+      "background": "#dcedc1",
+      "fog": "#a8e6cf"
+    }
+  }
+}

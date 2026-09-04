@@ -63,6 +63,47 @@ vie-gallery/
 └── infra/                 # Docker、反向代理和部署配置
 ```
 
+## 测试
+
+项目包含完整的 MCP 测试套件，支持自动化 API 测试和浏览器端到端测试。
+
+### 快速测试
+
+```bash
+# 1. 启动所有服务
+cd infra
+docker-compose up -d
+
+# 2. 运行自动化测试
+bash test-mcp-flow.sh
+
+# 3. 启动前端（可选）
+bash start-frontend.sh
+```
+
+### 测试文档
+
+- **[QUICK-START.txt](QUICK-START.txt)** - 快速启动参考卡片（⭐推荐）
+- **[TEST-SUMMARY.md](TEST-SUMMARY.md)** - 测试总结和概览
+- **[TESTING-HOST.md](TESTING-HOST.md)** - 主机端详细执行指南
+- **[docs/testing-guide.md](docs/testing-guide.md)** - 完整测试使用指南
+- **[docs/mcp-test-guide.md](docs/mcp-test-guide.md)** - API 测试详细文档
+
+### 测试脚本
+
+- `test-mcp-flow.sh` - 自动化 API 测试（13 个端点）
+- `test-browser-mcp.sh` - 浏览器 MCP 测试准备
+- `quick-test.sh` - 交互式测试控制台
+
+### 服务地址
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| API | http://localhost:8080 | Spring Boot 后端 |
+| Admin UI | http://localhost:5173 | Vue 管理端 |
+| Viewer | http://localhost:5174 | 公开展示页 |
+| MinIO Console | http://localhost:9001 | 对象存储控制台 |
+
 ## 参考项目
 
 旧项目位于 `E:/workspace/vie-mei`。它作为视觉和数据迁移参考，不直接作为新平台的业务基础。

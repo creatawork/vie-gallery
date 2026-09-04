@@ -34,8 +34,8 @@ public class GalleryFacade {
         if (galleries.findByTenantAndSlug(context.tenantId(), normalizedSlug).isPresent()) {
             throw new DomainException("GALLERY_SLUG_CONFLICT", "Gallery slug is already in use");
         }
-        Gallery gallery = new Gallery(java.util.UUID.randomUUID(), context.tenantId(), normalizedSlug, name, 
-                visibility, false, java.time.Instant.now());
+        Gallery gallery = new Gallery(java.util.UUID.randomUUID(), context.tenantId(), normalizedSlug, name,
+                visibility, null, null, false, java.time.Instant.now());
         try {
             return galleries.save(gallery);
         } catch (DataIntegrityViolationException exception) {

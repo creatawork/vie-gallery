@@ -28,8 +28,17 @@ public class InMemoryGalleryRepository implements GalleryRepository {
                 && item.slug().equals(slug) && !item.deleted()).findFirst();
     }
 
+    @Override public Optional<Gallery> findById(UUID galleryId) {
+        return values.stream().filter(item -> item.id().equals(galleryId) && !item.deleted()).findFirst();
+    }
+
     @Override public Gallery save(Gallery gallery) {
         values.add(gallery);
         return gallery;
+    }
+
+    @Override public void update(Gallery gallery) {
+        values.removeIf(g -> g.id().equals(gallery.id()));
+        values.add(gallery);
     }
 }

@@ -1,0 +1,50 @@
+{
+  "presetName": "sunset-glow",
+  "layout": {
+    "mode": "spiral"
+  },
+  "background": {
+    "type": "sky",
+    "sky": {
+      "theme": "sunset",
+      "timeOfDay": "sunset"
+    }
+  },
+  "particles": {
+    "enabled": false,
+    "types": []
+  },
+  "effects": {
+    "bloom": {
+      "enabled": true,
+      "strength": 1.0
+    },
+    "fog": {
+      "enabled": true,
+      "color": "#f5576c",
+      "density": 0.0012
+    }
+  },
+  "interaction": {
+    "clickRipple": true
+  },
+  "audio": {
+    "bgm": {
+      "enabled": true,
+      "track": "sunset-melody"
+    },
+    "sfx": {
+      "enabled": true
+    }
+  },
+  "theme": {
+    "engine": "custom",
+    "customColors": {
+      "primary": "#d53369",
+      "secondary": "#f093fb",
+      "accent": "#f5576c",
+      "background": "#ffecd2",
+      "fog": "#f5576c"
+    }
+  }
+}

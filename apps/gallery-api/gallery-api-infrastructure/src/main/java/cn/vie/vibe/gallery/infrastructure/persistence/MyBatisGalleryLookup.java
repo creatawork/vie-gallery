@@ -14,6 +14,6 @@ public class MyBatisGalleryLookup implements GalleryLookup {
  private final M2GalleryMapper mapper;
  public MyBatisGalleryLookup(M2GalleryMapper mapper){this.mapper=mapper;}
  public Optional<Gallery> findById(UUID tenantId, UUID galleryId){
-  return Optional.ofNullable(mapper.findById(tenantId.toString(),galleryId.toString())).map(r -> new Gallery(uuid(r,"id"),uuid(r,"tenantId"),(String)r.get("slug"),(String)r.get("name"),GalleryVisibility.valueOf((String)r.get("visibility")),false,instant(r,"createdAt")));
+  return Optional.ofNullable(mapper.findById(tenantId.toString(),galleryId.toString())).map(r -> new Gallery(uuid(r,"id"),uuid(r,"tenantId"),(String)r.get("slug"),(String)r.get("name"),GalleryVisibility.valueOf((String)r.get("visibility")),(String)r.get("passwordHash"),uuid(r,"coverPhotoId"),false,instant(r,"createdAt")));
  }
 }

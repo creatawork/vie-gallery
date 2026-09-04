@@ -46,6 +46,7 @@ management:
 gallery:
   storage:
     endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:9000}
     access-key: ${STORAGE_ACCESS_KEY:vie_local}
     secret-key: ${STORAGE_SECRET_KEY:vie_local_secret}
     bucket: ${STORAGE_BUCKET:vie-gallery}

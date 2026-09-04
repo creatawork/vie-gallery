@@ -1,0 +1,141 @@
+VIE Gallery - 测试执行清单
+=====================================
+
+日期: __________  测试人: __________
+
+环境检查
+--------
+[ ] Docker Desktop 已启动
+[ ] Git Bash 或 PowerShell 已打开
+[ ] 端口 3306, 6379, 8080, 9000, 9001, 5173, 5174 未被占用
+[ ] 已 cd 到项目目录: E:\workspace\vie-gallery
+
+启动服务
+--------
+[ ] 执行: cd infra && docker-compose up -d
+[ ] 等待 60 秒让服务启动
+[ ] 验证 Docker 容器全部 Up: docker-compose ps
+[ ] 验证 API 健康: curl http://localhost:8080/actuator/health
+    预期结果: {"status":"UP"}
+
+自动化测试
+----------
+[ ] 执行: cd .. && bash test-mcp-flow.sh
+[ ] 观察测试输出，记录结果:
+
+    [ ] Step 1: User Registration         ✓ / ✗
+    [ ] Step 2: User Login                ✓ / ✗
+    [ ] Step 3: Get Current User          ✓ / ✗
+    [ ] Step 4: Create Photo Space        ✓ / ✗
+    [ ] Step 5: List My Spaces            ✓ / ✗
+    [ ] Step 6: Create Album              ✓ / ✗
+    [ ] Step 7: Upload Photo              ✓ / ✗
+    [ ] Step 8: List Album Photos         ✓ / ✗
+    [ ] Step 9: Create Public Share       ✓ / ✗
+    [ ] Step 10: Access Public Share      ✓ / ✗
+    [ ] Step 11: Create Password Share    ✓ / ✗
+    [ ] Step 12: Verify Password          ✓ / ✗
+    [ ] Step 13: User Logout              ✓ / ✗
+
+[ ] 记录生成的分享链接: _______________________________
+
+前端手动测试（可选）
+------------------
+[ ] 启动前端: bash start-frontend.sh
+[ ] Admin UI 可访问: http://localhost:5173
+[ ] Viewer UI 可访问: http://localhost:5174
+
+浏览器测试
+----------
+[ ] 打开 http://localhost:5173
+[ ] 注册新用户: _______________@example.com
+[ ] 登录成功，进入管理端
+[ ] 创建照片空间: _______________
+[ ] 创建相册: _______________
+[ ] 上传照片（选择文件）
+[ ] 照片上传成功，显示缩略图
+[ ] 点击"分享"按钮
+[ ] 生成公开分享链接
+[ ] 复制分享链接: _______________________________
+
+公开访问测试
+-----------
+[ ] 打开浏览器隐私/无痕模式
+[ ] 访问分享链接
+[ ] 无需登录即可看到照片空间
+[ ] 照片正确显示
+[ ] 3D 照片墙效果正常（如果有多张照片）
+
+存储验证
+--------
+[ ] 访问 MinIO 控制台: http://localhost:9001
+[ ] 登录: vie_local / vie_local_secret
+[ ] 查看 bucket: vie-gallery
+[ ] 确认存在 photos/ 目录
+[ ] 确认存在 thumbnails/ 目录
+[ ] 点击查看，确认文件可以预览
+
+数据库验证
+----------
+[ ] 执行: docker exec -it vie-gallery-mysql-1 mysql -uvie -pvie_local vie_gallery
+[ ] 查看用户: SELECT * FROM users;
+    记录用户数: _____
+[ ] 查看空间: SELECT * FROM spaces;
+    记录空间数: _____
+[ ] 查看相册: SELECT * FROM albums;
+    记录相册数: _____
+[ ] 查看照片: SELECT * FROM photos;
+    记录照片数: _____
+[ ] 查看分享: SELECT * FROM shares;
+    记录分享数: _____
+[ ] 退出: exit
+
+Redis 验证
+----------
+[ ] 执行: docker exec -it vie-gallery-redis-1 redis-cli
+[ ] 查看 Session: KEYS "vie:session:*"
+    记录 Session 数: _____
+[ ] 退出: exit
+
+性能测试（可选）
+--------------
+[ ] 批量上传 10 张照片
+[ ] 记录上传时间: _____ 秒
+[ ] 确认所有照片都生成了缩略图
+[ ] 在公开页面加载所有照片
+[ ] 记录加载时间: _____ 秒
+
+清理测试数据（可选）
+------------------
+[ ] 停止服务: cd infra && docker-compose down
+[ ] 删除数据卷: docker-compose down -v
+[ ] 删除测试文件: rm /tmp/vie-gallery-*
+
+测试结果总结
+-----------
+总测试项: _____
+通过: _____
+失败: _____
+跳过: _____
+
+问题记录
+--------
+1. ____________________________________________
+2. ____________________________________________
+3. ____________________________________________
+
+测试结论
+--------
+[ ] 通过 - 所有核心功能正常
+[ ] 部分通过 - 存在小问题但不影响核心功能
+[ ] 失败 - 存在严重问题需要修复
+
+备注
+----
+_________________________________________________
+_________________________________________________
+_________________________________________________
+_________________________________________________
+
+测试完成时间: __________
+签名: __________

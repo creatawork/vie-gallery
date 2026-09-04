@@ -11,7 +11,10 @@ public final class MyBatisValueMapper {
     }
 
     public static UUID uuid(Map<String, Object> row, String key) {
-        return UUID.fromString((String) row.get(key));
+        Object val = row.get(key);
+        if (val == null) return null;
+        if (val instanceof UUID u) return u;
+        return UUID.fromString(val.toString());
     }
 
     public static Instant instant(Map<String, Object> row, String key) {

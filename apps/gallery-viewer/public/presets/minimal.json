@@ -1,0 +1,39 @@
+{
+  "presetName": "minimal",
+  "layout": {
+    "mode": "grid"
+  },
+  "background": {
+    "type": "gradient",
+    "gradient": {
+      "colors": ["#FFFFFF", "#F7F5F1"],
+      "direction": "vertical"
+    }
+  },
+  "particles": {
+    "enabled": false,
+    "types": []
+  },
+  "effects": {
+    "bloom": {
+      "enabled": false
+    },
+    "fog": {
+      "enabled": false
+    }
+  },
+  "interaction": {
+    "clickRipple": false
+  },
+  "audio": {
+    "bgm": {
+      "enabled": false
+    },
+    "sfx": {
+      "enabled": false
+    }
+  },
+  "theme": {
+    "engine": "custom"
+  }
+}

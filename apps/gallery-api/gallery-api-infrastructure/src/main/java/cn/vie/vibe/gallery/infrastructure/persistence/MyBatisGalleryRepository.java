@@ -42,16 +42,51 @@ public class MyBatisGalleryRepository implements GalleryRepository {
     }
 
     @Override
+    public Optional<Gallery> findById(UUID galleryId) {
+        return Optional.ofNullable(mapper.findById(galleryId.toString()))
+                .map(MyBatisGalleryRepository::toDomain);
+    }
+
+    @Override
     public Gallery save(Gallery gallery) {
         Instant now = Instant.now();
-        mapper.insert(gallery.id().toString(), gallery.tenantId().toString(), gallery.slug(), gallery.name(),
-                gallery.visibility().name(), localDateTime(now), localDateTime(now));
+        mapper.insert(
+                gallery.id().toString(),
+                gallery.tenantId().toString(),
+                gallery.slug(),
+                gallery.name(),
+                gallery.visibility().name(),
+                gallery.passwordHash(),
+                gallery.coverPhotoId() != null ? gallery.coverPhotoId().toString() : null,
+                localDateTime(now),
+                localDateTime(now)
+        );
         return gallery;
     }
 
+    @Override
+    public void update(Gallery gallery) {
+        mapper.update(
+                gallery.id().toString(),
+                gallery.name(),
+                gallery.visibility().name(),
+                gallery.passwordHash(),
+                gallery.coverPhotoId() != null ? gallery.coverPhotoId().toString() : null,
+                localDateTime(Instant.now())
+        );
+    }
+
     private static Gallery toDomain(java.util.Map<String, Object> row) {
-        return new Gallery(uuid(row, "id"), uuid(row, "tenantId"), (String) row.get("slug"),
-                (String) row.get("name"), GalleryVisibility.valueOf((String) row.get("visibility")),
-                Boolean.TRUE.equals(row.get("deleted")), instant(row, "createdAt"));
+        return new Gallery(
+                uuid(row, "id"),
+                uuid(row, "tenantId"),
+                (String) row.get("slug"),
+                (String) row.get("name"),
+                GalleryVisibility.valueOf((String) row.get("visibility")),
+                (String) row.get("passwordHash"),
+                uuid(row, "coverPhotoId"),
+                Boolean.TRUE.equals(row.get("deleted")),
+                instant(row, "createdAt")
+        );
     }
 }

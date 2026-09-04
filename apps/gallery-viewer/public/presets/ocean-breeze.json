@@ -1,0 +1,50 @@
+{
+  "presetName": "ocean-breeze",
+  "layout": {
+    "mode": "helix"
+  },
+  "background": {
+    "type": "sky",
+    "sky": {
+      "theme": "ocean",
+      "timeOfDay": "auto"
+    }
+  },
+  "particles": {
+    "enabled": false,
+    "types": []
+  },
+  "effects": {
+    "bloom": {
+      "enabled": true,
+      "strength": 0.5
+    },
+    "fog": {
+      "enabled": true,
+      "color": "#667eea",
+      "density": 0.001
+    }
+  },
+  "interaction": {
+    "clickRipple": true
+  },
+  "audio": {
+    "bgm": {
+      "enabled": true,
+      "track": "ocean-waves"
+    },
+    "sfx": {
+      "enabled": true
+    }
+  },
+  "theme": {
+    "engine": "custom",
+    "customColors": {
+      "primary": "#4a5568",
+      "secondary": "#667eea",
+      "accent": "#764ba2",
+      "background": "#a8dadc",
+      "fog": "#667eea"
+    }
+  }
+}

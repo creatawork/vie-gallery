@@ -9,5 +9,7 @@ public interface GalleryRepository {
     List<Gallery> findAll(UUID tenantId);
     Optional<Gallery> findByTenantAndSlug(UUID tenantId, String slug);
     Optional<Gallery> findBySlug(String slug);
+    Optional<Gallery> findById(UUID galleryId);
     Gallery save(Gallery gallery);
+    void update(Gallery gallery);
 }

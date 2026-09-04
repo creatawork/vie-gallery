@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VieGallery 3D Viewer Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #F7F5F1;
+      overflow: hidden;
+    }
+
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+      max-width: 300px;
+      z-index: 100;
+    }
+
+    .controls h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #1E2227;
+    }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .preset-btn {
+      padding: 8px;
+      font-size: 12px;
+      border: 1px solid #E7E3DA;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .preset-btn:hover {
+      border-color: #3C5A78;
+      background: #F7F5F1;
+    }
+
+    .preset-btn.active {
+      background: #3C5A78;
+      color: white;
+      border-color: #3C5A78;
+    }
+
+    .info {
+      font-size: 11px;
+      color: #6B7077;
+      line-height: 1.5;
+      border-top: 1px solid #E7E3DA;
+      padding-top: 12px;
+      margin-top: 12px;
+    }
+
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #6B7077;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #E7E3DA;
+      border-top-color: #3C5A78;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>Loading viewer engine...</p>
+  </div>
+
+  <div class="controls" style="display: none;" id="controls">
+    <h3>Visual Presets</h3>
+    <div class="preset-grid">
+      <button class="preset-btn" data-preset="minimal">Minimal</button>
+      <button class="preset-btn active" data-preset="forest-dream">Forest Dream</button>
+      <button class="preset-btn" data-preset="starry-night">Starry Night</button>
+      <button class="preset-btn" data-preset="ocean-breeze">Ocean Breeze</button>
+      <button class="preset-btn" data-preset="sunset-glow">Sunset Glow</button>
+      <button class="preset-btn" data-preset="romantic">Romantic</button>
+    </div>
+    <div class="info">
+      Click a preset to see different visual effects. This demo showcases the 4 migrated plugins: SkyDome, Particles, Bloom, and Fog.
+    </div>
+  </div>
+
+  <script type="module">
+    import { ViewerEngine } from './src/core/ViewerEngine.ts'
+    import * as THREE from 'three'
+
+    const canvas = document.getElementById('canvas')
+    const loading = document.getElementById('loading')
+    const controls = document.getElementById('controls')
+
+    // 预设配置
+    const presets = {
+      'minimal': {
+        layout: { mode: 'sphere' },
+        background: { type: 'gradient', gradient: { colors: ['#F7F5F1', '#E7E3DA'], direction: 'vertical' } },
+        particles: { enabled: false, types: [] },
+        effects: { bloom: { enabled: false }, fog: { enabled: false } },
+        interaction: { clickRipple: true }
+      },
+      'forest-dream': {
+        layout: { mode: 'helix' },
+        background: { type: 'sky', sky: { theme: 'forest', timeOfDay: 'sunset' } },
+        particles: { enabled: true, types: ['sakura', 'stars'], density: 1.0 },
+        effects: {
+          bloom: { enabled: true, strength: 0.5, radius: 0.4, threshold: 0.3 },
+          fog: { enabled: true, color: '#E7D5C1', density: 0.0008 }
+        },
+        interaction: { clickRipple: true }
+      },
+      'starry-night': {
+        layout: { mode: 'sphere' },
+        background: { type: 'sky', sky: { theme: 'starry', timeOfDay: 'night' } },
+        particles: { enabled: true, types: ['stars'], density: 1.2 },
+        effects: {
+          bloom: { enabled: true, strength: 0.8, radius: 0.5, threshold: 0.1 },
+          fog: { enabled: false }
+        },
+        interaction: { clickRipple: true }
+      },
+      'ocean-breeze': {
+        layout: { mode: 'spiral' },
+        background: { type: 'sky', sky: { theme: 'ocean', timeOfDay: 'day' } },
+        particles: { enabled: false, types: [] },
+        effects: {
+          bloom: { enabled: false },
+          fog: { enabled: true, color: '#D4E8F0', density: 0.001 }
+        },
+        interaction: { clickRipple: true }
+      },
+      'sunset-glow': {
+        layout: { mode: 'grid' },
+        background: { type: 'sky', sky: { theme: 'sunset', timeOfDay: 'sunset' } },
+        particles: { enabled: true, types: ['sakura'], density: 0.8 },
+        effects: {
+          bloom: { enabled: true, strength: 0.9, radius: 0.6, threshold: 0.2 },
+          fog: { enabled: true, color: '#F4D4C0', density: 0.0006 }
+        },
+        interaction: { clickRipple: true }
+      },
+      'romantic': {
+        layout: { mode: 'spiral' },
+        background: { type: 'gradient', gradient: { colors: ['#FFE5E5', '#FFD0D0'], direction: 'radial' } },
+        particles: { enabled: true, types: ['hearts'], density: 1.0 },
+        effects: {
+          bloom: { enabled: true, strength: 0.6, radius: 0.5, threshold: 0.3 },
+          fog: { enabled: false }
+        },
+        interaction: { clickRipple: true }
+      }
+    }
+
+    let engine = null
+    let currentPreset = 'forest-dream'
+
+    async function init() {
+      try {
+        console.log('🚀 Starting viewer initialization...')
+
+        // 创建引擎实例
+        engine = new ViewerEngine(canvas, presets[currentPreset])
+        console.log('✓ ViewerEngine created')
+
+        // 先创建并设置照片（在 init 之前）
+        const photos = createDemoPhotos()
+        engine.setPhotos(photos)
+        console.log('✓ Photos set:', photos.length)
+
+        // 再初始化引擎（这样 Layout 插件就能找到照片）
+        console.log('⏳ Calling engine.init()...')
+        await engine.init()
+        console.log('✓ Engine initialized')
+
+        // 启动渲染循环
+        engine.start()
+        console.log('✓ Render loop started')
+
+        // 隐藏加载，显示控制面板
+        loading.style.display = 'none'
+        controls.style.display = 'block'
+
+        console.log('✅ Viewer engine initialized successfully')
+      } catch (error) {
+        console.error('❌ Failed to initialize viewer:', error)
+        console.error('Error stack:', error.stack)
+        loading.querySelector('p').textContent = 'Failed to load viewer: ' + error.message
+      }
+    }
+
+    function createDemoPhotos() {
+      const photos = []
+      const count = 20
+
+      for (let i = 0; i < count; i++) {
+        const geometry = new THREE.PlaneGeometry(80, 60)
+        const material = new THREE.MeshBasicMaterial({
+          color: new THREE.Color().setHSL(i / count, 0.7, 0.6),
+          side: THREE.DoubleSide
+        })
+
+        const mesh = new THREE.Mesh(geometry, material)
+        mesh.userData = {
+          index: i,
+          url: `https://picsum.photos/800/600?random=${i}`,
+          thumbnailUrl: `https://picsum.photos/400/300?random=${i}`,
+          title: `Photo ${i + 1}`
+        }
+
+        photos.push(mesh)
+      }
+
+      return photos
+    }
+
+    async function switchPreset(presetName) {
+      if (!engine || currentPreset === presetName) return
+
+      currentPreset = presetName
+
+      // 更新 UI
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.preset === presetName)
+      })
+
+      console.log(`Switching to preset: ${presetName}`)
+
+      // 重新创建引擎
+      engine.dispose()
+      engine = new ViewerEngine(canvas, presets[presetName])
+      await engine.init()
+
+      const photos = createDemoPhotos()
+      engine.setPhotos(photos)
+      engine.start()
+    }
+
+    // 预设切换
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        switchPreset(btn.dataset.preset)
+      })
+    })
+
+    // 启动
+    init()
+  </script>
+</body>
+</html>

@@ -21,3 +21,12 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+.zcode/
+
+# Temporary test and runtime artifacts
+*.log
+*.pid
+cookies.txt
+*.timestamp*
+test_sample.jpg
+

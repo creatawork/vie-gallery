@@ -1,6 +1,7 @@
 package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.domain.DomainException;
+import cn.vie.vibe.gallery.domain.PublicAccessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DataAccessException;
@@ -24,6 +25,23 @@ public class GlobalExceptionHandler {
 
     public GlobalExceptionHandler(ApiErrorFactory errors) {
         this.errors = errors;
+    }
+
+    @ExceptionHandler(PublicAccessException.class)
+    ResponseEntity<ApiError> publicAccess(PublicAccessException exception, HttpServletRequest request) {
+        HttpStatus status = switch (exception.getCode()) {
+            case PublicAccessException.GALLERY_NOT_FOUND,
+                 PublicAccessException.SHARE_LINK_INVALID,
+                 PublicAccessException.SHARE_LINK_EXPIRED,
+                 PublicAccessException.SHARE_LINK_REVOKED -> HttpStatus.NOT_FOUND;
+            case PublicAccessException.PASSWORD_REQUIRED,
+                 PublicAccessException.SHARE_LINK_REQUIRED,
+                 PublicAccessException.PUBLIC_SESSION_EXPIRED -> HttpStatus.UNAUTHORIZED;
+            case PublicAccessException.PASSWORD_INVALID -> HttpStatus.FORBIDDEN;
+            case PublicAccessException.RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(errors.create(request, exception.getCode(), exception.getMessage()));
     }
 
     @ExceptionHandler(DomainException.class)

@@ -52,6 +52,13 @@ class GalleryFacadeTest {
         public Optional<Gallery> findBySlug(String slug) {
             return values.stream().filter(g -> g.slug().equals(slug)).findFirst();
         }
+        public Optional<Gallery> findById(UUID galleryId) {
+            return values.stream().filter(g -> g.id().equals(galleryId)).findFirst();
+        }
         public Gallery save(Gallery gallery) { values.add(gallery); return gallery; }
+        public void update(Gallery gallery) {
+            values.removeIf(g -> g.id().equals(gallery.id()));
+            values.add(gallery);
+        }
     }
 }
