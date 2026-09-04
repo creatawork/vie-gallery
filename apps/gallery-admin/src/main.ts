@@ -5,7 +5,22 @@ import './styles.css'
 
 const router = createRouter({
   history: createWebHistory('/app/'),
-  routes: [{ path: '/', component: () => import('./views/OverviewView.vue') }]
+  routes: [
+    {
+      path: '/',
+      name: 'overview',
+      component: () => import('./views/OverviewView.vue')
+    },
+    {
+      path: '/galleries/:id/config',
+      name: 'gallery-config',
+      component: () => import('./views/GalleryConfigPanel.vue')
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/'
+    }
+  ]
 })
 
 createApp(App).use(router).mount('#app')

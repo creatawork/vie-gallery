@@ -1,41 +1,128 @@
 import type { ViewerConfig } from './types'
 
 /**
+ * 6 大生产级预设配置定义
+ */
+export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
+  'minimal': {
+    presetName: 'minimal',
+    layout: { mode: 'sphere' },
+    background: {
+      type: 'gradient',
+      gradient: { colors: ['#f8fafc', '#e2e8f0'], direction: 'vertical' }
+    },
+    particles: { enabled: false, types: [] },
+    effects: { bloom: { enabled: false }, fog: { enabled: false } },
+    interaction: { clickRipple: true }
+  },
+  'forest-dream': {
+    presetName: 'forest-dream',
+    layout: { mode: 'helix' },
+    background: {
+      type: 'sky',
+      sky: { theme: 'forest', timeOfDay: 'sunset' }
+    },
+    particles: { enabled: true, types: ['sakura', 'stars'], density: 1.0 },
+    effects: {
+      bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
+      fog: { enabled: true, color: '#163124', density: 0.0006 }
+    },
+    interaction: { clickRipple: true }
+  },
+  'starry-night': {
+    presetName: 'starry-night',
+    layout: { mode: 'sphere' },
+    background: {
+      type: 'sky',
+      sky: { theme: 'starry', timeOfDay: 'night' }
+    },
+    particles: { enabled: true, types: ['stars'], density: 1.2 },
+    effects: {
+      bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
+      fog: { enabled: false }
+    },
+    interaction: { clickRipple: true }
+  },
+  'ocean-breeze': {
+    presetName: 'ocean-breeze',
+    layout: { mode: 'spiral' },
+    background: {
+      type: 'sky',
+      sky: { theme: 'ocean', timeOfDay: 'day' }
+    },
+    particles: { enabled: false, types: [] },
+    effects: {
+      bloom: { enabled: false },
+      fog: { enabled: true, color: '#0c4a6e', density: 0.0008 }
+    },
+    interaction: { clickRipple: true }
+  },
+  'sunset-glow': {
+    presetName: 'sunset-glow',
+    layout: { mode: 'grid' },
+    background: {
+      type: 'sky',
+      sky: { theme: 'sunset', timeOfDay: 'sunset' }
+    },
+    particles: { enabled: true, types: ['sakura'], density: 0.8 },
+    effects: {
+      bloom: { enabled: true, strength: 0.85, radius: 0.6, threshold: 0.2 },
+      fog: { enabled: true, color: '#7c2d12', density: 0.0005 }
+    },
+    interaction: { clickRipple: true }
+  },
+  'romantic': {
+    presetName: 'romantic',
+    layout: { mode: 'spiral' },
+    background: {
+      type: 'gradient',
+      gradient: { colors: ['#4a0e2e', '#831843'], direction: 'radial' }
+    },
+    particles: { enabled: true, types: ['hearts'], density: 1.0 },
+    effects: {
+      bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
+      fog: { enabled: false }
+    },
+    interaction: { clickRipple: true }
+  }
+}
+
+/**
  * 默认配置
  */
 const DEFAULT_CONFIG: ViewerConfig = {
   quality: 'auto',
-
   layout: {
     mode: 'sphere'
   },
-
   background: {
-    type: 'gradient',
-    gradient: {
-      colors: ['#F7F5F1', '#E7E3DA'],
-      direction: 'vertical'
+    type: 'sky',
+    sky: {
+      theme: 'starry',
+      timeOfDay: 'night'
     }
   },
-
   particles: {
-    enabled: false,
-    types: []
+    enabled: true,
+    types: ['stars'],
+    density: 1.0
   },
-
   effects: {
     bloom: {
-      enabled: false
+      enabled: true,
+      strength: 0.7,
+      radius: 0.5,
+      threshold: 0.2
     },
     fog: {
-      enabled: false
+      enabled: false,
+      color: '#0f172a',
+      density: 0.0008
     }
   },
-
   interaction: {
     clickRipple: true
   },
-
   audio: {
     bgm: {
       enabled: false
@@ -44,15 +131,14 @@ const DEFAULT_CONFIG: ViewerConfig = {
       enabled: true
     }
   },
-
   theme: {
     engine: 'custom',
     customColors: {
       primary: '#1E2227',
       secondary: '#6B7077',
-      accent: '#3C5A78',
-      background: '#F7F5F1',
-      fog: '#E7E3DA'
+      accent: '#10b981',
+      background: '#070a0d',
+      fog: '#070a0d'
     }
   }
 }
@@ -68,8 +154,6 @@ export class ConfigManager {
   private readonly PREFERENCE_KEY = 'vie-gallery-viewer-preference'
 
   constructor(initialConfig?: Partial<ViewerConfig>) {
-    // 加载顺序：默认 -> 初始配置（URL参数等）
-    // 服务端配置需要异步加载，通过 loadFromServer() 方法
     this.config = this.deepMerge(
       DEFAULT_CONFIG,
       initialConfig || {}
@@ -81,17 +165,27 @@ export class ConfigManager {
    */
   async loadFromServer(slug: string): Promise<ViewerConfig> {
     try {
-      const response = await fetch(`/api/public/g/${slug}/viewer-config`)
+      const token = new URLSearchParams(window.location.search).get('t') || new URLSearchParams(window.location.search).get('token')
+      const headers: Record<string, string> = {}
+      if (token) {
+        headers['X-Share-Token'] = token
+      }
+
+      const response = await fetch(`/api/public/g/${slug}/viewer-config`, { headers })
       if (response.ok) {
-        const serverConfig = await response.json()
-        if (serverConfig && Object.keys(serverConfig).length > 0) {
-          this.serverConfig = serverConfig
-          // 合并顺序：默认 -> 服务端 -> 用户偏好
-          this.config = this.deepMerge(
-            DEFAULT_CONFIG,
-            serverConfig,
-            this.loadPreferenceFromStorage()
-          )
+        const serverData = await response.json()
+        if (serverData && serverData.configJson) {
+          try {
+            const parsed = JSON.parse(serverData.configJson)
+            this.serverConfig = parsed
+            this.config = this.deepMerge(
+              DEFAULT_CONFIG,
+              parsed,
+              this.loadPreferenceFromStorage()
+            )
+          } catch (e) {
+            console.warn('Failed to parse server config JSON', e)
+          }
         }
       }
     } catch (error) {
@@ -101,8 +195,7 @@ export class ConfigManager {
   }
 
   /**
-   * 保存用户偏好（仅本地，不影响服务端配置）
-   * 这些偏好会覆盖服务端配置
+   * 保存用户偏好
    */
   savePreference(preference: Partial<ViewerConfig>): void {
     try {
@@ -111,7 +204,6 @@ export class ConfigManager {
         JSON.stringify(preference)
       )
 
-      // 重新合并：默认 -> 服务端 -> 用户偏好
       this.config = this.deepMerge(
         DEFAULT_CONFIG,
         this.serverConfig || {},
@@ -135,12 +227,12 @@ export class ConfigManager {
   }
 
   /**
-   * 清除用户偏好（恢复相册所有者的配置）
+   * 清除用户偏好
    */
   clearPreference(): void {
     try {
+      localStorage.removeItem(this.STORAGE_KEY)
       localStorage.removeItem(this.PREFERENCE_KEY)
-      // 重新合并：默认 -> 服务端
       this.config = this.deepMerge(
         DEFAULT_CONFIG,
         this.serverConfig || {}
@@ -162,8 +254,6 @@ export class ConfigManager {
    */
   updateConfig(updates: Partial<ViewerConfig>): ViewerConfig {
     this.config = this.deepMerge(this.config, updates)
-    // 注意：这里不再自动保存到 storage
-    // 如果需要持久化用户偏好，应该调用 savePreference()
     return this.getConfig()
   }
 
@@ -181,19 +271,23 @@ export class ConfigManager {
    * 加载预设配置
    */
   async loadPreset(name: string): Promise<ViewerConfig> {
+    const builtin = BUILTIN_PRESETS[name]
+    if (builtin) {
+      this.config = this.deepMerge(DEFAULT_CONFIG, builtin)
+      return this.getConfig()
+    }
+
     try {
       const response = await fetch(`/presets/${name}.json`)
-      if (!response.ok) {
-        throw new Error(`Failed to load preset "${name}"`)
+      if (response.ok) {
+        const preset = await response.json()
+        this.config = this.deepMerge(DEFAULT_CONFIG, preset)
+        return this.getConfig()
       }
-      const preset = await response.json()
-      this.config = this.deepMerge(DEFAULT_CONFIG, preset)
-      // 预设加载后不自动保存，由用户决定是否持久化
-      return this.getConfig()
     } catch (error) {
       console.error(`Error loading preset "${name}":`, error)
-      throw error
     }
+    return this.getConfig()
   }
 
   /**
@@ -210,7 +304,6 @@ export class ConfigManager {
     try {
       const imported = JSON.parse(json)
       this.config = this.deepMerge(DEFAULT_CONFIG, imported)
-      // 导入后不自动保存，由用户决定是否持久化
       return this.getConfig()
     } catch (error) {
       console.error('Error importing config:', error)
@@ -228,37 +321,16 @@ export class ConfigManager {
     const isLowEnd = isMobile || memory < 4 || cores < 4
 
     if (isLowEnd) {
-      // 低端设备：关闭所有高级特效
       this.config = this.deepMerge(this.config, {
         quality: 'low',
-        particles: {
-          enabled: false,
-          types: []
-        },
-        effects: {
-          bloom: { enabled: false },
-          fog: { enabled: false },
-          godRays: { enabled: false }
-        },
-        interaction: {
-          cursorTrail: false,
-          magneticField: false,
-          constellation: false
-        }
-      })
-    } else if (memory < 8 || cores < 8) {
-      // 中端设备：适度降级
-      this.config = this.deepMerge(this.config, {
-        quality: 'mid',
         particles: {
           density: 0.5
         },
         effects: {
-          godRays: { enabled: false }
+          bloom: { enabled: false }
         }
       })
     } else {
-      // 高端设备
       this.config.quality = 'high'
     }
 
@@ -270,72 +342,36 @@ export class ConfigManager {
    */
   loadFromURL(): Partial<ViewerConfig> | null {
     const params = new URLSearchParams(window.location.search)
-    const updates: any = {}
+    let baseConfig: any = {}
 
-    // 预设
+    // 1. 优先解析预设 preset
     const preset = params.get('preset')
-    if (preset) {
-      // 异步加载预设，这里只返回 null
-      return null
+    if (preset && BUILTIN_PRESETS[preset]) {
+      baseConfig = this.deepClone(BUILTIN_PRESETS[preset])
     }
 
-    // 布局
+    // 2. 覆盖单个参数
     const layout = params.get('layout')
     if (layout && ['sphere', 'helix', 'grid', 'spiral', 'random'].includes(layout)) {
-      updates.layout = { mode: layout }
+      baseConfig.layout = { mode: layout }
     }
 
-    // 粒子
     const particles = params.get('particles')
     if (particles) {
       const types = particles.split(',').filter(t =>
         ['stars', 'hearts', 'sakura', 'snow'].includes(t)
       )
       if (types.length > 0) {
-        updates.particles = { enabled: true, types }
+        baseConfig.particles = { enabled: true, types }
       }
     }
 
-    // 背景
     const bg = params.get('bg')
     if (bg && ['sky', 'gradient', 'image', 'none'].includes(bg)) {
-      updates.background = { type: bg }
+      baseConfig.background = { type: bg }
     }
 
-    return Object.keys(updates).length > 0 ? updates : null
-  }
-
-  /**
-   * @deprecated 使用 loadPreferenceFromStorage() 替代
-   * 从本地存储加载（保留用于向后兼容）
-   */
-  private loadFromStorage(): Partial<ViewerConfig> {
-    return this.loadPreferenceFromStorage()
-  }
-
-  /**
-   * @deprecated 使用 savePreference() 替代
-   * 保存到本地存储（保留用于向后兼容）
-   */
-  private saveToStorage(): void {
-    try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.config))
-    } catch (error) {
-      console.warn('Failed to save config to storage:', error)
-    }
-  }
-
-  /**
-   * @deprecated 使用 clearPreference() 替代
-   * 清空本地存储（保留用于向后兼容）
-   */
-  private clearStorage(): void {
-    try {
-      localStorage.removeItem(this.STORAGE_KEY)
-      localStorage.removeItem(this.PREFERENCE_KEY)
-    } catch (error) {
-      console.warn('Failed to clear config from storage:', error)
-    }
+    return Object.keys(baseConfig).length > 0 ? baseConfig : null
   }
 
   /**

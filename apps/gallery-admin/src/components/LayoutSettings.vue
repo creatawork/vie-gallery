@@ -1,26 +1,6 @@
-<template>
-  <div class="layout-settings">
-    <div class="layout-grid">
-      <button
-        v-for="layout in layouts"
-        :key="layout.mode"
-        class="layout-option"
-        :class="{ active: mode === layout.mode }"
-        @click="$emit('update:mode', layout.mode)"
-      >
-        <div class="layout-icon">
-          <svg :viewBox="layout.viewBox" width="60" height="60">
-            <g v-html="layout.svg"></g>
-          </svg>
-        </div>
-        <span class="layout-label">{{ layout.label }}</span>
-        <span class="layout-desc">{{ layout.description }}</span>
-      </button>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
+import Icon from './Icon.vue'
+
 defineProps<{
   mode: string
 }>()
@@ -32,41 +12,62 @@ defineEmits<{
 const layouts = [
   {
     mode: 'sphere',
-    label: '球形',
-    description: 'Fibonacci球面',
-    viewBox: '0 0 100 100',
-    svg: '<circle cx="50" cy="50" r="40" fill="none" stroke="#3C5A78" stroke-width="2"/><circle cx="30" cy="30" r="3" fill="#3C5A78"/><circle cx="70" cy="35" r="3" fill="#3C5A78"/><circle cx="50" cy="50" r="3" fill="#3C5A78"/><circle cx="35" cy="70" r="3" fill="#3C5A78"/><circle cx="65" cy="65" r="3" fill="#3C5A78"/>'
+    label: '球面漫游',
+    description: 'Fibonacci 仿生球面曲率，极佳的环视沉浸体验',
+    iconName: 'cube'
   },
   {
     mode: 'helix',
-    label: '螺旋',
-    description: 'DNA双螺旋',
-    viewBox: '0 0 100 100',
-    svg: '<path d="M 20 20 Q 35 35 50 50 T 80 80" fill="none" stroke="#3C5A78" stroke-width="2"/><path d="M 80 20 Q 65 35 50 50 T 20 80" fill="none" stroke="#3C5A78" stroke-width="2"/><circle cx="20" cy="20" r="3" fill="#3C5A78"/><circle cx="50" cy="50" r="3" fill="#3C5A78"/><circle cx="80" cy="80" r="3" fill="#3C5A78"/>'
+    label: '立体双螺旋',
+    description: 'DNA 双螺旋垂直流线，适合时间序列回忆',
+    iconName: 'sliders'
   },
   {
     mode: 'grid',
-    label: '网格',
-    description: '规则网格墙',
-    viewBox: '0 0 100 100',
-    svg: '<rect x="15" y="15" width="20" height="20" fill="none" stroke="#3C5A78" stroke-width="2"/><rect x="40" y="15" width="20" height="20" fill="none" stroke="#3C5A78" stroke-width="2"/><rect x="65" y="15" width="20" height="20" fill="none" stroke="#3C5A78" stroke-width="2"/><rect x="15" y="40" width="20" height="20" fill="none" stroke="#3C5A78" stroke-width="2"/><rect x="40" y="40" width="20" height="20" fill="none" stroke="#3C5A78" stroke-width="2"/><rect x="65" y="40" width="20" height="20" fill="none" stroke="#3C5A78" stroke-width="2"/>'
+    label: '矩阵画廊墙',
+    description: '高规格阵列排布，气势恢宏的专业展陈',
+    iconName: 'grid'
   },
   {
     mode: 'spiral',
-    label: '银河',
-    description: '旋臂布局',
-    viewBox: '0 0 100 100',
-    svg: '<path d="M 50 50 Q 60 40 70 35 T 90 30" fill="none" stroke="#3C5A78" stroke-width="2"/><path d="M 50 50 Q 40 60 35 70 T 30 90" fill="none" stroke="#3C5A78" stroke-width="2"/><circle cx="50" cy="50" r="3" fill="#3C5A78"/><circle cx="70" cy="35" r="3" fill="#3C5A78"/><circle cx="35" cy="70" r="3" fill="#3C5A78"/>'
+    label: '银河旋臂',
+    description: '对数旋臂星轨，如宇宙星云般展开',
+    iconName: 'sparkles'
   },
   {
     mode: 'random',
-    label: '随机',
-    description: '自由分散',
-    viewBox: '0 0 100 100',
-    svg: '<circle cx="25" cy="30" r="3" fill="#3C5A78"/><circle cx="70" cy="25" r="3" fill="#3C5A78"/><circle cx="40" cy="55" r="3" fill="#3C5A78"/><circle cx="65" cy="70" r="3" fill="#3C5A78"/><circle cx="30" cy="75" r="3" fill="#3C5A78"/><circle cx="80" cy="50" r="3" fill="#3C5A78"/>'
+    label: '自由引力',
+    description: '散落在三维空间的流光卡片，随性自然',
+    iconName: 'gallery'
   }
 ]
 </script>
+
+<template>
+  <div class="layout-settings">
+    <div class="layout-grid">
+      <button
+        v-for="layout in layouts"
+        :key="layout.mode"
+        type="button"
+        class="layout-option"
+        :class="{ active: mode === layout.mode }"
+        @click="$emit('update:mode', layout.mode)"
+      >
+        <div class="layout-icon-circle">
+          <Icon :name="layout.iconName" :size="24" />
+        </div>
+        <div class="layout-content">
+          <span class="layout-label">{{ layout.label }}</span>
+          <span class="layout-desc">{{ layout.description }}</span>
+        </div>
+        <div v-if="mode === layout.mode" class="check-mark">
+          <Icon name="check" :size="16" />
+        </div>
+      </button>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .layout-settings {
@@ -75,47 +76,75 @@ const layouts = [
 
 .layout-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
 }
 
 .layout-option {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1rem;
-  background: white;
-  border: 2px solid #E7E3DA;
-  border-radius: 8px;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s var(--ease-spring);
+  text-align: left;
+  box-shadow: var(--shadow-xs);
+  position: relative;
 }
 
 .layout-option:hover {
-  border-color: #3C5A78;
+  border-color: var(--border-strong);
   transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .layout-option.active {
-  border-color: #3C5A78;
-  border-width: 3px;
-  background: #F7F5F1;
+  border-color: #10b981;
+  background: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25), var(--shadow-sm);
 }
 
-.layout-icon {
-  margin-bottom: 0.5rem;
+.layout-icon-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #f1f5f3;
+  color: #334155;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.layout-option.active .layout-icon-circle {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.layout-content {
+  flex: 1;
+  min-width: 0;
 }
 
 .layout-label {
-  font-size: 1rem;
+  display: block;
+  font-size: 14px;
   font-weight: 600;
-  color: #1E2227;
-  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+  margin-bottom: 4px;
 }
 
 .layout-desc {
-  font-size: 0.75rem;
-  color: #6B7077;
-  text-align: center;
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.check-mark {
+  color: #059669;
 }
 </style>

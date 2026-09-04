@@ -14,9 +14,9 @@ export class PublicApiClient {
 
   constructor(baseUrl: string = '/api/public') {
     this.baseUrl = baseUrl
-    // 从 URL 获取分享 token
+    // 从 URL 获取分享 token (query 't' or 'token')
     const params = new URLSearchParams(window.location.search)
-    this.shareToken = params.get('t')
+    this.shareToken = params.get('t') || params.get('token')
   }
 
   /**
@@ -92,6 +92,26 @@ export class PublicApiClient {
   }
 
   /**
+   * 获取公开相册展示配置
+   */
+  async getViewerConfig(slug: string): Promise<any | null> {
+    const headers: Record<string, string> = {}
+    if (this.shareToken) {
+      headers['X-Share-Token'] = this.shareToken
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/g/${slug}/viewer-config`, { headers })
+      if (response.ok) {
+        return await response.json()
+      }
+    } catch (e) {
+      console.warn('Failed to fetch viewer config from public api', e)
+    }
+    return null
+  }
+
+  /**
    * 设置分享 token（用于编程式设置）
    */
   setShareToken(token: string | null) {
@@ -127,24 +147,17 @@ export class PublicApiError extends Error {
   }
 
   /**
-   * 是否需要分享链接
-   */
-  get isShareLinkRequired(): boolean {
-    return this.code === 'SHARE_LINK_REQUIRED'
-  }
-
-  /**
-   * 是否密码错误
+   * 密码是否错误
    */
   get isPasswordInvalid(): boolean {
     return this.code === 'PASSWORD_INVALID'
   }
 
   /**
-   * 是否分享链接失效
+   * 是否需要分享链接
    */
-  get isShareLinkInvalid(): boolean {
-    return ['SHARE_LINK_INVALID', 'SHARE_LINK_EXPIRED', 'SHARE_LINK_REVOKED'].includes(this.code)
+  get isShareLinkRequired(): boolean {
+    return this.code === 'SHARE_LINK_REQUIRED'
   }
 
   /**

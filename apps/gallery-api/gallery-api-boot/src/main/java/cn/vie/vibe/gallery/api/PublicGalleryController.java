@@ -1,13 +1,16 @@
 package cn.vie.vibe.gallery.api;
 
+import cn.vie.vibe.gallery.application.GalleryViewerConfigFacade;
 import cn.vie.vibe.gallery.application.PublicAccessFacade;
 import cn.vie.vibe.gallery.application.PublicGalleryView;
 import cn.vie.vibe.gallery.application.PublicPhotoView;
+import cn.vie.vibe.gallery.domain.GalleryViewerConfig;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
 import cn.vie.vibe.gallery.domain.PublicAccessState;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,13 +25,16 @@ import java.util.UUID;
 @RequestMapping("/api/public/g")
 public class PublicGalleryController {
     private final PublicAccessFacade publicAccessFacade;
+    private final GalleryViewerConfigFacade configFacade;
     private static final String PUBLIC_SESSION_GALLERY_ID = "public_gallery_id";
     private static final String PUBLIC_SESSION_EXPIRES_AT = "public_expires_at";
 
     public PublicGalleryController(
-        PublicAccessFacade publicAccessFacade
+            PublicAccessFacade publicAccessFacade,
+            GalleryViewerConfigFacade configFacade
     ) {
         this.publicAccessFacade = publicAccessFacade;
+        this.configFacade = configFacade;
     }
 
     /**
@@ -58,6 +64,27 @@ public class PublicGalleryController {
                 cover,
                 view.photoCount()
         );
+    }
+
+    /**
+     * 获取相册 3D 视觉展示配置
+     */
+    @GetMapping("/{slug}/viewer-config")
+    public ResponseEntity<GalleryViewerConfigController.GalleryViewerConfigResponse> getViewerConfig(
+            @PathVariable("slug") String slug
+    ) {
+        return configFacade.getPublicConfig(slug)
+                .map(config -> new GalleryViewerConfigController.GalleryViewerConfigResponse(
+                        config.id().toString(),
+                        config.galleryId().toString(),
+                        config.configJson(),
+                        config.enabled(),
+                        config.presetName(),
+                        config.createdAt(),
+                        config.updatedAt()
+                ))
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
     }
 
     /**
@@ -120,7 +147,6 @@ public class PublicGalleryController {
                 ))
                 .toList();
 
-        // 简化的分页响应（实际需要查询总数）
         return new PhotoListResponse(items, page, pageSize, items.size());
     }
 

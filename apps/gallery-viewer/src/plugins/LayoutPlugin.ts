@@ -1,6 +1,6 @@
 import type { ViewerPlugin, ViewerContext } from '../core/types'
 import { LAYOUT_GENERATORS } from '../lib/layouts'
-import type * as THREE from 'three'
+import * as THREE from 'three'
 
 interface AnimationTarget {
   mesh: THREE.Mesh
@@ -14,7 +14,7 @@ interface AnimationTarget {
 
 /**
  * 布局管理插件
- * 负责照片的布局切换和动画
+ * 负责照片的三维几何布局切换和缓动动画
  */
 export class LayoutPlugin implements ViewerPlugin {
   name = 'Layout'
@@ -27,11 +27,23 @@ export class LayoutPlugin implements ViewerPlugin {
 
   install(context: ViewerContext): void {
     this.context = context
-    this.currentLayout = context.config.layout.mode
+    this.currentLayout = context.config.layout.mode || 'sphere'
 
     // 监听布局切换事件
     context.on('layout:change', (mode: string) => {
       this.switchLayout(mode)
+    })
+
+    // 监听相册照片加载事件
+    context.on('photos:loaded', () => {
+      this.applyLayout(this.currentLayout)
+    })
+
+    // 监听全局配置变更
+    context.on('config:change', (data: any) => {
+      if (data.layout?.mode && data.layout.mode !== this.currentLayout) {
+        this.switchLayout(data.layout.mode)
+      }
     })
 
     // 初始布局
@@ -46,26 +58,26 @@ export class LayoutPlugin implements ViewerPlugin {
   update(delta: number, elapsed: number): void {
     this.clock = elapsed
 
-    // 更新所有动画
+    // 更新所有缓动过渡动画
     for (let i = this.animations.length - 1; i >= 0; i--) {
       const anim = this.animations[i]
       const progress = (this.clock - anim.startTime) / anim.duration
 
       if (progress >= 1) {
-        // 动画结束，设置最终位置
+        // 动画结束，固定最终位置
         anim.mesh.position.copy(anim.targetPos)
         anim.mesh.rotation.copy(anim.targetRot)
         this.animations.splice(i, 1)
       } else {
-        // 缓动函数：easeInOutQuad
+        // 优雅的高阶缓动函数：easeInOutQuad
         const t = progress < 0.5
           ? 2 * progress * progress
           : 1 - Math.pow(-2 * progress + 2, 2) / 2
 
-        // 插值位置
+        // 插值三维空间位置
         anim.mesh.position.lerpVectors(anim.startPos, anim.targetPos, t)
 
-        // 插值旋转
+        // 插值空间旋转角
         anim.mesh.rotation.x = anim.startRot.x + (anim.targetRot.x - anim.startRot.x) * t
         anim.mesh.rotation.y = anim.startRot.y + (anim.targetRot.y - anim.startRot.y) * t
         anim.mesh.rotation.z = anim.startRot.z + (anim.targetRot.z - anim.startRot.z) * t
@@ -74,57 +86,56 @@ export class LayoutPlugin implements ViewerPlugin {
   }
 
   /**
-   * 切换布局
+   * 切换布局模式（带插值过渡动画）
    */
-  private switchLayout(mode: string): void {
-    if (!this.context) return
-
-    const generator = LAYOUT_GENERATORS[mode as keyof typeof LAYOUT_GENERATORS]
-    if (!generator) {
-      console.warn(`Unknown layout mode: ${mode}`)
-      return
-    }
-
+  switchLayout(mode: string, duration = 1.4): void {
+    if (!this.context || !LAYOUT_GENERATORS[mode as keyof typeof LAYOUT_GENERATORS]) return
     this.currentLayout = mode
-    this.applyLayout(mode)
-  }
-
-  /**
-   * 应用布局
-   */
-  private applyLayout(mode: string): void {
-    if (!this.context) return
-
-    const generator = LAYOUT_GENERATORS[mode as keyof typeof LAYOUT_GENERATORS]
-    if (!generator) return
 
     const photos = this.context.photos
-    if (photos.length === 0) return
+    if (!photos || photos.length === 0) return
 
-    // 生成布局位置
-    const params = this.context.config.layout.params || {}
-    const positions = generator(photos.length, params)
+    const generator = LAYOUT_GENERATORS[mode as keyof typeof LAYOUT_GENERATORS]
+    const rawPositions = generator(photos.length)
 
-    // 清空旧动画
     this.animations = []
 
-    // 创建新动画
     photos.forEach((photo, i) => {
-      const pos = positions[i]
-      if (!pos) return
+      const p = rawPositions[i]
+      if (!p) return
+
+      const targetPos = new THREE.Vector3(p.x, p.y, p.z)
+      const targetRot = new THREE.Euler(p.rx || 0, p.ry || 0, p.rz || 0)
 
       this.animations.push({
         mesh: photo,
         startPos: photo.position.clone(),
         startRot: photo.rotation.clone(),
-        targetPos: new (photo.position.constructor as any)(pos.x, pos.y, pos.z),
-        targetRot: new (photo.rotation.constructor as any)(pos.rx, pos.ry, pos.rz),
+        targetPos,
+        targetRot,
         startTime: this.clock,
-        duration: 1.5
+        duration
       })
     })
+  }
 
-    // 触发布局应用完成事件
-    this.context.emit('layout:applied', { mode, positions })
+  /**
+   * 应用布局模式（立即定位）
+   */
+  private applyLayout(mode: string): void {
+    if (!this.context || !LAYOUT_GENERATORS[mode as keyof typeof LAYOUT_GENERATORS]) return
+    const photos = this.context.photos
+    if (!photos || photos.length === 0) return
+
+    const generator = LAYOUT_GENERATORS[mode as keyof typeof LAYOUT_GENERATORS]
+    const rawPositions = generator(photos.length)
+
+    photos.forEach((photo, i) => {
+      const p = rawPositions[i]
+      if (p) {
+        photo.position.set(p.x, p.y, p.z)
+        photo.rotation.set(p.rx || 0, p.ry || 0, p.rz || 0)
+      }
+    })
   }
 }

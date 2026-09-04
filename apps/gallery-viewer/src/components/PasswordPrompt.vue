@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import Icon from './Icon.vue'
 
-const props = defineProps<{
+defineProps<{
   isUnlocking: boolean
 }>()
 
@@ -11,46 +12,58 @@ const emit = defineEmits<{
 
 const password = ref('')
 const showPassword = ref(false)
+const hasError = ref(false)
 
 function handleSubmit() {
   if (password.value.trim()) {
     emit('unlock', password.value)
+  } else {
+    hasError.value = true
+    setTimeout(() => hasError.value = false, 600)
   }
 }
 </script>
 
 <template>
-  <div class="password-prompt">
-    <div class="prompt-content">
-      <h2>Password Required</h2>
-      <p class="hint">This gallery is password protected</p>
+  <div class="password-prompt-root">
+    <div class="glow-bg"></div>
+    <div class="prompt-card" :class="{ shake: hasError }">
+      <div class="lock-icon-box">
+        <Icon name="lock" :size="24" />
+      </div>
+
+      <div class="prompt-header">
+        <h2>私密相册已加密</h2>
+        <p>此空间已被所有者设为密码保护，请输入访问密码以解锁沉浸式浏览体验。</p>
+      </div>
 
       <form @submit.prevent="handleSubmit" class="password-form">
-        <div class="input-group">
+        <div class="input-container">
           <input
             v-model="password"
             :type="showPassword ? 'text' : 'password'"
-            placeholder="Enter password"
+            placeholder="请输入访问密钥或密码"
             :disabled="isUnlocking"
             autofocus
             class="password-input"
           />
           <button
             type="button"
+            class="toggle-eye"
+            :title="showPassword ? '隐藏密码' : '显示密码'"
             @click="showPassword = !showPassword"
-            class="toggle-visibility"
-            :aria-label="showPassword ? 'Hide password' : 'Show password'"
           >
-            {{ showPassword ? '👁️' : '👁️‍🗨️' }}
+            <Icon :name="showPassword ? 'eye-off' : 'eye'" :size="18" />
           </button>
         </div>
 
         <button
           type="submit"
+          class="unlock-btn"
           :disabled="!password.trim() || isUnlocking"
-          class="unlock-button"
         >
-          {{ isUnlocking ? 'Unlocking...' : 'Unlock' }}
+          <Icon v-if="isUnlocking" name="refresh" :size="16" class="spin" />
+          <span>{{ isUnlocking ? '解密验证中…' : '验证密码并进入' }}</span>
         </button>
       </form>
     </div>
@@ -58,106 +71,157 @@ function handleSubmit() {
 </template>
 
 <style scoped>
-.password-prompt {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.password-prompt-root {
+  position: relative;
+  display: grid;
+  place-items: center;
   min-height: 100vh;
-  padding: 2rem;
-  background: #F7F5F1;
+  padding: 24px;
+  background: #090e11;
+  color: #f1f5f9;
 }
 
-.prompt-content {
-  width: 100%;
-  max-width: 420px;
-  padding: 3rem 2.5rem;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+.glow-bg {
+  position: absolute;
+  width: 440px;
+  height: 440px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.18) 0%, transparent 70%);
+  filter: blur(50px);
+  pointer-events: none;
 }
 
-h2 {
-  font-family: 'Playfair Display', serif;
-  font-size: 2rem;
+.prompt-card {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  background: rgba(18, 25, 30, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 36px 32px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.lock-icon-box {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 20px;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.prompt-header h2 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 22px;
   font-weight: 600;
-  color: #1E2227;
-  margin: 0 0 0.5rem;
+  color: #ffffff;
+  margin-bottom: 8px;
 }
 
-.hint {
-  color: #6B7077;
-  margin: 0 0 2rem;
-  font-size: 0.938rem;
+.prompt-header p {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin-bottom: 24px;
 }
 
 .password-form {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
 }
 
-.input-group {
+.input-container {
   position: relative;
   display: flex;
+  align-items: center;
 }
 
 .password-input {
-  flex: 1;
-  padding: 0.75rem 3rem 0.75rem 1rem;
-  border: 1px solid #E7E3DA;
-  border-radius: 4px;
-  font-size: 1rem;
-  font-family: Inter, sans-serif;
-  transition: border-color 0.2s;
+  width: 100%;
+  padding: 12px 42px 12px 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  font-size: 14px;
+  color: #ffffff;
+  outline: none;
+  transition: all 0.2s ease;
 }
 
 .password-input:focus {
-  outline: none;
-  border-color: #3C5A78;
+  border-color: #10b981;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
 }
 
-.password-input:disabled {
-  background: #F7F5F1;
-  cursor: not-allowed;
-}
-
-.toggle-visibility {
+.toggle-eye {
   position: absolute;
-  right: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 12px;
   background: none;
   border: none;
-  padding: 0.5rem;
+  color: #94a3b8;
   cursor: pointer;
-  font-size: 1.25rem;
-  opacity: 0.6;
-  transition: opacity 0.2s;
+  display: grid;
+  place-items: center;
+  padding: 4px;
 }
 
-.toggle-visibility:hover {
-  opacity: 1;
+.toggle-eye:hover {
+  color: #ffffff;
 }
 
-.unlock-button {
-  padding: 0.875rem 1.5rem;
-  background: #3C5A78;
-  color: white;
+.unlock-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
   border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  font-weight: 500;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
 }
 
-.unlock-button:hover:not(:disabled) {
-  background: #2E4760;
+.unlock-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  transform: translateY(-1px);
 }
 
-.unlock-button:disabled {
-  background: #E7E3DA;
-  color: #6B7077;
+.unlock-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.shake {
+  animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
 }
 </style>

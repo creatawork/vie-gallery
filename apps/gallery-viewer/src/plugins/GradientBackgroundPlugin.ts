@@ -5,7 +5,7 @@ import type { ViewerPlugin, ViewerContext } from '../core/types'
  * 渐变背景插件
  */
 export class GradientBackgroundPlugin implements ViewerPlugin {
-  name = 'gradient-background'
+  name = 'GradientBackground'
   version = '1.0.0'
 
   private context: ViewerContext | null = null
@@ -25,31 +25,45 @@ export class GradientBackgroundPlugin implements ViewerPlugin {
     context.on('theme:update', (colors) => {
       this.updateColors([colors.background, colors.fog])
     })
+
+    context.on('config:change', (data: any) => {
+      if (data.background?.type === 'gradient' && data.background.gradient) {
+        this.updateColors(data.background.gradient.colors, data.background.gradient.direction)
+      }
+    })
   }
 
   uninstall(): void {
-    if (this.mesh && this.context) {
+    if (this.context && this.mesh) {
       this.context.removeFromScene(this.mesh)
-      this.mesh.geometry.dispose()
-      ;(this.mesh.material as THREE.Material).dispose()
-      this.mesh = null
     }
+
+    if (this.mesh) {
+      this.mesh.geometry.dispose()
+      if (Array.isArray(this.mesh.material)) {
+        this.mesh.material.forEach(m => m.dispose())
+      } else {
+        this.mesh.material.dispose()
+      }
+    }
+
+    this.context = null
+    this.mesh = null
   }
 
-  /**
-   * 创建渐变网格
-   */
-  private createGradientMesh(colors: string[], direction: string): void {
+  private createGradientMesh(colors: string[], direction: string = 'vertical'): void {
     if (!this.context) return
 
-    const geometry = new THREE.PlaneGeometry(5000, 5000)
+    const geometry = new THREE.PlaneGeometry(8000, 8000)
 
-    // 创建渐变着色器
+    const uniforms = {
+      uColor1: { value: new THREE.Color(colors[0] || '#F7F5F1') },
+      uColor2: { value: new THREE.Color(colors[1] || '#E7E3DA') },
+      uDirection: { value: direction === 'horizontal' ? 1.0 : (direction === 'radial' ? 2.0 : 0.0) }
+    }
+
     const material = new THREE.ShaderMaterial({
-      uniforms: {
-        color1: { value: new THREE.Color(colors[0]) },
-        color2: { value: new THREE.Color(colors[1] || colors[0]) }
-      },
+      uniforms,
       vertexShader: `
         varying vec2 vUv;
         void main() {
@@ -57,59 +71,49 @@ export class GradientBackgroundPlugin implements ViewerPlugin {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
-      fragmentShader: this.getFragmentShader(direction),
-      side: THREE.DoubleSide,
-      depthWrite: false
+      fragmentShader: `
+        uniform vec3 uColor1;
+        uniform vec3 uColor2;
+        uniform float uDirection;
+        varying vec2 vUv;
+
+        void main() {
+          float t = vUv.y;
+          if (uDirection > 1.5) {
+            // radial
+            float dist = distance(vUv, vec2(0.5));
+            t = clamp(dist * 1.4, 0.0, 1.0);
+          } else if (uDirection > 0.5) {
+            // horizontal
+            t = vUv.x;
+          }
+          vec3 color = mix(uColor1, uColor2, t);
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `,
+      depthWrite: false,
+      depthTest: false
     })
 
     this.mesh = new THREE.Mesh(geometry, material)
     this.mesh.position.z = -2000
-    this.mesh.renderOrder = -1
-
+    this.mesh.renderOrder = -100
     this.context.addToScene(this.mesh)
   }
 
-  /**
-   * 获取片段着色器
-   */
-  private getFragmentShader(direction: string): string {
-    const baseShader = `
-      uniform vec3 color1;
-      uniform vec3 color2;
-      varying vec2 vUv;
-
-      void main() {
-    `
-
-    let gradientLogic = ''
-    switch (direction) {
-      case 'horizontal':
-        gradientLogic = 'float mixRatio = vUv.x;'
-        break
-      case 'radial':
-        gradientLogic = 'float mixRatio = length(vUv - 0.5) * 2.0;'
-        break
-      case 'vertical':
-      default:
-        gradientLogic = 'float mixRatio = vUv.y;'
+  private updateColors(colors: string[], direction?: string): void {
+    if (!this.mesh) {
+      this.createGradientMesh(colors, direction)
+      return
     }
 
-    return `${baseShader}
-        ${gradientLogic}
-        vec3 color = mix(color1, color2, mixRatio);
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `
-  }
-
-  /**
-   * 更新颜色
-   */
-  private updateColors(colors: string[]): void {
-    if (!this.mesh) return
-
     const material = this.mesh.material as THREE.ShaderMaterial
-    material.uniforms.color1.value.set(colors[0])
-    material.uniforms.color2.value.set(colors[1] || colors[0])
+    if (material && material.uniforms) {
+      if (colors[0]) material.uniforms.uColor1.value.set(colors[0])
+      if (colors[1]) material.uniforms.uColor2.value.set(colors[1])
+      if (direction) {
+        material.uniforms.uDirection.value = direction === 'horizontal' ? 1.0 : (direction === 'radial' ? 2.0 : 0.0)
+      }
+    }
   }
 }

@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * M3 配置：分享链接和公开访问
+ * M3 配置：分享链接、公开访问和 3D 视觉展示配置
  */
 @Configuration
 public class M3ShareLinkConfig {
@@ -46,6 +46,17 @@ public class M3ShareLinkConfig {
                 objectStoragePort,
                 passwordHasher,
                 tokenGenerator
+        );
+    }
+
+    @Bean
+    public GalleryViewerConfigFacade galleryViewerConfigFacade(
+            GalleryViewerConfigRepository galleryViewerConfigRepository,
+            GalleryRepository galleryRepository
+    ) {
+        return new GalleryViewerConfigFacade(
+                galleryViewerConfigRepository,
+                galleryRepository
         );
     }
 }

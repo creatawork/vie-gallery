@@ -1,0 +1,49 @@
+{
+  "presetName": "starry-night",
+  "layout": {
+    "mode": "sphere"
+  },
+  "background": {
+    "type": "sky",
+    "sky": {
+      "theme": "starry",
+      "timeOfDay": "night"
+    }
+  },
+  "particles": {
+    "enabled": true,
+    "types": ["stars"],
+    "density": 1.5
+  },
+  "effects": {
+    "bloom": {
+      "enabled": true,
+      "strength": 0.8
+    },
+    "fog": {
+      "enabled": false
+    }
+  },
+  "interaction": {
+    "clickRipple": true
+  },
+  "audio": {
+    "bgm": {
+      "enabled": true,
+      "track": "night-sky"
+    },
+    "sfx": {
+      "enabled": true
+    }
+  },
+  "theme": {
+    "engine": "custom",
+    "customColors": {
+      "primary": "#1e3c72",
+      "secondary": "#2a5298",
+      "accent": "#7ec8e3",
+      "background": "#0f2027",
+      "fog": "#2a5298"
+    }
+  }
+}

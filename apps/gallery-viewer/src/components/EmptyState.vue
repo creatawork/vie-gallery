@@ -1,50 +1,67 @@
 <script setup lang="ts">
+import Icon from './Icon.vue'
+
 defineProps<{
   message?: string
 }>()
 </script>
 
 <template>
-  <div class="empty-state">
-    <div class="empty-content">
-      <div class="empty-icon">📷</div>
-      <h2>No Photos Yet</h2>
-      <p>{{ message || 'This gallery is empty' }}</p>
+  <div class="empty-state-root">
+    <div class="empty-card">
+      <div class="icon-circle">
+        <Icon name="photo" :size="32" />
+      </div>
+      <h2>相册暂无照片</h2>
+      <p>{{ message || '相册内暂未上传照片，请等待创作者添加内容。' }}</p>
     </div>
   </div>
 </template>
 
 <style scoped>
-.empty-state {
+.empty-state-root {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  padding: 2rem;
-  background: #F7F5F1;
+  padding: 24px;
+  background: #090e11;
+  color: #f1f5f9;
 }
 
-.empty-content {
+.empty-card {
   text-align: center;
   max-width: 420px;
+  background: rgba(18, 25, 30, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 40px 32px;
 }
 
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  opacity: 0.4;
+.icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 20px;
 }
 
 h2 {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.75rem;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 22px;
   font-weight: 600;
-  color: #1E2227;
-  margin: 0 0 0.75rem;
+  color: #ffffff;
+  margin-bottom: 8px;
 }
 
 p {
-  color: #6B7077;
+  font-size: 13.5px;
+  color: #94a3b8;
   line-height: 1.6;
 }
 </style>

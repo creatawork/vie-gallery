@@ -41,26 +41,23 @@ export class PluginManager {
    * 设置插件注册表（支持懒加载）
    */
   setRegistry(registry: Record<string, () => Promise<ViewerPlugin>>): void {
-    console.log('📦 Setting plugin registry with', Object.keys(registry).length, 'plugins:', Object.keys(registry))
     for (const [name, loader] of Object.entries(registry)) {
       this.registry.set(name, loader)
     }
-    console.log('✓ Registry set, total plugins:', this.registry.size)
   }
 
   /**
    * 注册插件
    */
-  register(plugin: ViewerPlugin): void {
-    if (this.plugins.has(plugin.name)) {
-      console.warn(`Plugin "${plugin.name}" is already registered`)
-      return
-    }
-
-    this.plugins.set(plugin.name, {
+  register(plugin: ViewerPlugin, alias?: string): void {
+    const wrapper: PluginWrapper = {
       plugin,
       state: PluginState.UNINSTALLED
-    })
+    }
+    this.plugins.set(plugin.name, wrapper)
+    if (alias && alias !== plugin.name) {
+      this.plugins.set(alias, wrapper)
+    }
   }
 
   /**
@@ -74,30 +71,22 @@ export class PluginManager {
    * 安装插件
    */
   async install(name: string): Promise<void> {
-    console.log(`🔌 Installing plugin "${name}"...`)
-    console.log(`   Registry has ${this.registry.size} entries:`, Array.from(this.registry.keys()))
-
-    // 如果已注册，直接安装
     let wrapper = this.plugins.get(name)
 
     // 如果未注册但在注册表中，先懒加载
     if (!wrapper && this.registry.has(name)) {
-      console.log(`   ⏳ Lazy loading "${name}" from registry...`)
       const loader = this.registry.get(name)!
       const plugin = await loader()
-      console.log(`   ✓ Plugin loaded:`, plugin.name)
-      this.register(plugin)
-      wrapper = this.plugins.get(name)
+      this.register(plugin, name)
+      wrapper = this.plugins.get(name) || this.plugins.get(plugin.name)
     }
 
     if (!wrapper) {
-      console.error(`   ❌ Plugin "${name}" is not registered`)
-      console.error(`   Available in registry:`, Array.from(this.registry.keys()))
-      throw new Error(`Plugin "${name}" is not registered`)
+      console.warn(`Plugin "${name}" is not registered`)
+      return
     }
 
     if (wrapper.state === PluginState.INSTALLED) {
-      console.warn(`Plugin "${name}" is already installed`)
       return
     }
 
@@ -120,7 +109,6 @@ export class PluginManager {
     try {
       await wrapper.plugin.install(this.context)
       wrapper.state = PluginState.INSTALLED
-      console.log(`Plugin "${name}" installed successfully`)
     } catch (error) {
       wrapper.state = PluginState.FAILED
       wrapper.error = error as Error
@@ -133,8 +121,6 @@ export class PluginManager {
    * 批量安装插件
    */
   async installAll(names: string[]): Promise<void> {
-    // 先逐个安装（install 方法会自动懒加载）
-    // 不使用拓扑排序，因为插件可能还没加载，无法检查依赖
     for (const name of names) {
       await this.install(name)
     }
@@ -146,32 +132,18 @@ export class PluginManager {
   uninstall(name: string): void {
     const wrapper = this.plugins.get(name)
     if (!wrapper) {
-      console.warn(`Plugin "${name}" is not registered`)
       return
     }
 
     if (wrapper.state !== PluginState.INSTALLED) {
-      console.warn(`Plugin "${name}" is not installed`)
       return
-    }
-
-    // 检查是否有其他插件依赖它
-    for (const [otherName, otherWrapper] of this.plugins) {
-      if (
-        otherWrapper.state === PluginState.INSTALLED &&
-        otherWrapper.plugin.dependencies?.includes(name)
-      ) {
-        throw new Error(`Cannot uninstall "${name}" because "${otherName}" depends on it`)
-      }
     }
 
     try {
       wrapper.plugin.uninstall()
       wrapper.state = PluginState.UNINSTALLED
-      console.log(`Plugin "${name}" uninstalled successfully`)
     } catch (error) {
       console.error(`Failed to uninstall plugin "${name}":`, error)
-      throw error
     }
   }
 
@@ -179,9 +151,7 @@ export class PluginManager {
    * 批量卸载插件
    */
   uninstallAll(names: string[]): void {
-    // 逆拓扑排序，按依赖顺序卸载
-    const sorted = this.topologicalSort(names).reverse()
-    for (const name of sorted) {
+    for (const name of names) {
       this.uninstall(name)
     }
   }
@@ -204,17 +174,23 @@ export class PluginManager {
    * 获取所有已安装的插件
    */
   getInstalled(): ViewerPlugin[] {
-    return Array.from(this.plugins.values())
-      .filter(w => w.state === PluginState.INSTALLED)
-      .map(w => w.plugin)
+    const unique = new Set<ViewerPlugin>()
+    for (const w of this.plugins.values()) {
+      if (w.state === PluginState.INSTALLED) {
+        unique.add(w.plugin)
+      }
+    }
+    return Array.from(unique)
   }
 
   /**
    * 更新所有插件
    */
   update(delta: number, elapsed: number): void {
+    const visited = new Set<ViewerPlugin>()
     for (const wrapper of this.plugins.values()) {
-      if (wrapper.state === PluginState.INSTALLED && wrapper.plugin.update) {
+      if (wrapper.state === PluginState.INSTALLED && wrapper.plugin.update && !visited.has(wrapper.plugin)) {
+        visited.add(wrapper.plugin)
         try {
           wrapper.plugin.update(delta, elapsed)
         } catch (error) {
@@ -228,8 +204,10 @@ export class PluginManager {
    * 窗口调整通知
    */
   onResize(width: number, height: number): void {
+    const visited = new Set<ViewerPlugin>()
     for (const wrapper of this.plugins.values()) {
-      if (wrapper.state === PluginState.INSTALLED && wrapper.plugin.onResize) {
+      if (wrapper.state === PluginState.INSTALLED && wrapper.plugin.onResize && !visited.has(wrapper.plugin)) {
+        visited.add(wrapper.plugin)
         try {
           wrapper.plugin.onResize(width, height)
         } catch (error) {
@@ -243,41 +221,8 @@ export class PluginManager {
    * 清理所有插件
    */
   dispose(): void {
-    const installed = Array.from(this.plugins.entries())
-      .filter(([_, w]) => w.state === PluginState.INSTALLED)
-      .map(([name]) => name)
-
-    this.uninstallAll(installed)
+    const installedNames = Array.from(this.plugins.keys())
+    this.uninstallAll(installedNames)
     this.plugins.clear()
-  }
-
-  /**
-   * 拓扑排序（处理依赖关系）
-   */
-  private topologicalSort(names: string[]): string[] {
-    const visited = new Set<string>()
-    const sorted: string[] = []
-
-    const visit = (name: string) => {
-      if (visited.has(name)) return
-
-      const wrapper = this.plugins.get(name)
-      if (!wrapper) {
-        throw new Error(`Plugin "${name}" is not registered`)
-      }
-
-      // 先访问依赖
-      if (wrapper.plugin.dependencies) {
-        for (const dep of wrapper.plugin.dependencies) {
-          visit(dep)
-        }
-      }
-
-      visited.add(name)
-      sorted.push(name)
-    }
-
-    names.forEach(visit)
-    return sorted
   }
 }

@@ -1,0 +1,49 @@
+{
+  "presetName": "romantic",
+  "layout": {
+    "mode": "sphere"
+  },
+  "background": {
+    "type": "gradient",
+    "gradient": {
+      "colors": ["#ffecd2", "#fcb69f"],
+      "direction": "vertical"
+    }
+  },
+  "particles": {
+    "enabled": true,
+    "types": ["hearts"],
+    "density": 0.8
+  },
+  "effects": {
+    "bloom": {
+      "enabled": true,
+      "strength": 0.7
+    },
+    "fog": {
+      "enabled": false
+    }
+  },
+  "interaction": {
+    "clickRipple": true
+  },
+  "audio": {
+    "bgm": {
+      "enabled": true,
+      "track": "romantic-piano"
+    },
+    "sfx": {
+      "enabled": true
+    }
+  },
+  "theme": {
+    "engine": "custom",
+    "customColors": {
+      "primary": "#ff6b9d",
+      "secondary": "#fec3a6",
+      "accent": "#ff8fab",
+      "background": "#ffecd2",
+      "fog": "#fcb69f"
+    }
+  }
+}
