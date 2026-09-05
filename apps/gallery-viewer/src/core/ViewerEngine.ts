@@ -196,16 +196,21 @@ export class ViewerEngine {
       if (newConfig.background.type === 'gradient') await this.pluginManager.install('GradientBackground')
     }
 
-    // 2. 处理粒子系统开启/关闭
+    // 2. 处理粒子系统开启/关闭或类型变化
     if (newConfig.particles !== undefined) {
       const prevEnabled = prevConfig.particles?.enabled
       const nextEnabled = newConfig.particles?.enabled
+      const isCurrentlyInstalled = this.pluginManager.isInstalled('Particles')
 
-      if (!prevEnabled && nextEnabled) {
+      // 粒子系统从禁用变为启用
+      if (!prevEnabled && nextEnabled && !isCurrentlyInstalled) {
         await this.pluginManager.install('Particles')
-      } else if (prevEnabled && !nextEnabled) {
+      } 
+      // 粒子系统从启用变为禁用
+      else if (prevEnabled && !nextEnabled && isCurrentlyInstalled) {
         this.pluginManager.uninstall('Particles')
       }
+      // 注意：粒子类型变化由 ParticlesPlugin 自己的 handleConfigChange 处理
     }
 
     // 3. 处理 Bloom 后处理开启/关闭

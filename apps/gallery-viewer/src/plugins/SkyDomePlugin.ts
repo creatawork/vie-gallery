@@ -46,7 +46,7 @@ export class SkyDomePlugin implements ViewerPlugin {
     this.currentTheme = config.sky?.theme || 'starry'
     this.applyTheme(this.currentTheme)
 
-    context.on('config:change', this.handleConfigChange)
+    // 只监听 config:update 事件，避免重复触发
     context.on('config:update', this.handleConfigChange)
   }
 
@@ -63,7 +63,6 @@ export class SkyDomePlugin implements ViewerPlugin {
       }
     }
 
-    this.context?.off('config:change', this.handleConfigChange)
     this.context?.off('config:update', this.handleConfigChange)
     this.context = null
     this.mesh = null

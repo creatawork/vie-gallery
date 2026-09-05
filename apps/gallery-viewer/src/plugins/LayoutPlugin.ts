@@ -50,13 +50,7 @@ export class LayoutPlugin implements ViewerPlugin {
       this.applyLayout(this.currentLayout)
     })
 
-    // 监听全局配置变更
-    context.on('config:change', (data: any) => {
-      if (data.layout?.mode && data.layout.mode !== this.currentLayout) {
-        this.switchLayout(data.layout.mode)
-      }
-    })
-
+    // 只监听 config:update 事件，避免重复触发
     context.on('config:update', (data: any) => {
       if (data.layout?.mode && data.layout.mode !== this.currentLayout) {
         this.switchLayout(data.layout.mode)

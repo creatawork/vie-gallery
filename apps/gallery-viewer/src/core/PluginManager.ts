@@ -171,6 +171,13 @@ export class PluginManager {
   }
 
   /**
+   * 插件是否已装配
+   */
+  isInstalled(name: string): boolean {
+    return this.plugins.get(name)?.state === PluginState.INSTALLED
+  }
+
+  /**
    * 获取所有已安装的插件
    */
   getInstalled(): ViewerPlugin[] {

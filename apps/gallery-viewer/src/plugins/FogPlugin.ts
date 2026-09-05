@@ -26,7 +26,8 @@ export class FogPlugin implements ViewerPlugin {
     this.fog = new THREE.FogExp2(color, density)
     context.scene.fog = this.fog
 
-    context.on('config:change', this.handleConfigChange)
+    // 只监听 config:update 事件，避免重复触发
+    context.on('config:update', this.handleConfigChange)
   }
 
   uninstall(): void {
@@ -34,7 +35,7 @@ export class FogPlugin implements ViewerPlugin {
       this.context.scene.fog = null
     }
 
-    this.context?.off('config:change', this.handleConfigChange)
+    this.context?.off('config:update', this.handleConfigChange)
     this.context = null
     this.fog = null
   }

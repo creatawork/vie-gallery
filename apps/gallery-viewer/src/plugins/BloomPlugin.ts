@@ -105,7 +105,7 @@ export class BloomPlugin implements ViewerPlugin {
     const outputPass = new OutputPass()
     this.composer.addPass(outputPass)
 
-    context.on('config:change', this.handleConfigChange)
+    // 只监听 config:update 事件，避免重复触发
     context.on('config:update', this.handleConfigChange)
     context.on('resize', this.handleResize)
   }
@@ -115,7 +115,6 @@ export class BloomPlugin implements ViewerPlugin {
       this.composer.dispose?.()
     }
 
-    this.context?.off('config:change', this.handleConfigChange)
     this.context?.off('config:update', this.handleConfigChange)
     this.context?.off('resize', this.handleResize)
 

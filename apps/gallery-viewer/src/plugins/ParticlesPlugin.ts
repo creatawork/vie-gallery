@@ -17,7 +17,7 @@ export class ParticlesPlugin implements ViewerPlugin {
 
   private context: ViewerContext | null = null
   private systems: Map<string, ParticleSystem> = new Map()
-  private isReinstalling = false
+  private currentTypes: string[] = []
 
   async install(context: ViewerContext): Promise<void> {
     this.context = context
@@ -26,9 +26,11 @@ export class ParticlesPlugin implements ViewerPlugin {
     if (!config?.enabled) return
 
     const isMobile = context.isMobile()
+    const types = config.types || []
+    this.currentTypes = [...types]
 
     // 根据配置创建粒子系统
-    for (const type of config.types || []) {
+    for (const type of types) {
       let system: ParticleSystem
 
       switch (type) {
@@ -51,7 +53,7 @@ export class ParticlesPlugin implements ViewerPlugin {
       this.systems.set(type, system)
     }
 
-    context.on('config:change', this.handleConfigChange)
+    // 只监听 config:update 事件，避免重复触发
     context.on('config:update', this.handleConfigChange)
   }
 
@@ -60,8 +62,8 @@ export class ParticlesPlugin implements ViewerPlugin {
       system.dispose()
     }
     this.systems.clear()
+    this.currentTypes = []
 
-    this.context?.off('config:change', this.handleConfigChange)
     this.context?.off('config:update', this.handleConfigChange)
     this.context = null
   }
@@ -72,17 +74,58 @@ export class ParticlesPlugin implements ViewerPlugin {
     }
   }
 
-  private handleConfigChange = (data: any): void => {
-    if (!data.particles || this.isReinstalling) return
+  private handleConfigChange = (newConfig: any): void => {
+    if (!newConfig?.particles) return
 
-    // 重新安装生效，设置标志防止递归
-    this.isReinstalling = true
-    const prevContext = this.context
-    this.uninstall()
-    if (prevContext) {
-      this.install(prevContext)
+    const newTypes = newConfig.particles.types || []
+    
+    // 检查粒子类型是否真正变化
+    const typesChanged = 
+      newTypes.length !== this.currentTypes.length ||
+      !newTypes.every((type: string) => this.currentTypes.includes(type))
+
+    if (!typesChanged) {
+      // 类型未变化，只更新 context 引用即可
+      return
     }
-    this.isReinstalling = false
+
+    // 类型变化了，需要重新创建粒子系统
+    const prevContext = this.context
+    
+    // 先卸载旧系统（不触发事件注销）
+    for (const system of this.systems.values()) {
+      system.dispose()
+    }
+    this.systems.clear()
+
+    // 重新安装新系统
+    if (prevContext && newConfig.particles.enabled) {
+      const isMobile = prevContext.isMobile()
+      this.currentTypes = [...newTypes]
+
+      for (const type of newTypes) {
+        let system: ParticleSystem
+
+        switch (type) {
+          case 'stars':
+            system = new StarDustSystem(prevContext.scene, isMobile)
+            break
+          case 'sakura':
+            system = new SakuraSystem(prevContext.scene, isMobile)
+            break
+          case 'hearts':
+            system = new HeartsSystem(prevContext.scene, isMobile)
+            break
+          case 'snow':
+            system = new SnowSystem(prevContext.scene, isMobile)
+            break
+          default:
+            continue
+        }
+
+        this.systems.set(type, system)
+      }
+    }
   }
 }
 
