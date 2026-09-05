@@ -352,7 +352,7 @@ export class ConfigManager {
 
     // 2. 覆盖单个参数
     const layout = params.get('layout')
-    if (layout && ['sphere', 'helix', 'grid', 'spiral', 'random'].includes(layout)) {
+    if (layout && ['sphere', 'carousel', 'helix', 'grid', 'spiral', 'random'].includes(layout)) {
       baseConfig.layout = { mode: layout }
     }
 

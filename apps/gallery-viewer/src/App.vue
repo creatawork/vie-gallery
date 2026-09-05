@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
 import { useViewerState } from './composables/useViewerState'
-import { ViewerEngine } from './core/ViewerEngine'
+import { ViewerEngine, type EngineMetrics } from './core/ViewerEngine'
 import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
 import ErrorState from './components/ErrorState.vue'
@@ -32,6 +32,19 @@ const currentPreset = ref('starry-night')
 const copied = ref(false)
 const isFullscreen = ref(false)
 
+// 电影级巡航与交互增强
+const isAutoTour = ref(false)
+const hoveredPhoto = ref<{ index: number; title: string } | null>(null)
+const hoveredScreenPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
+const showApm = ref(false)
+const apmMetrics = ref<EngineMetrics | null>(null)
+const gyroEnabled = ref(false)
+
+// Raycaster
+const raycaster = new THREE.Raycaster()
+const mousePos = new THREE.Vector2()
+let lastHoveredMesh: THREE.Mesh | null = null
+
 const presets = [
   { name: 'starry-night', label: '星空夜曲 · Cosmic', icon: 'sparkles' },
   { name: 'forest-dream', label: '森林之梦 · Sakura', icon: 'sparkles' },
@@ -44,12 +57,41 @@ const presets = [
 onMounted(() => {
   viewer.initialize()
   document.addEventListener('fullscreenchange', handleFullscreenChange)
+  window.addEventListener('message', handlePostMessage)
 })
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  window.removeEventListener('deviceorientation', handleOrientation, true)
+  window.removeEventListener('message', handlePostMessage)
   destroy3DEngine()
 })
+
+// 动态按需挂载陀螺仪监听（避免权限策略拦截与无意义开销）
+watch(gyroEnabled, (enabled) => {
+  if (enabled) {
+    try {
+      window.addEventListener('deviceorientation', handleOrientation, true)
+    } catch (e) {
+      console.warn('Device orientation not supported or permitted', e)
+    }
+  } else {
+    window.removeEventListener('deviceorientation', handleOrientation, true)
+  }
+})
+
+function handlePostMessage(event: MessageEvent) {
+  if (!event.data || typeof event.data !== 'object') return
+  const { type, mode, config, presetName } = event.data
+
+  if (type === 'VIE_LAYOUT_CHANGE' && mode && engine) {
+    engine.getEventBus().emit('layout:change', mode)
+  } else if (type === 'VIE_PRESET_CHANGE' && presetName) {
+    selectPreset(presetName)
+  } else if (type === 'VIE_CONFIG_UPDATE' && config && engine) {
+    engine.applyConfig(config)
+  }
+}
 
 function handleFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
@@ -83,13 +125,8 @@ async function init3DEngine() {
 
   try {
     const rawPhotos = viewer.photos.value
-    // 如果没有照片，且处于非准备状态，则不初始化
     if (!rawPhotos || rawPhotos.length === 0) {
-      if (slug === 'demo') {
-        // demo 模式 fallback 占位
-      } else {
-        return
-      }
+      if (slug !== 'demo') return
     }
 
     engine = new ViewerEngine(canvasRef.value)
@@ -98,11 +135,9 @@ async function init3DEngine() {
     const textureLoader = new THREE.TextureLoader()
     const meshes: any[] = []
 
-    // 若真实照片存在，完全按真实照片数组生成
     const photoList = rawPhotos.length > 0 ? rawPhotos : (slug === 'demo' ? createDemoFallbackPhotos() : [])
 
     photoList.forEach((p, i) => {
-      // 保持照片宽高比计算
       const w = 80
       const aspectRatio = (p.width && p.height) ? (p.width / p.height) : (4 / 3)
       const h = Math.round(w / aspectRatio)
@@ -137,8 +172,173 @@ async function init3DEngine() {
     engine.setPhotos(meshes)
     await engine.init(slug)
     engine.start()
+
+    // 监听 APM 探针
+    engine.getEventBus().on('metrics:update', (metrics: EngineMetrics) => {
+      apmMetrics.value = metrics
+    })
+
+    // 绑定 3D 悬停与交互
+    bindCanvasInteractions()
   } catch (err) {
     console.error('Failed to init 3D engine:', err)
+  }
+}
+
+function bindCanvasInteractions() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+
+  let pointerDownPos = { x: 0, y: 0 }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    pointerDownPos = { x: e.clientX, y: e.clientY }
+  })
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!engine) return
+    const rect = canvas.getBoundingClientRect()
+    mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+    raycaster.setFromCamera(mousePos, engine.getCamera())
+    const intersects = raycaster.intersectObjects(engine.getPhotos())
+
+    if (intersects.length > 0) {
+      const hit = intersects[0].object as THREE.Mesh
+      canvas.style.cursor = 'pointer'
+
+      if (lastHoveredMesh !== hit) {
+        if (lastHoveredMesh) {
+          lastHoveredMesh.scale.set(1, 1, 1)
+        }
+        lastHoveredMesh = hit
+        hit.scale.set(1.08, 1.08, 1.08)
+      }
+
+      hoveredPhoto.value = {
+        index: hit.userData.index,
+        title: hit.userData.title
+      }
+      hoveredScreenPos.value = { x: e.clientX, y: e.clientY }
+    } else {
+      if (lastHoveredMesh) {
+        lastHoveredMesh.scale.set(1, 1, 1)
+        lastHoveredMesh = null
+      }
+      canvas.style.cursor = 'default'
+      hoveredPhoto.value = null
+    }
+  })
+
+  canvas.addEventListener('click', (e) => {
+    // 过滤拖拽旋转操作
+    const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y)
+    if (dist > 6) return
+
+    if (!engine) return
+    const rect = canvas.getBoundingClientRect()
+    mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+    raycaster.setFromCamera(mousePos, engine.getCamera())
+    const intersects = raycaster.intersectObjects(engine.getPhotos())
+
+    if (intersects.length > 0) {
+      const hit = intersects[0].object as THREE.Mesh
+      const idx = hit.userData.index
+      flyToPhotoAndFocus(hit, () => {
+        openLightbox(idx)
+      })
+    }
+  })
+}
+
+/**
+ * 电影级相机平滑飞行聚焦 (Cinematic Smooth Flight)
+ */
+function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
+  if (!engine) return
+  engine.notifyTransitionStart()
+
+  const camera = engine.getCamera()
+  const controls = engine.getControls()
+  if (!controls) return
+
+  const targetWorldPos = new THREE.Vector3()
+  mesh.getWorldPosition(targetWorldPos)
+
+  const normal = new THREE.Vector3(0, 0, 1).applyEuler(mesh.rotation)
+  const targetCamPos = targetWorldPos.clone().add(normal.multiplyScalar(220))
+
+  const startCamPos = camera.position.clone()
+  const startTarget = controls.target.clone()
+
+  let startTime = performance.now()
+  const duration = 1200 // 1.2s 电影级俯冲曲线
+
+  function step(now: number) {
+    const elapsed = now - startTime
+    const t = Math.min(1, elapsed / duration)
+    // easeInOutCubic
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+
+    camera.position.lerpVectors(startCamPos, targetCamPos, ease)
+    controls.target.lerpVectors(startTarget, targetWorldPos, ease)
+    controls.update()
+
+    if (t < 1) {
+      requestAnimationFrame(step)
+    } else {
+      engine?.notifyTransitionEnd()
+      if (onComplete) onComplete()
+    }
+  }
+
+  requestAnimationFrame(step)
+}
+
+/**
+ * 切换无人机自动漫游巡航
+ */
+function toggleAutoTour() {
+  isAutoTour.value = !isAutoTour.value
+  if (engine && engine.getControls()) {
+    const controls = engine.getControls()!
+    controls.autoRotate = isAutoTour.value
+    controls.autoRotateSpeed = 1.2
+    if (isAutoTour.value) {
+      engine.wakeUp(3600000) // 保持活跃
+    }
+  }
+}
+
+/**
+ * 移动端陀螺仪重力感应视差
+ */
+function handleOrientation(e: DeviceOrientationEvent) {
+  if (!gyroEnabled.value || !engine) return
+  const beta = e.beta || 0   // -180 ~ 180 (X-axis tilt)
+  const gamma = e.gamma || 0 // -90 ~ 90 (Y-axis tilt)
+
+  const camera = engine.getCamera()
+  const offsetX = (gamma / 90) * 80
+  const offsetY = ((beta - 45) / 90) * 80
+  camera.position.x += (offsetX - camera.position.x * 0.05) * 0.05
+  camera.position.y += (offsetY - camera.position.y * 0.05) * 0.05
+}
+
+function toggleGyro() {
+  if (typeof (DeviceOrientationEvent as any)?.requestPermission === 'function') {
+    (DeviceOrientationEvent as any).requestPermission()
+      .then((state: string) => {
+        if (state === 'granted') {
+          gyroEnabled.value = !gyroEnabled.value
+        }
+      })
+      .catch(console.error)
+  } else {
+    gyroEnabled.value = !gyroEnabled.value
   }
 }
 
@@ -279,33 +479,67 @@ async function selectPreset(presetName: string) {
             </button>
           </div>
 
-          <!-- Preset Switcher (Only for 3D mode) -->
-          <div v-if="viewMode === '3d'" class="preset-dropdown-wrap">
+          <!-- 3D Extra Tools (Preset, Tour, Gyro, APM) -->
+          <template v-if="viewMode === '3d'">
+            <!-- Autopilot Tour -->
             <button
-              class="hud-icon-btn preset-btn"
-              title="切换视觉特效预设"
-              @click="showPresetMenu = !showPresetMenu"
+              class="hud-icon-btn"
+              :class="{ active: isAutoTour }"
+              :title="isAutoTour ? '暂停自动巡航' : '开启电影级自动漫游'"
+              @click="toggleAutoTour"
             >
-              <Icon name="sparkles" :size="17" />
-              <span>氛围特效</span>
+              <Icon name="eye" :size="17" />
+              <span class="btn-label-desktop">{{ isAutoTour ? '巡航中' : '自动巡航' }}</span>
             </button>
 
-            <!-- Preset Menu -->
-            <div v-if="showPresetMenu" class="preset-popup-menu">
-              <div class="menu-header">视觉预设</div>
+            <!-- Gyroscope Parallax -->
+            <button
+              class="hud-icon-btn gyro-btn"
+              :class="{ active: gyroEnabled }"
+              title="陀螺仪重力感应视差"
+              @click="toggleGyro"
+            >
+              <Icon name="globe" :size="17" />
+            </button>
+
+            <!-- APM Performance Probe -->
+            <button
+              class="hud-icon-btn"
+              :class="{ active: showApm }"
+              title="3D 性能指标探针"
+              @click="showApm = !showApm"
+            >
+              <Icon name="cube" :size="16" />
+            </button>
+
+            <!-- Preset Switcher -->
+            <div class="preset-dropdown-wrap">
               <button
-                v-for="p in presets"
-                :key="p.name"
-                class="menu-item"
-                :class="{ active: currentPreset === p.name }"
-                @click="selectPreset(p.name)"
+                class="hud-icon-btn preset-btn"
+                title="切换视觉特效预设"
+                @click="showPresetMenu = !showPresetMenu"
               >
-                <Icon :name="p.icon" :size="14" />
-                <span>{{ p.label }}</span>
-                <Icon v-if="currentPreset === p.name" name="check" :size="14" class="check-icon" />
+                <Icon name="sparkles" :size="17" />
+                <span>氛围特效</span>
               </button>
+
+              <!-- Preset Menu -->
+              <div v-if="showPresetMenu" class="preset-popup-menu">
+                <div class="menu-header">视觉预设</div>
+                <button
+                  v-for="p in presets"
+                  :key="p.name"
+                  class="menu-item"
+                  :class="{ active: currentPreset === p.name }"
+                  @click="selectPreset(p.name)"
+                >
+                  <Icon :name="p.icon" :size="14" />
+                  <span>{{ p.label }}</span>
+                  <Icon v-if="currentPreset === p.name" name="check" :size="14" class="check-icon" />
+                </button>
+              </div>
             </div>
-          </div>
+          </template>
 
           <!-- Fullscreen Toggle -->
           <button class="hud-icon-btn" :title="isFullscreen ? '退出全屏' : '全屏浏览'" @click="toggleFullscreen">
@@ -320,11 +554,55 @@ async function selectPreset(presetName: string) {
         </div>
       </header>
 
+      <!-- APM Real-time Dashboard Capsule -->
+      <aside v-if="showApm && viewMode === '3d' && apmMetrics" class="apm-dashboard">
+        <div class="apm-title">
+          <span class="live-dot"></span>
+          <span>SPATIAL APM MONITOR</span>
+        </div>
+        <div class="apm-grid">
+          <div class="apm-item">
+            <span class="apm-label">FPS:</span>
+            <span class="apm-val" :class="{ 'fps-warn': apmMetrics.fps < 40 }">{{ apmMetrics.fps }}</span>
+          </div>
+          <div class="apm-item">
+            <span class="apm-label">Frame:</span>
+            <span class="apm-val">{{ apmMetrics.frameTimeMs }}ms</span>
+          </div>
+          <div class="apm-item">
+            <span class="apm-label">DrawCalls:</span>
+            <span class="apm-val">{{ apmMetrics.drawCalls }}</span>
+          </div>
+          <div class="apm-item">
+            <span class="apm-label">Triangles:</span>
+            <span class="apm-val">{{ apmMetrics.triangles }}</span>
+          </div>
+          <div class="apm-item">
+            <span class="apm-label">DPR:</span>
+            <span class="apm-val">{{ apmMetrics.pixelRatio }}x</span>
+          </div>
+          <div class="apm-item">
+            <span class="apm-label">Power:</span>
+            <span class="apm-val">{{ apmMetrics.isThrottled ? 'Eco-Idle' : 'Active 60Hz' }}</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Hover Tooltip Tag -->
+      <div
+        v-if="hoveredPhoto && viewMode === '3d'"
+        class="photo-hover-tag"
+        :style="{ left: `${hoveredScreenPos.x + 16}px`, top: `${hoveredScreenPos.y + 16}px` }"
+      >
+        <span class="tag-index">#{{ hoveredPhoto.index + 1 }}</span>
+        <span class="tag-title">{{ hoveredPhoto.title }}</span>
+      </div>
+
       <!-- Mode 1: 3D Spatial WebGL Canvas -->
       <div v-show="viewMode === '3d'" class="canvas-container">
         <canvas ref="canvasRef" class="webgl-canvas"></canvas>
         <div class="spatial-tips">
-          <p>按住鼠标左键旋转视角 · 滚轮缩放景深</p>
+          <p>单击照片聚焦飞入 · 按住左键旋转视角 · 滚轮缩放星云</p>
         </div>
       </div>
 
@@ -429,13 +707,14 @@ async function selectPreset(presetName: string) {
    ========================================== */
 .floating-hud {
   position: fixed;
-  top: 20px;
-  left: 24px;
-  right: 24px;
+  top: 18px;
+  left: 20px;
+  right: 20px;
+  z-index: 40;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  z-index: 1000;
+  justify-content: space-between;
+  gap: 16px;
   pointer-events: none;
 }
 
@@ -443,7 +722,7 @@ async function selectPreset(presetName: string) {
 .hud-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   pointer-events: auto;
 }
 
@@ -451,13 +730,13 @@ async function selectPreset(presetName: string) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  background: rgba(18, 25, 30, 0.85);
+  padding: 8px 14px;
+  background: rgba(13, 26, 21, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-sm);
 }
 
 .brand-dot {
@@ -469,102 +748,115 @@ async function selectPreset(presetName: string) {
 }
 
 .brand-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: #ffffff;
+  color: #f1f5f3;
 }
 
 .gallery-title-chip {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  background: rgba(18, 25, 30, 0.75);
+  padding: 8px 14px;
+  background: rgba(13, 26, 21, 0.65);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
-  font-size: 13px;
+  box-shadow: var(--shadow-sm);
 }
 
 .chip-title {
-  font-weight: 600;
-  color: #f1f5f9;
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
 }
 
 .chip-count {
   font-size: 11px;
-  color: #94a3b8;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 6px;
-  border-radius: 6px;
+  color: #64748b;
+  padding-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Mode Switch */
+/* Mode Switcher Pill */
 .mode-switch-pill {
   display: flex;
-  background: rgba(18, 25, 30, 0.85);
+  align-items: center;
+  padding: 4px;
+  background: rgba(13, 26, 21, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
-  padding: 3px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-sm);
 }
 
 .mode-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
   border-radius: 9999px;
-  font-size: 12.5px;
-  font-weight: 600;
   color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .mode-btn:hover {
-  color: #ffffff;
+  color: #f1f5f3;
 }
 
 .mode-btn.active {
-  background: #10b981;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
 }
 
-/* HUD Buttons */
+/* Icon Buttons */
 .hud-icon-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  background: rgba(18, 25, 30, 0.85);
+  height: 38px;
+  padding: 0 12px;
+  background: rgba(13, 26, 21, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
-  color: #f1f5f9;
-  font-size: 12.5px;
+  color: #cbd5e1;
+  font-size: 12px;
   font-weight: 500;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
   transition: all 0.2s ease;
 }
 
 .hud-icon-btn:hover {
-  background: rgba(30, 41, 50, 0.95);
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: translateY(-1px);
+  background: rgba(20, 38, 31, 0.9);
+  color: #f1f5f3;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.hud-icon-btn.active {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.5);
 }
 
 .share-btn.copied {
-  background: #059669;
+  background: #10b981;
   color: #ffffff;
 }
 
-/* Preset Popup Menu */
+/* Preset Dropdown */
 .preset-dropdown-wrap {
   position: relative;
 }
@@ -574,41 +866,42 @@ async function selectPreset(presetName: string) {
   top: calc(100% + 8px);
   right: 0;
   width: 200px;
-  background: rgba(18, 25, 30, 0.95);
+  background: rgba(13, 26, 21, 0.94);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   padding: 6px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  animation: menuFadeIn 0.2s ease;
 }
 
 .menu-header {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: #64748b;
+  letter-spacing: 0.08em;
   padding: 6px 10px 4px;
 }
 
 .menu-item {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
+  background: transparent;
+  border: none;
   border-radius: 8px;
-  font-size: 12.5px;
   color: #cbd5e1;
+  font-size: 12px;
   text-align: left;
+  cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
 }
 
@@ -620,115 +913,222 @@ async function selectPreset(presetName: string) {
 
 .check-icon {
   margin-left: auto;
+  color: #10b981;
+}
+
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ==========================================
-   3. 3D WebGL Canvas Mode
+   3. APM Performance Dashboard
+   ========================================== */
+.apm-dashboard {
+  position: fixed;
+  top: 74px;
+  left: 20px;
+  z-index: 35;
+  padding: 10px 14px;
+  background: rgba(6, 13, 10, 0.85);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.apm-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: #10b981;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: pulse 1.5s infinite;
+}
+
+.apm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px 12px;
+}
+
+.apm-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.apm-label {
+  color: #64748b;
+}
+
+.apm-val {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.apm-val.fps-warn {
+  color: #f59e0b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ==========================================
+   4. Photo Hover Floating Tag
+   ========================================== */
+.photo-hover-tag {
+  position: fixed;
+  z-index: 35;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(10, 20, 16, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.15s ease;
+}
+
+.tag-index {
+  color: #10b981;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.tag-title {
+  color: #f1f5f3;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================
+   5. 3D WebGL Canvas Viewport
    ========================================== */
 .canvas-container {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
-  overflow: hidden;
-  background: #000000;
+  z-index: 10;
 }
 
 .webgl-canvas {
-  display: block;
   width: 100%;
   height: 100%;
+  display: block;
 }
 
 .spatial-tips {
-  position: fixed;
+  position: absolute;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(18, 25, 30, 0.7);
+  padding: 8px 18px;
+  background: rgba(13, 26, 21, 0.65);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 6px 18px;
   border-radius: 9999px;
   font-size: 12px;
   color: #94a3b8;
   pointer-events: none;
-  z-index: 100;
+  letter-spacing: 0.03em;
 }
 
 /* ==========================================
-   4. 2D Editorial Curated Wall Mode
+   6. 2D Editorial Curated Viewport
    ========================================== */
 .editorial-main {
-  max-width: 1400px;
+  position: relative;
+  z-index: 20;
+  max-width: 1320px;
   margin: 0 auto;
-  padding: 120px 40px 80px;
+  padding: 110px 24px 80px;
 }
 
 .editorial-hero {
   text-align: center;
-  margin-bottom: 60px;
+  margin-bottom: 56px;
 }
 
 .hero-kicker {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2em;
-  color: #34d399;
+  color: #10b981;
   margin-bottom: 12px;
 }
 
 .hero-title {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: clamp(38px, 6vw, 68px);
-  font-weight: 600;
-  color: #ffffff;
-  letter-spacing: -0.01em;
-  margin-bottom: 14px;
-  line-height: 1.15;
+  font-size: 38px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
 }
 
 .hero-meta {
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
   color: #64748b;
+  letter-spacing: 0.1em;
 }
 
 .editorial-photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
 }
 
 .editorial-photo-card {
   position: relative;
-  background: #111820;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
+  background: #0f1c16;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .editorial-photo-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+  transform: translateY(-6px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 
 .photo-img-frame {
   position: relative;
-  aspect-ratio: 4/3;
+  aspect-ratio: 4 / 3;
+  width: 100%;
   overflow: hidden;
-  background: #0f172a;
 }
 
 .photo-img-frame img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.5s ease;
 }
 
 .editorial-photo-card:hover .photo-img-frame img {
@@ -738,10 +1138,10 @@ async function selectPreset(presetName: string) {
 .card-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0) 50%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 60%);
   display: flex;
   align-items: flex-end;
-  padding: 16px;
+  padding: 14px;
   opacity: 0;
   transition: opacity 0.25s ease;
 }
@@ -751,33 +1151,47 @@ async function selectPreset(presetName: string) {
 }
 
 .photo-caption {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
-  color: #f8fafc;
+  color: #f1f5f3;
 }
 
-@media (max-width: 800px) {
+/* ==========================================
+   7. Mobile Adaptations (Phase 3)
+   ========================================== */
+@media (max-width: 768px) {
   .floating-hud {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
     top: 12px;
     left: 12px;
     right: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
-  .gallery-title-chip,
-  .brand-title {
+  .gallery-title-chip {
     display: none;
   }
 
-  .editorial-main {
-    padding: 140px 16px 40px;
+  .btn-label-desktop {
+    display: none;
   }
 
-  .editorial-photo-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
+  .spatial-tips {
+    bottom: 16px;
+    width: 90%;
+    text-align: center;
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+
+  .hero-title {
+    font-size: 28px;
+  }
+
+  .apm-dashboard {
+    top: auto;
+    bottom: 60px;
+    left: 12px;
   }
 }
 </style>

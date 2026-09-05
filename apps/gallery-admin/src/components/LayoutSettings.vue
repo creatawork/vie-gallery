@@ -13,32 +13,38 @@ const layouts = [
   {
     mode: 'sphere',
     label: '球面漫游',
-    description: 'Fibonacci 仿生球面曲率，极佳的环视沉浸体验',
+    description: 'Fibonacci 黄金分割全景星盘，法线对齐与包围感',
     iconName: 'cube'
+  },
+  {
+    mode: 'carousel',
+    label: '3D 剧场环幕',
+    description: '圆柱环幕立体展陈，微波浪起伏与聚焦内倾',
+    iconName: 'gallery'
   },
   {
     mode: 'helix',
     label: '立体双螺旋',
-    description: 'DNA 双螺旋垂直流线，适合时间序列回忆',
+    description: 'DNA 双螺旋纵深上升，阶梯时序流动美感',
     iconName: 'sliders'
   },
   {
     mode: 'grid',
-    label: '矩阵画廊墙',
-    description: '高规格阵列排布，气势恢宏的专业展陈',
+    label: '波浪画廊墙',
+    description: '双向正弦曲面画廊墙，现代艺术展厅震撼排布',
     iconName: 'grid'
   },
   {
     mode: 'spiral',
     label: '银河旋臂',
-    description: '对数旋臂星轨，如宇宙星云般展开',
+    description: '对数旋臂星轨，厚度起伏与宇宙星云漫游',
     iconName: 'sparkles'
   },
   {
     mode: 'random',
     label: '自由引力',
-    description: '散落在三维空间的流光卡片，随性自然',
-    iconName: 'gallery'
+    description: '引力星团自然悬浮，随性漂浮的流光卡片',
+    iconName: 'globe'
   }
 ]
 </script>
@@ -55,7 +61,7 @@ const layouts = [
         @click="$emit('update:mode', layout.mode)"
       >
         <div class="layout-icon-circle">
-          <Icon :name="layout.iconName" :size="24" />
+          <Icon :name="layout.iconName" :size="22" />
         </div>
         <div class="layout-content">
           <span class="layout-label">{{ layout.label }}</span>

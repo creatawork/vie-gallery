@@ -21,16 +21,66 @@ const resetting = ref(false)
 const previewKey = ref(0)
 const previewIframeRef = ref<HTMLIFrameElement | null>(null)
 
+/**
+ * 获取纯净的配置对象（深度剥离所有 Vue reactive proxy）
+ * toRaw() 只能解除最外层代理，嵌套对象依然是 proxy，会导致 JSON.stringify 死循环
+ * 这里手动构造纯粹的 POJO，彻底避免响应式追踪
+ */
+function getCleanConfig() {
+  return {
+    presetName: config.presetName || 'custom',
+    layout: {
+      mode: config.layout?.mode || 'sphere'
+    },
+    background: {
+      type: config.background?.type || 'sky',
+      gradient: config.background?.gradient ? {
+        colors: [...(config.background.gradient.colors || ['#0f172a', '#1e293b'])],
+        direction: config.background.gradient.direction || 'vertical'
+      } : { colors: ['#0f172a', '#1e293b'], direction: 'vertical' },
+      sky: config.background?.sky ? {
+        theme: config.background.sky.theme || 'starry',
+        timeOfDay: config.background.sky.timeOfDay || 'night'
+      } : { theme: 'starry', timeOfDay: 'night' }
+    },
+    particles: {
+      enabled: !!config.particles?.enabled,
+      types: Array.isArray(config.particles?.types) ? [...config.particles.types] : ['stars'],
+      density: config.particles?.density ?? 1.0
+    },
+    effects: {
+      bloom: {
+        enabled: !!config.effects?.bloom?.enabled,
+        strength: config.effects?.bloom?.strength ?? 0.75,
+        radius: config.effects?.bloom?.radius ?? 0.5,
+        threshold: config.effects?.bloom?.threshold ?? 0.18
+      },
+      fog: {
+        enabled: !!config.effects?.fog?.enabled,
+        color: config.effects?.fog?.color || '#0f172a',
+        density: config.effects?.fog?.density ?? 0.0008
+      }
+    },
+    interaction: {
+      clickRipple: config.interaction?.clickRipple ?? true
+    },
+    audio: {
+      bgm: { enabled: !!config.audio?.bgm?.enabled },
+      sfx: { enabled: config.audio?.sfx?.enabled ?? true }
+    },
+    theme: {
+      engine: config.theme?.engine || 'custom'
+    }
+  }
+}
+
 function sendLiveMessage(msg: any) {
   if (previewIframeRef.value && previewIframeRef.value.contentWindow) {
     try {
-      // 剥离 Vue 3 Proxy 与不可结构化克隆的内部引用
-      // 使用 toRaw() 彻底解除响应式代理，避免 JSON.stringify 触发无限响应式依赖
-      const rawMsg = toRaw(msg)
-      const cleanMsg = JSON.parse(JSON.stringify(rawMsg))
-      previewIframeRef.value.contentWindow.postMessage(cleanMsg, '*')
+      // 直接 postMessage，浏览器的结构化克隆会自动处理
+      previewIframeRef.value.contentWindow.postMessage(msg, '*')
     } catch (err) {
-      console.warn('postMessage structured clone fallback:', err)
+      console.warn('postMessage failed:', err)
     }
   }
 }
@@ -41,7 +91,9 @@ function handleLayoutChange(mode: string) {
 }
 
 function refreshLivePreview() {
-  sendLiveMessage({ type: 'VIE_CONFIG_UPDATE', config })
+  // 使用纯净的配置对象，避免传递 reactive proxy
+  const cleanConfig = getCleanConfig()
+  sendLiveMessage({ type: 'VIE_CONFIG_UPDATE', config: cleanConfig })
 }
 
 function forceReloadPreview() {
@@ -248,9 +300,8 @@ async function save() {
   saving.value = true
   try {
     ensureConfigDefaults()
-    // 使用 toRaw() 剥离 Vue reactive proxy，避免 JSON.stringify 触发响应式死循环
-    const rawConfig = toRaw(config)
-    const cleanConfig = JSON.parse(JSON.stringify(rawConfig))
+    // 使用纯净的配置对象，避免序列化 reactive proxy 导致死循环
+    const cleanConfig = getCleanConfig()
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`, {
       method: 'PUT',
       headers: {
@@ -258,7 +309,7 @@ async function save() {
       },
       body: JSON.stringify({
         configJson: JSON.stringify(cleanConfig),
-        presetName: config.presetName || 'custom'
+        presetName: cleanConfig.presetName
       })
     })
 

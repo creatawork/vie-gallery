@@ -2,13 +2,13 @@ import * as THREE from 'three'
 import type { ViewerPlugin, ViewerContext } from '../core/types'
 
 /**
- * SkyDome Plugin - 沉浸式天空穹顶插件
+ * SkyDome Plugin - 生产级沉浸式天穹与大气环境插件
  *
- * 使用 THREE.MeshBasicMaterial 直接贴图渲染，确保 WebGL 绝对兼容与原生高保真色彩
+ * 支持 360° 天空穹顶、星空微速漫游、大气散射光晕与高动态全景材质
  */
 export class SkyDomePlugin implements ViewerPlugin {
   name = 'SkyDome'
-  version = '1.0.0'
+  version = '2.0.0'
   dependencies = []
 
   private context: ViewerContext | null = null
@@ -16,6 +16,8 @@ export class SkyDomePlugin implements ViewerPlugin {
   private material: THREE.MeshBasicMaterial | null = null
   private canvas: HTMLCanvasElement | null = null
   private textureLoader = new THREE.TextureLoader()
+  private currentTheme = 'starry'
+  private rotationSpeed = 0.008
 
   async install(context: ViewerContext): Promise<void> {
     this.context = context
@@ -23,9 +25,9 @@ export class SkyDomePlugin implements ViewerPlugin {
 
     if (config.type !== 'sky') return
 
-    const radius = 3500
-    // 球体几何体
-    const geometry = new THREE.SphereGeometry(radius, 60, 40)
+    const radius = 3800
+    // 球体几何体 (加大细分保证视口各角度圆润平滑)
+    const geometry = new THREE.SphereGeometry(radius, 64, 48)
 
     // 使用 MeshBasicMaterial + BackSide
     this.material = new THREE.MeshBasicMaterial({
@@ -41,10 +43,11 @@ export class SkyDomePlugin implements ViewerPlugin {
     context.addToScene(this.mesh)
 
     // 应用主题
-    const theme = config.sky?.theme || 'starry'
-    this.applyTheme(theme)
+    this.currentTheme = config.sky?.theme || 'starry'
+    this.applyTheme(this.currentTheme)
 
     context.on('config:change', this.handleConfigChange)
+    context.on('config:update', this.handleConfigChange)
   }
 
   uninstall(): void {
@@ -61,27 +64,43 @@ export class SkyDomePlugin implements ViewerPlugin {
     }
 
     this.context?.off('config:change', this.handleConfigChange)
+    this.context?.off('config:update', this.handleConfigChange)
     this.context = null
     this.mesh = null
     this.material = null
   }
 
-  update(): void {
-    // 天穹中心跟随相机
-    if (this.context && this.mesh) {
-      this.mesh.position.copy(this.context.camera.position)
-    }
+  update(delta: number): void {
+    if (!this.context || !this.mesh) return
+
+    // 1. 天穹球心跟随相机，制造无垠深空视差
+    this.mesh.position.copy(this.context.camera.position)
+
+    // 2. 空间天穹微速自然自转（星转斗移之美）
+    this.mesh.rotation.y += delta * this.rotationSpeed
   }
 
   private handleConfigChange = (data: any): void => {
     const config = data.background
     if (config?.type === 'sky' && config.sky?.theme) {
-      this.applyTheme(config.sky.theme)
+      if (config.sky.theme !== this.currentTheme) {
+        this.currentTheme = config.sky.theme
+        this.applyTheme(this.currentTheme)
+      }
     }
   }
 
   private applyTheme(theme: string): void {
     if (!this.material) return
+
+    // 设定不同主题的自转角速度
+    if (theme === 'starry') {
+      this.rotationSpeed = 0.008
+    } else if (theme === 'ocean') {
+      this.rotationSpeed = 0.004
+    } else {
+      this.rotationSpeed = 0.003
+    }
 
     // 优先尝试加载静态真实全景贴图 (/textures/sky/{theme}.png)
     const texturePath = `/textures/sky/${theme}.png`
@@ -101,7 +120,7 @@ export class SkyDomePlugin implements ViewerPlugin {
       },
       undefined,
       () => {
-        // Fallback: 使用程序化动态全景
+        // Fallback: 使用超高清程序化全景生成器
         this.applyPlaceholderPanorama(theme)
       }
     )
@@ -132,26 +151,30 @@ export class SkyDomePlugin implements ViewerPlugin {
 
     const palettes = {
       forest: {
-        sky: ['#060f09', '#0d1f14', '#1b3827', '#254b35', '#0f2418'],
-        trees: ['#13241a', '#0d1a12', '#07100b']
+        sky: ['#040a06', '#09180f', '#13281c', '#1e3d2b', '#0f2418', '#07120b'],
+        horizon: 'rgba(34, 197, 94, 0.15)',
+        stars: 120
       },
       ocean: {
-        sky: ['#040e1c', '#0c223c', '#1b4168', '#2a5b8c', '#0d2238'],
-        trees: ['#0c2138', '#071526', '#030b14']
+        sky: ['#030914', '#081a30', '#113358', '#1a4e80', '#0f2f50', '#051120'],
+        horizon: 'rgba(56, 189, 248, 0.22)',
+        stars: 180
       },
       starry: {
-        sky: ['#03040a', '#080c1e', '#131b3d', '#1f2a58', '#080c1c'],
-        trees: ['#0d132b', '#070b1c', '#02040d']
+        sky: ['#020308', '#060a18', '#0f1632', '#18224a', '#0a0f24', '#03050c'],
+        horizon: 'rgba(168, 85, 247, 0.2)',
+        stars: 550
       },
       sunset: {
-        sky: ['#2e0918', '#5e1531', '#942b46', '#c9485b', '#4a1124'],
-        trees: ['#3d0d1e', '#2b0714', '#1a030b']
+        sky: ['#1c050e', '#3d0c20', '#691834', '#9e2d45', '#451021', '#1a040d'],
+        horizon: 'rgba(251, 146, 60, 0.35)',
+        stars: 80
       }
     }
 
     const palette = palettes[theme as keyof typeof palettes] || palettes.starry
 
-    // 天空背景渐变
+    // 1. 大气天顶渐变
     const sky = ctx.createLinearGradient(0, 0, 0, h)
     palette.sky.forEach((color, i) => {
       sky.addColorStop(i / (palette.sky.length - 1), color)
@@ -159,67 +182,49 @@ export class SkyDomePlugin implements ViewerPlugin {
     ctx.fillStyle = sky
     ctx.fillRect(0, 0, w, h)
 
-    // 星空特有：绘制高密度星云与闪耀繁星
+    // 2. 地平线散射光晕 (Atmospheric Horizon Glow)
+    const horizonGlow = ctx.createLinearGradient(0, h * 0.45, 0, h * 0.75)
+    horizonGlow.addColorStop(0, 'rgba(0,0,0,0)')
+    horizonGlow.addColorStop(0.5, palette.horizon)
+    horizonGlow.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = horizonGlow
+    ctx.fillRect(0, h * 0.45, w, h * 0.3)
+
+    // 3. 星空与星云分层渲染
     if (theme === 'starry') {
-      const nebula = ctx.createRadialGradient(w * 0.4, h * 0.35, 20, w * 0.4, h * 0.35, w * 0.5)
-      nebula.addColorStop(0, 'rgba(139, 92, 246, 0.28)')
-      nebula.addColorStop(0.4, 'rgba(59, 130, 246, 0.16)')
-      nebula.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      ctx.fillStyle = nebula
+      const nebula1 = ctx.createRadialGradient(w * 0.35, h * 0.32, 30, w * 0.35, h * 0.32, w * 0.45)
+      nebula1.addColorStop(0, 'rgba(168, 85, 247, 0.32)')
+      nebula1.addColorStop(0.5, 'rgba(59, 130, 246, 0.18)')
+      nebula1.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = nebula1
       ctx.fillRect(0, 0, w, h)
 
-      for (let i = 0; i < 450; i++) {
-        const x = Math.random() * w
-        const y = Math.random() * h * 0.7
-        const size = Math.random() * 1.8 + 0.4
-        const alpha = Math.random() * 0.8 + 0.2
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
-        ctx.beginPath()
-        ctx.arc(x, y, size, 0, Math.PI * 2)
-        ctx.fill()
-      }
+      const nebula2 = ctx.createRadialGradient(w * 0.75, h * 0.28, 20, w * 0.75, h * 0.28, w * 0.35)
+      nebula2.addColorStop(0, 'rgba(236, 72, 153, 0.22)')
+      nebula2.addColorStop(0.6, 'rgba(147, 51, 234, 0.12)')
+      nebula2.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = nebula2
+      ctx.fillRect(0, 0, w, h)
+    } else if (theme === 'sunset') {
+      // 日落暖光太阳轮廓
+      const sun = ctx.createRadialGradient(w * 0.5, h * 0.52, 10, w * 0.5, h * 0.52, w * 0.25)
+      sun.addColorStop(0, 'rgba(254, 215, 170, 0.55)')
+      sun.addColorStop(0.4, 'rgba(249, 115, 22, 0.35)')
+      sun.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = sun
+      ctx.fillRect(0, 0, w, h)
     }
 
-    // 地平线雾气带
-    const horizonY = h * 0.58
-    const fog = ctx.createLinearGradient(0, horizonY - h * 0.08, 0, horizonY + h * 0.06)
-    fog.addColorStop(0, 'rgba(255,255,255,0)')
-    fog.addColorStop(0.5, 'rgba(255,255,255,0.08)')
-    fog.addColorStop(1, 'rgba(255,255,255,0)')
-    ctx.fillStyle = fog
-    ctx.fillRect(0, horizonY - h * 0.08, w, h * 0.14)
-
-    // 剪影山脊与树林层
-    const layers = [
-      { baseY: horizonY + 6, height: h * 0.09, color: palette.trees[0], trunks: 42, jitter: 0.5, alpha: 0.6 },
-      { baseY: horizonY + 28, height: h * 0.16, color: palette.trees[1], trunks: 30, jitter: 0.7, alpha: 0.8 },
-      { baseY: horizonY + 64, height: h * 0.26, color: palette.trees[2], trunks: 20, jitter: 1.0, alpha: 0.95 }
-    ]
-
-    for (const L of layers) {
-      ctx.save()
-      ctx.globalAlpha = L.alpha
-      ctx.fillStyle = L.color
-      const step = w / L.trunks
-      for (let i = 0; i <= L.trunks; i++) {
-        const x = i * step + (Math.random() - 0.5) * step * L.jitter
-        const treeH = L.height * (0.6 + Math.random() * 0.8)
-        const trunkW = step * (0.12 + Math.random() * 0.12)
-
-        ctx.fillRect(x - trunkW / 2, L.baseY, trunkW, treeH * 0.5)
-
-        const crownW = step * (0.5 + Math.random() * 0.7)
-        const crownH = treeH
-        const topY = L.baseY - crownH + treeH * 0.5
-
-        ctx.beginPath()
-        ctx.moveTo(x, topY)
-        ctx.lineTo(x - crownW / 2, L.baseY + treeH * 0.5)
-        ctx.lineTo(x + crownW / 2, L.baseY + treeH * 0.5)
-        ctx.closePath()
-        ctx.fill()
-      }
-      ctx.restore()
+    // 4. 繁星点缀
+    for (let i = 0; i < palette.stars; i++) {
+      const x = Math.random() * w
+      const y = Math.random() * h * 0.65
+      const size = Math.random() * 1.8 + 0.3
+      const alpha = Math.random() * 0.8 + 0.2
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+      ctx.beginPath()
+      ctx.arc(x, y, size, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     return canvas

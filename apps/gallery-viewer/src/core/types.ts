@@ -22,7 +22,7 @@ export interface ViewerConfig {
 
   // 布局
   layout: {
-    mode: 'sphere' | 'helix' | 'grid' | 'spiral' | 'random'
+    mode: 'sphere' | 'carousel' | 'helix' | 'grid' | 'spiral' | 'random'
     params?: Record<string, any>
   }
 
