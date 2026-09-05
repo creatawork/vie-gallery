@@ -5,6 +5,8 @@ export interface Gallery {
   slug: string
   name: string
   visibility: GalleryVisibility
+  coverPhotoId?: string
+  coverThumbnailUrl?: string
   createdAt: string
 }
 

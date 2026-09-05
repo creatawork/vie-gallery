@@ -32,6 +32,10 @@ public class InMemoryGalleryRepository implements GalleryRepository {
         return values.stream().filter(item -> item.id().equals(galleryId) && !item.deleted()).findFirst();
     }
 
+    @Override public Optional<Gallery> findById(UUID tenantId, UUID galleryId) {
+        return values.stream().filter(item -> item.tenantId().equals(tenantId) && item.id().equals(galleryId) && !item.deleted()).findFirst();
+    }
+
     @Override public Gallery save(Gallery gallery) {
         values.add(gallery);
         return gallery;
@@ -40,5 +44,12 @@ public class InMemoryGalleryRepository implements GalleryRepository {
     @Override public void update(Gallery gallery) {
         values.removeIf(g -> g.id().equals(gallery.id()));
         values.add(gallery);
+    }
+
+    @Override public void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId) {
+        findById(tenantId, galleryId).ifPresent(g -> {
+            values.remove(g);
+            values.add(new Gallery(g.id(), g.tenantId(), g.slug(), g.name(), g.visibility(), g.passwordHash(), coverPhotoId, g.deleted(), g.createdAt()));
+        });
     }
 }

@@ -55,10 +55,19 @@ class GalleryFacadeTest {
         public Optional<Gallery> findById(UUID galleryId) {
             return values.stream().filter(g -> g.id().equals(galleryId)).findFirst();
         }
+        public Optional<Gallery> findById(UUID tenantId, UUID galleryId) {
+            return values.stream().filter(g -> g.tenantId().equals(tenantId) && g.id().equals(galleryId)).findFirst();
+        }
         public Gallery save(Gallery gallery) { values.add(gallery); return gallery; }
         public void update(Gallery gallery) {
             values.removeIf(g -> g.id().equals(gallery.id()));
             values.add(gallery);
+        }
+        public void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId) {
+            findById(tenantId, galleryId).ifPresent(g -> {
+                values.remove(g);
+                values.add(new Gallery(g.id(), g.tenantId(), g.slug(), g.name(), g.visibility(), g.passwordHash(), coverPhotoId, g.deleted(), g.createdAt()));
+            });
         }
     }
 }

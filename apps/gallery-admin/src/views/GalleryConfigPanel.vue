@@ -361,7 +361,7 @@ function openLivePreview() {
 }
 
 function goBack() {
-  router.push('/')
+  router.push({ name: 'gallery-workspace', params: { id: galleryId } })
 }
 
 onMounted(() => {

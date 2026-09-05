@@ -48,6 +48,12 @@ public class MyBatisGalleryRepository implements GalleryRepository {
     }
 
     @Override
+    public Optional<Gallery> findById(UUID tenantId, UUID galleryId) {
+        return Optional.ofNullable(mapper.findByTenantAndId(tenantId.toString(), galleryId.toString()))
+                .map(MyBatisGalleryRepository::toDomain);
+    }
+
+    @Override
     public Gallery save(Gallery gallery) {
         Instant now = Instant.now();
         mapper.insert(
@@ -74,6 +80,15 @@ public class MyBatisGalleryRepository implements GalleryRepository {
                 gallery.coverPhotoId() != null ? gallery.coverPhotoId().toString() : null,
                 localDateTime(Instant.now())
         );
+    }
+
+    @Override
+    public void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId) {
+        if (coverPhotoId != null) {
+            mapper.updateCover(tenantId.toString(), galleryId.toString(), coverPhotoId.toString(), localDateTime(Instant.now()));
+        } else {
+            mapper.clearCover(tenantId.toString(), galleryId.toString(), localDateTime(Instant.now()));
+        }
     }
 
     private static Gallery toDomain(java.util.Map<String, Object> row) {

@@ -13,10 +13,10 @@ import java.util.*;
 @Service
 public class PhotoFacade {
     private static final Set<String> TYPES = Set.of("image/jpeg", "image/png", "image/webp");
-    private final GalleryLookup galleries; private final PhotoRepository photos; private final StorageObjectRepository objects;
+    private final GalleryRepository galleries; private final PhotoRepository photos; private final StorageObjectRepository objects;
     private final PhotoProcessingTaskRepository tasks; private final TenantQuotaRepository quotas; private final ObjectStoragePort storage;
     private final TenantContextResolver context; private final long maxFileSize, maxPixels, maxBytes, maxPhotos;
-    public PhotoFacade(GalleryLookup galleries, PhotoRepository photos, StorageObjectRepository objects, PhotoProcessingTaskRepository tasks,
+    public PhotoFacade(GalleryRepository galleries, PhotoRepository photos, StorageObjectRepository objects, PhotoProcessingTaskRepository tasks,
                        TenantQuotaRepository quotas, ObjectStoragePort storage, TenantContextResolver context,
                        @Value("${gallery.quota.max-file-size:104857600}") long maxFileSize,
                        @Value("${gallery.quota.max-pixels:40000000}") long maxPixels,
@@ -47,7 +47,35 @@ public class PhotoFacade {
     }
     private static String normalize(String type){return type==null?"":type.toLowerCase(Locale.ROOT).split(";")[0].trim();}
     public List<Photo> list(UUID galleryId){UUID t=context.requireContext().tenantId();galleries.findById(t,galleryId).orElseThrow(()->new DomainException("GALLERY_NOT_FOUND","Gallery not found"));return photos.findByGallery(t,galleryId);}
-    @Transactional public void delete(UUID photoId){UUID t=context.requireContext().tenantId();Photo p=photos.findById(t,photoId).orElseThrow(()->new DomainException("PHOTO_NOT_FOUND","Photo not found"));if(photos.softDelete(t,photoId)==0)throw new DomainException("PHOTO_NOT_FOUND","Photo not found");objects.findById(t,p.storageObjectId()).ifPresent(o -> quotas.release(t,o.byteSize(),1)); objects.softDelete(t,p.storageObjectId());}
-    @Transactional public Photo update(UUID photoId,String title,Integer sortOrder,Boolean cover){UUID t=context.requireContext().tenantId();photos.findById(t,photoId).orElseThrow(()->new DomainException("PHOTO_NOT_FOUND","Photo not found"));if(photos.updateMetadata(t,photoId,title,sortOrder,cover)==0)throw new DomainException("PHOTO_NOT_FOUND","Photo not found");return photos.findById(t,photoId).orElseThrow();}
+    @Transactional public void delete(UUID photoId){
+        UUID t=context.requireContext().tenantId();
+        Photo p=photos.findById(t,photoId).orElseThrow(()->new DomainException("PHOTO_NOT_FOUND","Photo not found"));
+        if(photos.softDelete(t,photoId)==0)throw new DomainException("PHOTO_NOT_FOUND","Photo not found");
+        galleries.findById(t, p.galleryId()).ifPresent(g -> {
+            if (photoId.equals(g.coverPhotoId())) {
+                galleries.updateCoverPhoto(t, p.galleryId(), null);
+            }
+        });
+        objects.findById(t,p.storageObjectId()).ifPresent(o -> quotas.release(t,o.byteSize(),1)); 
+        objects.softDelete(t,p.storageObjectId());
+    }
+    @Transactional public Photo update(UUID photoId,String title,Integer sortOrder,Boolean cover){
+        UUID t=context.requireContext().tenantId();
+        Photo p = photos.findById(t,photoId).orElseThrow(()->new DomainException("PHOTO_NOT_FOUND","Photo not found"));
+        if (cover != null) {
+            if (Boolean.TRUE.equals(cover)) {
+                photos.clearCoverByGallery(t, p.galleryId());
+                galleries.updateCoverPhoto(t, p.galleryId(), photoId);
+            } else {
+                galleries.findById(t, p.galleryId()).ifPresent(g -> {
+                    if (photoId.equals(g.coverPhotoId())) {
+                        galleries.updateCoverPhoto(t, p.galleryId(), null);
+                    }
+                });
+            }
+        }
+        if(photos.updateMetadata(t,photoId,title,sortOrder,cover)==0)throw new DomainException("PHOTO_NOT_FOUND","Photo not found");
+        return photos.findById(t,photoId).orElseThrow();
+    }
     public record UploadResult(UUID photoId,UUID taskId,PhotoStatus status){}
 }

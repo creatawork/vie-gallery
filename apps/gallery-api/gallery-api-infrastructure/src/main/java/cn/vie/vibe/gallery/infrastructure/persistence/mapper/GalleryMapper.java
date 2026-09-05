@@ -30,6 +30,9 @@ public interface GalleryMapper {
     @Select("SELECT " + COLUMNS + " FROM gallery WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL LIMIT 1")
     Map<String, Object> findById(@Param("id") String id);
 
+    @Select("SELECT " + COLUMNS + " FROM gallery WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL LIMIT 1")
+    Map<String, Object> findByTenantAndId(@Param("tenantId") String tenantId, @Param("id") String id);
+
     @Insert("INSERT INTO gallery (id, tenant_id, slug, name, visibility, password_hash, cover_photo_id, deleted_at, created_at, updated_at) " +
             "VALUES (UUID_TO_BIN(#{id}), UUID_TO_BIN(#{tenantId}), #{slug}, #{name}, #{visibility}, #{passwordHash}, " +
             "#{coverPhotoId}, NULL, #{createdAt}, #{updatedAt})")
@@ -42,4 +45,10 @@ public interface GalleryMapper {
     int update(@Param("id") String id, @Param("name") String name, @Param("visibility") String visibility,
                @Param("passwordHash") String passwordHash, @Param("coverPhotoId") String coverPhotoId,
                @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Update("UPDATE gallery SET cover_photo_id = UUID_TO_BIN(#{coverPhotoId}), updated_at = #{updatedAt} WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
+    int updateCover(@Param("tenantId") String tenantId, @Param("id") String id, @Param("coverPhotoId") String coverPhotoId, @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Update("UPDATE gallery SET cover_photo_id = NULL, updated_at = #{updatedAt} WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
+    int clearCover(@Param("tenantId") String tenantId, @Param("id") String id, @Param("updatedAt") LocalDateTime updatedAt);
 }

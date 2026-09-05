@@ -394,4 +394,68 @@ onMounted(() => {
     padding: 20px 16px 36px;
   }
 }
+
+@media (max-width: 767px) {
+  .admin-shell {
+    overflow-x: hidden;
+  }
+
+  .navbar-container {
+    height: 60px;
+    gap: 8px;
+    padding-inline: 14px;
+  }
+
+  .nav-left {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .brand-link {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .brand-text {
+    min-width: 0;
+  }
+
+  .brand-title {
+    font-size: 15px;
+    white-space: nowrap;
+  }
+
+  .brand-badge,
+  .nav-divider,
+  .nav-center,
+  .user-details {
+    display: none;
+  }
+
+  .top-nav-links .nav-tab {
+    width: 34px;
+    height: 34px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 10px;
+  }
+
+  .top-nav-links .nav-tab span {
+    display: none;
+  }
+
+  .nav-right {
+    flex-shrink: 0;
+  }
+
+  .user-profile-capsule {
+    gap: 3px;
+    padding: 3px;
+  }
+
+  .nav-logout-btn {
+    width: 30px;
+    height: 30px;
+  }
+}
 </style>

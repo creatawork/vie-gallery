@@ -12,6 +12,11 @@ const router = createRouter({
       component: () => import('./views/OverviewView.vue')
     },
     {
+      path: '/galleries/:id',
+      name: 'gallery-workspace',
+      component: () => import('./views/GalleryWorkspaceView.vue')
+    },
+    {
       path: '/galleries/:id/config',
       name: 'gallery-config',
       component: () => import('./views/GalleryConfigPanel.vue')

@@ -13,5 +13,6 @@ public interface PhotoRepository {
     List<Photo> findByGalleryIdWithPagination(UUID galleryId, int offset, int limit);
     int updateStatus(UUID tenantId, UUID photoId, PhotoStatus status);
     int updateMetadata(UUID tenantId, UUID photoId, String title, Integer sortOrder, Boolean cover);
+    int clearCoverByGallery(UUID tenantId, UUID galleryId);
     int softDelete(UUID tenantId, UUID photoId);
 }

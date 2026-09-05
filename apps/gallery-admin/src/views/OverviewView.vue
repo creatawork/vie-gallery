@@ -1,21 +1,16 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Gallery } from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import Icon from '../components/Icon.vue'
-import ConfirmModal from '../components/ConfirmModal.vue'
-import LightboxModal from '../components/LightboxModal.vue'
 
 const router = useRouter()
 const toast = useToast()
 const { currentUser, setUser, logout } = useAuth()
 
-// ==========================================
-// 1. 用户与鉴权状态
-// ==========================================
 const authMode = ref<'login' | 'register'>('login')
 const authForm = ref({
   email: 'tester@example.com',
@@ -25,100 +20,84 @@ const authForm = ref({
 const authLoading = ref(false)
 const authError = ref('')
 
-// ==========================================
-// 2. 空间与照片状态
-// ==========================================
 const galleries = ref<Gallery[]>([])
 const loading = ref(false)
-const selectedGalleryId = ref<string | null>(null)
-const photos = ref<any[]>([])
-const uploading = ref(false)
-const uploadProgress = ref(0)
-const uploadStatusText = ref('')
-const isDragOver = ref(false)
+const loadError = ref('')
 
-// Lightbox state
-const showLightbox = ref(false)
-const lightboxIndex = ref(0)
-
-// Confirm photo delete
-const photoToDelete = ref<any | null>(null)
-const deletingPhoto = ref(false)
-
-// ==========================================
-// 3. 新建空间表单
-// ==========================================
 const showCreateModal = ref(false)
-const createForm = ref({
-  name: '',
-  slug: '',
-  visibility: 'PUBLIC'
-})
+const createForm = ref({ name: '', slug: '', visibility: 'PUBLIC' })
 const creating = ref(false)
 const createError = ref('')
 
-// ==========================================
-// 4. 分享链接 Modal
-// ==========================================
-const showShareModal = ref(false)
-const shareLinkData = ref<{ shareUrl: string; expiresAt?: string } | null>(null)
-const generatingShare = ref(false)
-const copied = ref(false)
+const featuredGallery = computed(() => galleries.value[0] || null)
 
-const selectedGallery = computed(() =>
-  galleries.value.find(g => g.id === selectedGalleryId.value) || null
-)
+function navigateToWorkspace(id: string) {
+  router.push({ name: 'gallery-workspace', params: { id } })
+}
 
-// ==========================================
-// 5. 鉴权与生命周期
-// ==========================================
-async function checkAuth() {
+function navigateToConfig(id: string) {
+  router.push({ name: 'gallery-config', params: { id } })
+}
+
+function viewerUrl(slug: string) {
+  return `${window.location.protocol}//${window.location.hostname}:5174/g/${slug}`
+}
+
+function openViewer(slug: string) {
+  window.open(viewerUrl(slug), '_blank', 'noopener,noreferrer')
+}
+
+async function loadGalleries() {
+  if (!currentUser.value) return
+  loading.value = true
+  loadError.value = ''
   try {
-    const res = await apiFetch('/api/me')
-    if (res.ok) {
-      const data = await res.json()
-      setUser(data)
-      await loadGalleries()
-    } else {
-      setUser(null)
-    }
-  } catch (e) {
-    setUser(null)
+    const response = await apiFetch('/api/galleries')
+    if (!response.ok) throw new Error(response.status === 403 ? '你没有权限查看这些空间。' : '空间列表加载失败，请稍后重试。')
+    galleries.value = await response.json() as Gallery[]
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '空间列表加载失败，请稍后重试。'
+    toast.error(loadError.value)
+  } finally {
+    loading.value = false
   }
 }
+
+watch(currentUser, user => {
+  if (user) {
+    loadGalleries()
+  } else {
+    galleries.value = []
+    loadError.value = ''
+  }
+}, { immediate: true })
 
 async function handleAuthSubmit() {
   authLoading.value = true
   authError.value = ''
   try {
     const url = authMode.value === 'register' ? '/api/auth/register' : '/api/auth/login'
-    const body: any = {
+    const body: Record<string, string> = {
       email: authForm.value.email.trim(),
       password: authForm.value.password
     }
-    if (authMode.value === 'register') {
-      body.displayName = authForm.value.displayName.trim()
-    }
+    if (authMode.value === 'register') body.displayName = authForm.value.displayName.trim()
 
-    const res = await apiFetch(url, {
+    const response = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      authError.value = err.message || (authMode.value === 'register' ? '注册失败' : '登录失败')
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string }
+      authError.value = body.message || (authMode.value === 'register' ? '注册失败，请检查填写内容。' : '登录失败，请检查邮箱和密码。')
       toast.error(authError.value)
       return
     }
-
-    const data = await res.json()
-    setUser(data)
+    setUser(await response.json())
     toast.success(authMode.value === 'register' ? '注册成功，欢迎进入！' : '登录成功')
-    await loadGalleries()
-  } catch (e: any) {
-    authError.value = e.message || '网络连接异常'
+  } catch (error) {
+    authError.value = error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
     toast.error(authError.value)
   } finally {
     authLoading.value = false
@@ -128,67 +107,28 @@ async function handleAuthSubmit() {
 async function handleLogout() {
   await logout()
   galleries.value = []
-  photos.value = []
-  selectedGalleryId.value = null
   toast.info('已安全退出登录')
 }
 
-// ==========================================
-// 6. 相册空间管理
-// ==========================================
-async function loadGalleries() {
-  loading.value = true
-  try {
-    const response = await apiFetch('/api/galleries')
-    if (response.ok) {
-      galleries.value = (await response.json()) as Gallery[]
-      if (galleries.value.length > 0 && !selectedGalleryId.value) {
-        selectGallery(galleries.value[0].id)
-      }
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-async function selectGallery(id: string) {
-  selectedGalleryId.value = id
-  await loadPhotos(id)
-}
-
-async function loadPhotos(id: string) {
-  const r = await apiFetch(`/api/galleries/${id}/photos`)
-  if (r.ok) {
-    photos.value = await r.json()
-  }
-}
-
 function handleNameInput() {
-  // 自动生成 slug
   if (!createForm.value.slug || createForm.value.slug === slugify(createForm.value.name.slice(0, -1))) {
     createForm.value.slug = slugify(createForm.value.name)
   }
 }
 
 function slugify(text: string) {
-  return text
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-')
+  return text.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-')
 }
 
 async function handleCreateGallery() {
   if (!createForm.value.name.trim() || !createForm.value.slug.trim()) {
-    createError.value = '请填写空间名称和标识符 (Slug)'
+    createError.value = '请填写空间名称和标识符（Slug）。'
     return
   }
   creating.value = true
   createError.value = ''
   try {
-    const res = await apiFetch('/api/galleries', {
+    const response = await apiFetch('/api/galleries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -197,292 +137,54 @@ async function handleCreateGallery() {
         visibility: createForm.value.visibility
       })
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      createError.value = err.message || '创建空间失败'
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string }
+      createError.value = body.message || '创建空间失败，请稍后重试。'
       toast.error(createError.value)
       return
     }
-    const newGallery = await res.json()
+    const newGallery = await response.json() as Gallery
     showCreateModal.value = false
     createForm.value = { name: '', slug: '', visibility: 'PUBLIC' }
-    toast.success(`空间 “${newGallery.name}” 创建成功！`)
-    await loadGalleries()
-    selectGallery(newGallery.id)
-  } catch (e: any) {
-    createError.value = e.message || '网络请求失败'
+    toast.success(`空间“${newGallery.name}”创建成功！`)
+    navigateToWorkspace(newGallery.id)
+  } catch (error) {
+    createError.value = error instanceof Error ? error.message : '网络请求失败，请稍后重试。'
+    toast.error(createError.value)
   } finally {
     creating.value = false
   }
 }
-
-// ==========================================
-// 7. 照片上传 (支持拖拽 & 任务轮询)
-// ==========================================
-async function handleDrop(e: DragEvent) {
-  isDragOver.value = false
-  if (!e.dataTransfer?.files?.length || !selectedGalleryId.value) return
-  await processUploadFiles(e.dataTransfer.files)
-}
-
-async function handleFileInput(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files?.length || !selectedGalleryId.value) return
-  await processUploadFiles(input.files)
-  input.value = ''
-}
-
-async function processUploadFiles(files: FileList) {
-  if (!selectedGalleryId.value) return
-  uploading.value = true
-  uploadProgress.value = 10
-  uploadStatusText.value = `正在上传 ${files.length} 张照片...`
-
-  try {
-    const form = new FormData()
-    Array.from(files).forEach(f => form.append('files', f))
-    
-    const response = await apiFetch(`/api/galleries/${selectedGalleryId.value}/photos`, {
-      method: 'POST',
-      body: form
-    })
-    
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      toast.error(err.message || '照片上传失败')
-      return
-    }
-
-    const result = (await response.json()) as { items?: { taskId: string }[] }
-    uploadProgress.value = 40
-    uploadStatusText.value = '服务器正在处理并生成高保真缩略图...'
-
-    if (result.items && result.items.length > 0) {
-      const totalTasks = result.items.length
-      let finished = 0
-      
-      for (const item of result.items) {
-        for (let i = 0; i < 30; i++) {
-          await new Promise(r => setTimeout(r, 800))
-          const task = await apiFetch(`/api/photos/tasks/${item.taskId}`)
-          if (!task.ok) break
-          const state = (await task.json()) as { status: string }
-          if (['SUCCEEDED', 'FAILED'].includes(state.status)) {
-            finished++
-            uploadProgress.value = 40 + Math.round((finished / totalTasks) * 55)
-            break
-          }
-        }
-      }
-    }
-
-    uploadProgress.value = 100
-    toast.success(`成功上传并处理 ${files.length} 张照片！`)
-    await loadPhotos(selectedGalleryId.value)
-  } catch (err: any) {
-    toast.error(err.message || '上传异常')
-  } finally {
-    setTimeout(() => {
-      uploading.value = false
-      uploadProgress.value = 0
-      uploadStatusText.value = ''
-    }, 600)
-  }
-}
-
-// ==========================================
-// 8. 照片操作 (封面 / 删除 / Lightbox)
-// ==========================================
-function openLightbox(index: number) {
-  lightboxIndex.value = index
-  showLightbox.value = true
-}
-
-async function handleSetCover(photo: any) {
-  try {
-    const res = await apiFetch(`/api/photos/${photo.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cover: true })
-    })
-    if (res.ok) {
-      toast.success('已设为相册封面！')
-      if (selectedGalleryId.value) {
-        await loadPhotos(selectedGalleryId.value)
-      }
-    } else {
-      toast.error('设置封面失败')
-    }
-  } catch (e: any) {
-    toast.error(e.message || '网络请求失败')
-  }
-}
-
-function promptDeletePhoto(photo: any) {
-  photoToDelete.value = photo
-}
-
-async function confirmDeletePhoto() {
-  if (!photoToDelete.value) return
-  deletingPhoto.value = true
-  try {
-    const res = await apiFetch(`/api/photos/${photoToDelete.value.id}`, {
-      method: 'DELETE'
-    })
-    if (res.ok) {
-      toast.success('照片已成功删除')
-      if (showLightbox.value) {
-        showLightbox.value = false
-      }
-      if (selectedGalleryId.value) {
-        await loadPhotos(selectedGalleryId.value)
-      }
-    } else {
-      toast.error('删除照片失败')
-    }
-  } catch (e: any) {
-    toast.error(e.message || '网络请求失败')
-  } finally {
-    deletingPhoto.value = false
-    photoToDelete.value = null
-  }
-}
-
-// ==========================================
-// 9. 分享链接与外部跳转
-// ==========================================
-async function openShareModal() {
-  if (!selectedGalleryId.value) return
-  generatingShare.value = true
-  showShareModal.value = true
-  copied.value = false
-  try {
-    const res = await apiFetch(`/api/galleries/${selectedGalleryId.value}/share-links`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const baseViewer = `${window.location.protocol}//${window.location.hostname}:5174`
-      const gSlug = selectedGallery.value?.slug || ''
-      shareLinkData.value = {
-        shareUrl: `${baseViewer}/g/${gSlug}?t=${data.rawToken}`,
-        expiresAt: data.expiresAt
-      }
-    }
-  } catch (e) {
-    toast.error('生成分享链接失败')
-  } finally {
-    generatingShare.value = false
-  }
-}
-
-async function copyShareUrl() {
-  if (!shareLinkData.value?.shareUrl) return
-  try {
-    await navigator.clipboard.writeText(shareLinkData.value.shareUrl)
-    copied.value = true
-    toast.success('分享链接已复制到剪贴板！')
-    setTimeout(() => {
-      copied.value = false
-    }, 2500)
-  } catch (e) {
-    toast.error('复制失败，请手动选择复制')
-  }
-}
-
-function openViewer(slug?: string) {
-  const s = slug || selectedGallery.value?.slug
-  if (!s) return
-  const baseViewer = `${window.location.protocol}//${window.location.hostname}:5174`
-  window.open(`${baseViewer}/g/${s}`, '_blank')
-}
-
-function goToConfig(galleryId?: string) {
-  const gid = galleryId || selectedGalleryId.value
-  if (!gid) return
-  router.push(`/galleries/${gid}/config`)
-}
-
-checkAuth()
 </script>
 
 <template>
-  <!-- 未登录状态：高端毛玻璃鉴权卡片 -->
   <div v-if="!currentUser" class="auth-wrapper">
     <div class="auth-glow"></div>
     <div class="auth-card">
       <div class="auth-header">
-        <div class="brand-badge">
-          <Icon name="gallery" :size="24" />
-        </div>
+        <div class="brand-badge"><Icon name="gallery" :size="24" /></div>
         <h2>VIE Gallery Console</h2>
         <p>{{ authMode === 'register' ? '注册新管理员工作区，开启沉浸式相册' : '登录你的创作者管理后台' }}</p>
       </div>
-
       <div class="auth-tabs">
-        <button
-          :class="{ active: authMode === 'login' }"
-          @click="authMode = 'login'; authError = ''"
-        >
-          账号登录
-        </button>
-        <button
-          :class="{ active: authMode === 'register' }"
-          @click="authMode = 'register'; authError = ''"
-        >
-          注册账户
-        </button>
+        <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'; authError = ''">账号登录</button>
+        <button :class="{ active: authMode === 'register' }" type="button" @click="authMode = 'register'; authError = ''">注册账户</button>
       </div>
-
-      <div v-if="authError" class="form-error">
-        <Icon name="alert-circle" :size="16" />
-        <span>{{ authError }}</span>
-      </div>
-
+      <div v-if="authError" class="form-error"><Icon name="alert-circle" :size="16" /><span>{{ authError }}</span></div>
       <form @submit.prevent="handleAuthSubmit">
         <div v-if="authMode === 'register'" class="form-group">
-          <label class="form-label">用户名称</label>
-          <input
-            id="auth-display-name"
-            v-model="authForm.displayName"
-            placeholder="例如：Alex Chen"
-            class="form-input"
-            required
-          />
+          <label class="form-label" for="auth-display-name">用户名称</label>
+          <input id="auth-display-name" v-model="authForm.displayName" placeholder="例如：Alex Chen" class="form-input" required />
         </div>
-
         <div class="form-group">
-          <label class="form-label">电子邮箱</label>
-          <input
-            id="auth-email"
-            v-model="authForm.email"
-            type="email"
-            placeholder="name@example.com"
-            class="form-input"
-            required
-          />
+          <label class="form-label" for="auth-email">电子邮箱</label>
+          <input id="auth-email" v-model="authForm.email" type="email" placeholder="name@example.com" class="form-input" required />
         </div>
-
         <div class="form-group">
-          <label class="form-label">密码 (至少 12 位)</label>
-          <input
-            id="auth-password"
-            v-model="authForm.password"
-            type="password"
-            placeholder="••••••••••••"
-            class="form-input"
-            required
-          />
+          <label class="form-label" for="auth-password">密码（至少 12 位）</label>
+          <input id="auth-password" v-model="authForm.password" type="password" placeholder="••••••••••••" class="form-input" required />
         </div>
-
-        <button
-          id="btn-auth-submit"
-          type="submit"
-          class="btn btn-primary auth-submit"
-          :disabled="authLoading"
-        >
+        <button id="btn-auth-submit" type="submit" class="btn btn-primary auth-submit" :disabled="authLoading">
           <Icon v-if="authLoading" name="refresh" :size="16" class="spin" />
           <span>{{ authLoading ? '认证中…' : (authMode === 'register' ? '创建并进入工作区' : '登录控制台') }}</span>
         </button>
@@ -490,359 +192,113 @@ checkAuth()
     </div>
   </div>
 
-  <!-- 已登录状态：全新相册控制台工作区 -->
   <div v-else class="dashboard-root">
-    <!-- Top Workspace Header -->
-    <header class="page-header">
+    <header class="page-header page-intro">
       <div class="header-left">
-        <h1 class="page-title">相册空间管理</h1>
-        <p class="page-subtitle">管理你的全部 3D 沉浸式相册，支持高清批量上传与实时参数调优</p>
+        <span class="page-eyebrow">WORKSPACE</span>
+        <h1 class="page-title">相册空间</h1>
+        <p class="page-subtitle">管理和编辑你的 3D 沉浸式相册</p>
       </div>
-
       <div class="header-right">
-        <button id="btn-open-create-modal" class="btn btn-primary" @click="showCreateModal = true">
-          <Icon name="plus" :size="16" />
-          <span>新建空间</span>
+        <button id="btn-open-create-modal" class="btn btn-primary" type="button" @click="showCreateModal = true">
+          <Icon name="plus" :size="16" /><span>新建空间</span>
         </button>
       </div>
     </header>
 
-    <!-- Stat Bar & Filter -->
-    <section class="stat-toolbar">
-      <div class="stat-pills">
-        <div class="stat-pill">
-          <Icon name="gallery" :size="16" />
-          <span class="stat-label">空间总数</span>
-          <span class="stat-value">{{ galleries.length }}</span>
-        </div>
-        <div v-if="selectedGallery" class="stat-pill active">
-          <Icon name="photo" :size="16" />
-          <span class="stat-label">当前相册照片</span>
-          <span class="stat-value">{{ photos.length }}</span>
-        </div>
+    <section class="stat-toolbar workspace-toolbar" aria-label="空间列表工具栏">
+      <div class="workspace-filters" role="tablist" aria-label="空间筛选">
+        <button class="filter-tab is-active" role="tab" aria-selected="true" type="button">
+          <Icon name="gallery" :size="15" /><span>全部空间</span><strong>{{ galleries.length }}</strong>
+        </button>
       </div>
-
-      <button class="btn btn-ghost refresh-btn" :disabled="loading" @click="loadGalleries">
-        <Icon name="refresh" :size="15" :class="{ spin: loading }" />
-        <span>{{ loading ? '刷新中…' : '刷新数据' }}</span>
+      <button class="btn btn-ghost refresh-btn" type="button" :disabled="loading" @click="loadGalleries">
+        <Icon name="refresh" :size="15" :class="{ spin: loading }" /><span>{{ loading ? '刷新中…' : '刷新列表' }}</span>
       </button>
     </section>
 
-    <!-- Gallery Cards Grid -->
-    <section class="gallery-grid" aria-live="polite">
-      <article
-        v-for="gallery in galleries"
-        :key="gallery.id"
-        class="gallery-card"
-        :class="{ selected: gallery.id === selectedGalleryId }"
-        @click="selectGallery(gallery.id)"
-      >
-        <div class="card-visual">
-          <div class="card-glow"></div>
-          <div class="card-pattern">
-            <Icon name="gallery" :size="36" />
-          </div>
-          <div class="card-top-badges">
-            <span class="badge" :class="gallery.visibility === 'PUBLIC' ? 'badge-public' : 'badge-private'">
-              <Icon :name="gallery.visibility === 'PUBLIC' ? 'globe' : 'lock'" :size="12" />
-              <span>{{ gallery.visibility }}</span>
-            </span>
-          </div>
-        </div>
+    <div v-if="loadError" class="overview-error" role="alert">
+      <Icon name="alert-circle" :size="17" /><span>{{ loadError }}</span>
+      <button class="btn btn-secondary" type="button" @click="loadGalleries">重试</button>
+    </div>
 
-        <div class="card-body">
-          <div class="card-info">
-            <h3 class="gallery-title">{{ gallery.name }}</h3>
-            <div class="slug-row">
-              <code class="slug-tag">/g/{{ gallery.slug }}</code>
-            </div>
-          </div>
-
-          <div class="card-actions" @click.stop>
-            <button class="icon-action-btn" title="3D 空间配置" @click="goToConfig(gallery.id)">
-              <Icon name="sliders" :size="16" />
-            </button>
-            <button class="icon-action-btn" title="在 3D Viewer 中预览" @click="openViewer(gallery.slug)">
-              <Icon name="external" :size="16" />
-            </button>
-          </div>
-        </div>
-      </article>
-
-      <!-- Empty Gallery State -->
-      <div v-if="!loading && galleries.length === 0" class="empty-state">
-        <div class="empty-icon-box">
-          <Icon name="gallery" :size="32" />
-        </div>
-        <h3>还没有创建照片空间</h3>
-        <p>创建你的第一个相册空间，支持 3D 粒子星空、螺旋布局与无缝高保真展示。</p>
-        <button class="btn btn-primary" @click="showCreateModal = true">
-          <Icon name="plus" :size="16" />
-          <span>立即新建空间</span>
-        </button>
+    <section v-if="featuredGallery" class="recent-workspace" aria-labelledby="recent-workspace-title">
+      <div class="recent-workspace-copy">
+        <span class="section-kicker">CONTINUE CREATING</span>
+        <h2 id="recent-workspace-title">继续上次工作</h2>
+        <p>{{ featuredGallery.name }} · 进入空间继续上传和编辑</p>
+      </div>
+      <div class="recent-workspace-actions">
+        <button class="btn btn-primary" type="button" @click="navigateToWorkspace(featuredGallery.id)"><Icon name="arrow-right" :size="16" /><span>继续编辑</span></button>
+        <button class="btn btn-secondary" type="button" @click="openViewer(featuredGallery.slug)"><Icon name="eye" :size="16" /><span>预览空间</span></button>
       </div>
     </section>
 
-    <!-- Active Gallery Detail & Photos Panel -->
-    <section v-if="selectedGallery" class="photo-management-panel">
-      <div class="panel-header">
-        <div class="panel-left">
-          <div class="gallery-title-row">
-            <h2>{{ selectedGallery.name }}</h2>
-            <span class="badge" :class="selectedGallery.visibility === 'PUBLIC' ? 'badge-public' : 'badge-private'">
-              <Icon :name="selectedGallery.visibility === 'PUBLIC' ? 'globe' : 'lock'" :size="12" />
-              <span>{{ selectedGallery.visibility }}</span>
-            </span>
-          </div>
-          <p class="panel-meta">
-            <span>访问路由: <code>/g/{{ selectedGallery.slug }}</code></span>
-            <span class="divider">·</span>
-            <span>包含 {{ photos.length }} 张照片</span>
-          </p>
-        </div>
-
-        <div class="panel-actions">
-          <button class="btn btn-secondary" title="配置 3D 布局与粒子特效" @click="goToConfig()">
-            <Icon name="sliders" :size="16" />
-            <span>3D 视觉配置</span>
-          </button>
-          <button id="btn-share-link" class="btn btn-secondary" @click="openShareModal">
-            <Icon name="share" :size="16" />
-            <span>分享链接</span>
-          </button>
-          <button id="btn-open-viewer" class="btn btn-primary" @click="openViewer()">
-            <Icon name="external" :size="16" />
-            <span>3D 空间漫游</span>
-          </button>
-        </div>
+    <section class="gallery-section" aria-labelledby="gallery-section-title">
+      <div class="section-heading-row">
+        <div><span class="section-kicker">YOUR SPACES</span><h2 id="gallery-section-title">我的空间</h2></div>
+        <span v-if="galleries.length" class="section-count">{{ galleries.length }} 个空间</span>
       </div>
-
-      <!-- Drag & Drop Upload Zone -->
-      <div
-        class="upload-dropzone"
-        :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
-        @dragover.prevent="isDragOver = true"
-        @dragleave.prevent="isDragOver = false"
-        @drop.prevent="handleDrop"
-      >
-        <div v-if="!uploading" class="dropzone-content">
-          <div class="upload-icon-circle">
-            <Icon name="upload" :size="24" />
-          </div>
-          <div class="dropzone-text">
-            <h4>拖拽照片至此处上传，或 <label class="file-picker-link">点击选择文件<input type="file" multiple accept="image/jpeg,image/png,image/webp" hidden @change="handleFileInput" /></label></h4>
-            <p>支持 JPG、PNG、WebP 高清图像 · 自动生成多尺度微距缩略图与 WebGL 3D 纹理</p>
-          </div>
-        </div>
-
-        <div v-else class="upload-progress-box">
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" :style="{ width: `${uploadProgress}%` }"></div>
-          </div>
-          <div class="progress-status">
-            <span>{{ uploadStatusText }}</span>
-            <span class="progress-percentage">{{ uploadProgress }}%</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Photo Grid Stream -->
-      <div v-if="photos.length > 0" class="photo-grid">
+      <div class="gallery-grid" aria-live="polite">
         <article
-          v-for="(photo, idx) in photos"
-          :key="photo.id"
-          class="photo-card"
-          @click="openLightbox(idx)"
+          v-for="gallery in galleries"
+          :key="gallery.id"
+          class="gallery-card"
+          tabindex="0"
+          @click="navigateToWorkspace(gallery.id)"
+          @keydown.enter="navigateToWorkspace(gallery.id)"
         >
-          <div class="photo-img-box">
-            <img v-if="photo.thumbnailUrl" :src="photo.thumbnailUrl" :alt="photo.title || 'Photo'" loading="lazy" />
-            <div v-else class="empty-thumb-pattern">
-              <Icon name="photo" :size="24" />
-            </div>
-
-            <!-- Cover Badge -->
-            <div v-if="photo.cover" class="photo-cover-tag">
-              <Icon name="star" :size="12" />
-              <span>封面</span>
-            </div>
-
-            <!-- Hover Action Overlay -->
-            <div class="photo-hover-overlay" @click.stop>
-              <div class="overlay-top">
-                <button
-                  class="photo-action-btn"
-                  :title="photo.cover ? '当前相册封面' : '设为相册封面'"
-                  :class="{ active: photo.cover }"
-                  @click="handleSetCover(photo)"
-                >
-                  <Icon name="star" :size="15" />
-                </button>
-                <button
-                  class="photo-action-btn btn-danger"
-                  title="删除照片"
-                  @click="promptDeletePhoto(photo)"
-                >
-                  <Icon name="trash" :size="15" />
-                </button>
-              </div>
-              <div class="overlay-bottom">
-                <span class="photo-size">{{ Math.round((photo.byteSize || 0) / 1024) }} KB</span>
-              </div>
+          <div class="card-visual">
+            <img v-if="gallery.coverThumbnailUrl" :src="gallery.coverThumbnailUrl" class="gallery-cover-img" :alt="gallery.name" loading="lazy" />
+            <div v-else class="card-pattern"><Icon name="gallery" :size="36" /></div>
+            <div class="card-glow"></div>
+            <div class="card-top-badges">
+              <span class="badge" :class="gallery.visibility === 'PUBLIC' ? 'badge-public' : 'badge-private'">
+                <Icon :name="gallery.visibility === 'PUBLIC' ? 'globe' : 'lock'" :size="12" />
+                <span>{{ gallery.visibility === 'PUBLIC' ? '公开' : '私密' }}</span>
+              </span>
             </div>
           </div>
-
-          <div class="photo-info-bar">
-            <span class="photo-name">{{ photo.title || '未命名照片' }}</span>
-            <span class="status-dot" :class="`dot-${photo.status?.toLowerCase()}`" :title="`状态: ${photo.status}`"></span>
+          <div class="card-body">
+            <div class="card-info"><h3 class="gallery-title">{{ gallery.name }}</h3><code class="slug-tag">/g/{{ gallery.slug }}</code><p class="gallery-meta">点击进入空间管理照片</p></div>
+          </div>
+          <div class="card-footer" @click.stop>
+            <button class="btn btn-primary card-enter-btn" type="button" @click="navigateToWorkspace(gallery.id)"><span>进入空间</span><Icon name="arrow-right" :size="15" /></button>
+            <div class="card-actions">
+              <button class="icon-action-btn" type="button" aria-label="配置 3D 空间" title="3D 空间配置" @click="navigateToConfig(gallery.id)"><Icon name="sliders" :size="16" /></button>
+              <button class="icon-action-btn" type="button" aria-label="预览 3D 空间" title="在 3D Viewer 中预览" @click="openViewer(gallery.slug)"><Icon name="external" :size="16" /></button>
+            </div>
           </div>
         </article>
-      </div>
 
-      <!-- Empty Photos -->
-      <div v-else class="empty-photos-panel">
-        <div class="empty-photo-icon">
-          <Icon name="photo" :size="32" />
+        <button v-if="galleries.length" class="create-gallery-card" type="button" @click="showCreateModal = true">
+          <span class="create-gallery-icon"><Icon name="plus" :size="22" /></span><strong>新建空间</strong><span>创建另一个 3D 相册空间</span>
+        </button>
+        <div v-if="!loading && !galleries.length && !loadError" class="empty-state">
+          <div class="empty-icon-box"><Icon name="gallery" :size="32" /></div>
+          <h3>还没有照片空间</h3><p>创建一个属于你的 3D 沉浸式相册，上传照片并选择你的展示风格。</p>
+          <button class="btn btn-primary" type="button" @click="showCreateModal = true"><Icon name="plus" :size="16" /><span>创建第一个空间</span></button>
         </div>
-        <h4>相册内暂无照片</h4>
-        <p>通过上方拖拽区域或点击上传，即刻生成绚丽的 3D 照片空间。</p>
       </div>
     </section>
 
-    <!-- Modal 1: 新建空间弹窗 -->
     <Transition name="modal-fade">
       <div v-if="showCreateModal" class="modal-backdrop" @click.self="!creating && (showCreateModal = false)">
-        <div class="modal-card">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="create-title">
           <div class="modal-header-row">
-            <div class="modal-title-box">
-              <div class="modal-icon-bubble">
-                <Icon name="plus" :size="20" />
-              </div>
-              <div>
-                <h3>新建照片空间</h3>
-                <p>创建一个全新的相册空间并配置独特的视觉主题</p>
-              </div>
-            </div>
-            <button class="modal-close" @click="showCreateModal = false">
-              <Icon name="x" :size="18" />
-            </button>
+            <div class="modal-title-box"><div class="modal-icon-bubble"><Icon name="plus" :size="20" /></div><div><h2 id="create-title">新建照片空间</h2><p>创建一个全新的相册空间并配置独特的视觉主题</p></div></div>
+            <button class="modal-close" type="button" aria-label="关闭新建空间窗口" :disabled="creating" @click="showCreateModal = false"><Icon name="x" :size="18" /></button>
           </div>
-
-          <div v-if="createError" class="form-error">
-            <Icon name="alert-circle" :size="16" />
-            <span>{{ createError }}</span>
-          </div>
-
+          <div v-if="createError" class="form-error"><Icon name="alert-circle" :size="16" /><span>{{ createError }}</span></div>
           <form @submit.prevent="handleCreateGallery">
-            <div class="form-group">
-              <label class="form-label">空间名称</label>
-              <input
-                id="input-gallery-name"
-                v-model="createForm.name"
-                placeholder="例如：自然风光与星空探索"
-                class="form-input"
-                autofocus
-                required
-                @input="handleNameInput"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">标识符 (Slug URL)</label>
-              <input
-                id="input-gallery-slug"
-                v-model="createForm.slug"
-                placeholder="例如：nature-cosmos"
-                class="form-input"
-                required
-              />
-              <span class="field-hint">公开访问路径: <code>/g/{{ createForm.slug || 'slug' }}</code></span>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">访问权限 (Visibility)</label>
-              <select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input">
-                <option value="PUBLIC">公开展示 (PUBLIC - 所有人可通过链接访问)</option>
-                <option value="PRIVATE">私密相册 (PRIVATE - 需凭专用分享 Token 访问)</option>
-              </select>
-            </div>
-
-            <div class="modal-actions">
-              <button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">
-                取消
-              </button>
-              <button id="btn-create-submit" type="submit" class="btn btn-primary" :disabled="creating">
-                <Icon v-if="creating" name="refresh" :size="16" class="spin" />
-                <span>{{ creating ? '创建中…' : '立即创建' }}</span>
-              </button>
-            </div>
+            <div class="form-group"><label class="form-label" for="input-gallery-name">空间名称</label><input id="input-gallery-name" v-model="createForm.name" placeholder="例如：自然风光与星空探索" class="form-input" required @input="handleNameInput" /></div>
+            <div class="form-group"><label class="form-label" for="input-gallery-slug">标识符（Slug URL）</label><input id="input-gallery-slug" v-model="createForm.slug" placeholder="例如：nature-cosmos" class="form-input" required /><span class="field-hint">公开访问路径：<code>/g/{{ createForm.slug || 'slug' }}</code></span></div>
+            <div class="form-group"><label class="form-label" for="select-gallery-visibility">访问权限</label><select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input"><option value="PUBLIC">公开展示（所有人可通过链接访问）</option><option value="PRIVATE">私密相册（需凭专用分享 Token 访问）</option></select></div>
+            <div class="modal-actions"><button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">取消</button><button id="btn-create-submit" type="submit" class="btn btn-primary" :disabled="creating"><Icon v-if="creating" name="refresh" :size="16" class="spin" /><span>{{ creating ? '创建中…' : '立即创建' }}</span></button></div>
           </form>
         </div>
       </div>
     </Transition>
-
-    <!-- Modal 2: 分享链接弹窗 -->
-    <Transition name="modal-fade">
-      <div v-if="showShareModal" class="modal-backdrop" @click.self="showShareModal = false">
-        <div class="modal-card">
-          <div class="modal-header-row">
-            <div class="modal-title-box">
-              <div class="modal-icon-bubble share-bubble">
-                <Icon name="share" :size="20" />
-              </div>
-              <div>
-                <h3>分享相册空间</h3>
-                <p>生成专属的安全访问链接与他人共享</p>
-              </div>
-            </div>
-            <button class="modal-close" @click="showShareModal = false">
-              <Icon name="x" :size="18" />
-            </button>
-          </div>
-
-          <div v-if="generatingShare" class="generating-box">
-            <Icon name="refresh" :size="24" class="spin" />
-            <p>正在生成加密分享凭证...</p>
-          </div>
-
-          <div v-else-if="shareLinkData" class="share-content">
-            <div class="link-display-group">
-              <input :value="shareLinkData.shareUrl" readonly class="form-input share-url-input" />
-              <button class="btn btn-primary copy-btn" @click="copyShareUrl">
-                <Icon :name="copied ? 'check' : 'copy'" :size="16" />
-                <span>{{ copied ? '已复制' : '复制链接' }}</span>
-              </button>
-            </div>
-            <div class="share-tips">
-              <Icon name="lock" :size="14" />
-              <span>任何拥有此加密链接的用户均可进入 3D 沉浸式相册浏览照片。</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Confirm Photo Delete Dialog -->
-    <ConfirmModal
-      :show="!!photoToDelete"
-      title="删除确认"
-      message="确定要永久删除这张照片吗？此操作无法恢复。"
-      confirm-text="确认删除"
-      :danger="true"
-      :loading="deletingPhoto"
-      @confirm="confirmDeletePhoto"
-      @cancel="photoToDelete = null"
-    />
-
-    <!-- Fullscreen Lightbox Viewer -->
-    <LightboxModal
-      :show="showLightbox"
-      :photos="photos"
-      :current-index="lightboxIndex"
-      @close="showLightbox = false"
-      @select="idx => lightboxIndex = idx"
-      @set-cover="handleSetCover"
-      @delete="promptDeletePhoto"
-    />
   </div>
 </template>
 
@@ -1106,6 +562,17 @@ checkAuth()
     0 0 0 3px rgba(16, 185, 129, 0.15),
     0 12px 32px rgba(16, 185, 129, 0.18),
     0 0 0 1px rgba(16, 185, 129, 0.2) inset;
+}
+
+.gallery-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gallery-card:hover .gallery-cover-img {
+  transform: scale(1.06);
 }
 
 .card-visual {
@@ -1862,5 +1329,436 @@ checkAuth()
 .modal-fade-leave-to {
   opacity: 0;
   transform: scale(0.96);
+}
+
+/* ==========================================
+   Workspace refresh: intentional hierarchy
+   ========================================== */
+.dashboard-root {
+  width: min(100%, 1240px);
+  margin: 0 auto;
+  gap: 24px;
+}
+
+.page-intro {
+  align-items: flex-end;
+  padding: 14px 0 4px;
+}
+
+.page-eyebrow,
+.section-kicker {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--brand-deep, #087a5c);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-title {
+  font-size: clamp(28px, 3vw, 34px);
+  letter-spacing: -0.04em;
+}
+
+.page-subtitle {
+  margin-top: 7px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.workspace-toolbar {
+  align-items: center;
+  padding: 8px 0 16px;
+  border-bottom-color: var(--border-subtle);
+}
+
+.workspace-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 650;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.filter-tab:hover,
+.filter-tab:focus-visible {
+  color: var(--brand-deep, #087a5c);
+  background: var(--brand-accent-subtle);
+}
+
+.filter-tab.is-active {
+  color: var(--brand-deep, #087a5c);
+  background: var(--brand-accent-subtle);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.filter-tab strong {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+}
+
+.refresh-btn {
+  padding-inline: 8px;
+  font-size: 12px;
+}
+
+.recent-workspace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 28px;
+  border: 1px solid rgba(16, 185, 129, 0.16);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(circle at 90% 20%, rgba(16, 185, 129, 0.14), transparent 34%),
+    linear-gradient(120deg, #effaf4 0%, #ffffff 72%);
+  box-shadow: var(--shadow-sm);
+}
+
+.recent-workspace-copy h2,
+.section-heading-row h2 {
+  color: var(--text-primary);
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+
+.recent-workspace-copy p {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.recent-workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.gallery-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-heading-row .section-kicker {
+  margin-bottom: 5px;
+}
+
+.section-count {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.gallery-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.gallery-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  background: var(--bg-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.gallery-card:focus-visible {
+  outline: 3px solid rgba(16, 185, 129, 0.26);
+  outline-offset: 3px;
+}
+
+.gallery-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(16, 185, 129, 0.28);
+  box-shadow: var(--shadow-lg);
+}
+
+.gallery-card.selected {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1), var(--shadow-md);
+}
+
+.card-visual {
+  aspect-ratio: 16 / 10;
+}
+
+.card-body {
+  align-items: flex-start;
+  min-height: 112px;
+  padding: 18px 18px 12px;
+  background: var(--bg-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.gallery-title {
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+
+.gallery-meta {
+  margin-top: 9px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
+.card-enter-btn {
+  flex: 1;
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+.card-actions {
+  gap: 5px;
+}
+
+.icon-action-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.create-gallery-card {
+  display: flex;
+  min-height: 270px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(16, 185, 129, 0.34);
+  border-radius: var(--radius-xl);
+  color: var(--brand-deep, #087a5c);
+  background: linear-gradient(145deg, rgba(236, 253, 245, 0.62), rgba(255, 255, 255, 0.8));
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.create-gallery-card:hover,
+.create-gallery-card:focus-visible {
+  transform: translateY(-3px);
+  border-color: var(--brand-accent);
+  background: var(--brand-accent-subtle);
+}
+
+.create-gallery-card strong {
+  font-size: 15px;
+}
+
+.create-gallery-card > span:last-child {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.create-gallery-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  place-items: center;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+.empty-state {
+  min-height: 300px;
+  padding: 56px 24px;
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-surface);
+  box-shadow: none;
+}
+
+.photo-management-panel {
+  scroll-margin-top: 88px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@media (max-width: 1100px) {
+  .gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .dashboard-root {
+    width: 100%;
+    gap: 20px;
+    overflow-x: hidden;
+  }
+
+  .page-intro,
+  .workspace-toolbar,
+  .recent-workspace,
+  .section-heading-row,
+  .panel-header {
+    align-items: stretch;
+  }
+
+  .page-intro {
+    display: block;
+  }
+
+  .header-right,
+  .header-right .btn,
+  .recent-workspace-actions,
+  .panel-actions {
+    width: 100%;
+  }
+
+  .header-right {
+    margin-top: 16px;
+  }
+
+  .header-right .btn,
+  .recent-workspace-actions .btn,
+  .panel-actions .btn {
+    width: 100%;
+  }
+
+  .workspace-toolbar,
+  .recent-workspace,
+  .section-heading-row {
+    display: block;
+  }
+
+  .workspace-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .workspace-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .refresh-btn {
+    margin-top: 8px;
+    padding-left: 0;
+  }
+
+  .recent-workspace {
+    padding: 20px;
+  }
+
+  .recent-workspace-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-top: 18px;
+  }
+
+  .section-count {
+    display: block;
+    margin-top: 6px;
+  }
+
+  .gallery-grid,
+  .photo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .create-gallery-card {
+    min-height: 180px;
+  }
+
+  .photo-management-panel {
+    padding: 20px 16px;
+  }
+
+  .gallery-title-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .panel-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .panel-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .panel-meta .divider {
+    display: none;
+  }
+
+  .link-display-group {
+    flex-direction: column;
+  }
+
+  .copy-btn {
+    width: 100%;
+  }
+
+  .dropzone-text h4 {
+    line-height: 1.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-card,
+  .create-gallery-card,
+  .gallery-cover-img,
+  .filter-tab,
+  .icon-action-btn {
+    transition: none;
+  }
+
+  .gallery-card:hover,
+  .create-gallery-card:hover {
+    transform: none;
+  }
+
+  .spin,
+  .pulse-dot {
+    animation: none;
+  }
 }
 </style>

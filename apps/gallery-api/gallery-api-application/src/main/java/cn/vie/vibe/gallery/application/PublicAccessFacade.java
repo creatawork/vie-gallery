@@ -66,6 +66,18 @@ public class PublicAccessFacade {
                     })
                     .orElse(null);
         }
+        if (cover == null) {
+            cover = photoRepository.findByGallery(gallery.tenantId(), gallery.id()).stream()
+                    .filter(p -> p.status() == PhotoStatus.READY && p.cover())
+                    .findFirst()
+                    .flatMap(photo -> storageObjectRepository.findById(gallery.tenantId(), photo.storageObjectId()))
+                    .map(storageObject -> {
+                        String key = storageObject.thumbnailKey() != null ? storageObject.thumbnailKey() : storageObject.objectKey();
+                        String url = objectStoragePort.createReadUrl(key).toString();
+                        return new PublicGalleryView.CoverView(url, storageObject.width(), storageObject.height());
+                    })
+                    .orElse(null);
+        }
 
         return new PublicGalleryView(
                 gallery.slug(),
