@@ -1,0 +1,42 @@
+- generic [ref=f3e3]:
+  - generic:
+    - banner:
+      - generic [ref=f3e9]:
+        - generic [ref=f3e10]: VIE GALLERY
+        - generic [ref=f3e13]:
+          - generic [ref=f3e14]: 自然风光摄影空间Nature Space
+          - generic [ref=f3e15]: 2 张照片
+      - generic [ref=f3e16]:
+        - generic [ref=f3e17]:
+          - button "3D 空间" [active] [ref=f3e18] [cursor=pointer]
+          - button "经典网格" [ref=f3e24] [cursor=pointer]
+        - button "巡航中" [ref=f3e173] [cursor=pointer]
+        - button "陀螺仪重力感应视差" [ref=f3e179] [cursor=pointer]
+        - button "3D 性能指标探针" [ref=f3e183] [cursor=pointer]
+        - button "氛围特效" [ref=f3e189] [cursor=pointer]
+        - button "全屏浏览" [ref=f3e53] [cursor=pointer]
+        - button "分享" [ref=f3e60] [cursor=pointer]
+    - complementary [ref=f3e194]:
+      - generic [ref=f3e195]: SPATIAL APM MONITOR
+      - generic [ref=f3e198]:
+        - generic [ref=f3e199]:
+          - generic [ref=f3e200]: "FPS:"
+          - generic [ref=f3e201]: "0"
+        - generic [ref=f3e202]:
+          - generic [ref=f3e203]: "Frame:"
+          - generic [ref=f3e204]: 575.4ms
+        - generic [ref=f3e205]:
+          - generic [ref=f3e206]: "DrawCalls:"
+          - generic [ref=f3e207]: "0"
+        - generic [ref=f3e208]:
+          - generic [ref=f3e209]: "Triangles:"
+          - generic [ref=f3e210]: "0"
+        - generic [ref=f3e211]:
+          - generic [ref=f3e212]: "DPR:"
+          - generic [ref=f3e213]: 1x
+        - generic [ref=f3e214]:
+          - generic [ref=f3e215]: "Power:"
+          - generic [ref=f3e216]: Active 60Hz
+    - generic [ref=f3e69]:
+      - generic:
+        - paragraph: 单击照片聚焦飞入 · 按住左键旋转视角 · 滚轮缩放星云

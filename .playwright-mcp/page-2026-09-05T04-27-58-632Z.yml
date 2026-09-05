@@ -1,0 +1,168 @@
+- generic [ref=f2e3]:
+  - generic [ref=f2e485] [cursor=pointer]:
+    - generic [ref=f2e490]:
+      - heading "操作成功" [level=4] [ref=f2e491]
+      - paragraph [ref=f2e492]: 已切换至 “minimal” 氛围预设
+    - button "关闭" [ref=f2e493]
+  - complementary [ref=f2e4]:
+    - generic [ref=f2e6]:
+      - generic [ref=f2e7]: V
+      - generic [ref=f2e10]:
+        - generic [ref=f2e11]: VIE Gallery
+        - generic [ref=f2e12]: Studio Console
+    - navigation "主导航" [ref=f2e13]:
+      - generic [ref=f2e14]: 管理工作区
+      - link "相册空间" [ref=f2e15] [cursor=pointer]:
+        - /url: /app/
+    - generic [ref=f2e22]:
+      - generic [ref=f2e23]: Cloud Storage Ready
+      - generic [ref=f2e26]: v2.4.0 · Pro Studio
+  - main [ref=f2e28]:
+    - generic [ref=f2e229]:
+      - generic [ref=f2e230]:
+        - generic [ref=f2e231]:
+          - button "返回空间" [ref=f2e232] [cursor=pointer]
+          - generic [ref=f2e237]:
+            - heading "自然风光摄影空间Nature Space · 3D 视觉工作室" [level=1] [ref=f2e238]
+            - paragraph [ref=f2e239]: 实时三维参数调优 · 空间几何排布 · 天穹大气 · 动态物理粒子与 Bloom 电影级泛光
+        - generic [ref=f2e240]:
+          - button "独立窗口预览" [ref=f2e241] [cursor=pointer]
+          - button "重置默认" [ref=f2e248] [cursor=pointer]
+          - button "保存发布配置" [ref=f2e256] [cursor=pointer]
+      - generic [ref=f2e261]:
+        - generic [ref=f2e262]:
+          - generic [ref=f2e263]:
+            - generic [ref=f2e269]:
+              - heading "一键氛围预设" [level=3] [ref=f2e270]
+              - paragraph [ref=f2e271]: 精选大师级 3D 视觉主题，点击立即预览
+            - generic [ref=f2e273]:
+              - button "Minimal 极简空间 通透白净 · 经典光影 · 纯粹画廊" [active] [ref=f2e274] [cursor=pointer]:
+                - generic [ref=f2e275]: Minimal
+                - generic [ref=f2e277]:
+                  - heading "极简空间" [level=4] [ref=f2e278]
+                  - paragraph [ref=f2e279]: 通透白净 · 经典光影 · 纯粹画廊
+              - button "Atmospheric 森林之梦 暮色森林 · 樱花与星尘 · 浪漫氛围" [ref=f2e280] [cursor=pointer]:
+                - generic [ref=f2e281]: Atmospheric
+                - generic [ref=f2e283]:
+                  - heading "森林之梦" [level=4] [ref=f2e284]
+                  - paragraph [ref=f2e285]: 暮色森林 · 樱花与星尘 · 浪漫氛围
+              - button "Cosmic 3D 星空夜曲 深邃宇宙 · 辉光星尘 · 3D球形曲面" [ref=f2e286] [cursor=pointer]:
+                - generic [ref=f2e287]: Cosmic 3D
+                - generic [ref=f2e289]:
+                  - heading "星空夜曲" [level=4] [ref=f2e290]
+                  - paragraph [ref=f2e291]: 深邃宇宙 · 辉光星尘 · 3D球形曲面
+              - button "Ethereal 海洋微风 蔚蓝天穹 · 晨曦微雾 · 银河螺旋" [ref=f2e292] [cursor=pointer]:
+                - generic [ref=f2e293]: Ethereal
+                - generic [ref=f2e295]:
+                  - heading "海洋微风" [level=4] [ref=f2e296]
+                  - paragraph [ref=f2e297]: 蔚蓝天穹 · 晨曦微雾 · 银河螺旋
+              - button "Warm Glow 日落余晖 晚霞云彩 · 梦幻泛光 · 规律网格墙" [ref=f2e298] [cursor=pointer]:
+                - generic [ref=f2e299]: Warm Glow
+                - generic [ref=f2e305]:
+                  - heading "日落余晖" [level=4] [ref=f2e306]
+                  - paragraph [ref=f2e307]: 晚霞云彩 · 梦幻泛光 · 规律网格墙
+              - button "Heartbeat 心动浪漫 玫瑰粉雾 · 粒子心形 · 柔和光晕" [ref=f2e308] [cursor=pointer]:
+                - generic [ref=f2e309]: Heartbeat
+                - generic [ref=f2e311]:
+                  - heading "心动浪漫" [level=4] [ref=f2e312]
+                  - paragraph [ref=f2e313]: 玫瑰粉雾 · 粒子心形 · 柔和光晕
+          - generic [ref=f2e314]:
+            - generic [ref=f2e321]:
+              - heading "三维几何排布模型" [level=3] [ref=f2e322]
+              - paragraph [ref=f2e323]: 照片在 3D 空间的数学拓扑形态
+            - generic [ref=f2e325]:
+              - button "球面漫游 Fibonacci 黄金分割全景星盘，法线对齐与包围感" [ref=f2e326] [cursor=pointer]:
+                - generic [ref=f2e332]:
+                  - generic [ref=f2e333]: 球面漫游
+                  - generic [ref=f2e334]: Fibonacci 黄金分割全景星盘，法线对齐与包围感
+              - button "3D 剧场环幕 圆柱环幕立体展陈，微波浪起伏与聚焦内倾" [ref=f2e335] [cursor=pointer]:
+                - generic [ref=f2e342]:
+                  - generic [ref=f2e343]: 3D 剧场环幕
+                  - generic [ref=f2e344]: 圆柱环幕立体展陈，微波浪起伏与聚焦内倾
+              - button "立体双螺旋 DNA 双螺旋纵深上升，阶梯时序流动美感" [ref=f2e345] [cursor=pointer]:
+                - generic [ref=f2e349]:
+                  - generic [ref=f2e350]: 立体双螺旋
+                  - generic [ref=f2e351]: DNA 双螺旋纵深上升，阶梯时序流动美感
+              - button "波浪画廊墙 双向正弦曲面画廊墙，现代艺术展厅震撼排布" [ref=f2e352] [cursor=pointer]:
+                - generic [ref=f2e360]:
+                  - generic [ref=f2e361]: 波浪画廊墙
+                  - generic [ref=f2e362]: 双向正弦曲面画廊墙，现代艺术展厅震撼排布
+              - button "银河旋臂 对数旋臂星轨，厚度起伏与宇宙星云漫游" [ref=f2e367] [cursor=pointer]:
+                - generic [ref=f2e372]:
+                  - generic [ref=f2e373]: 银河旋臂
+                  - generic [ref=f2e374]: 对数旋臂星轨，厚度起伏与宇宙星云漫游
+              - button "自由引力 引力星团自然悬浮，随性漂浮的流光卡片" [ref=f2e375] [cursor=pointer]:
+                - generic [ref=f2e381]:
+                  - generic [ref=f2e382]: 自由引力
+                  - generic [ref=f2e383]: 引力星团自然悬浮，随性漂浮的流光卡片
+          - generic [ref=f2e384]:
+            - generic [ref=f2e391]:
+              - heading "空间背景与天穹" [level=3] [ref=f2e392]
+              - paragraph [ref=f2e393]: 全景天空穹顶 (SkyDome) 与艺术渐变背景
+            - generic [ref=f2e394]:
+              - generic [ref=f2e395]:
+                - generic [ref=f2e396]: 背景模式
+                - combobox [ref=f2e397]:
+                  - option "沉浸式天空穹顶 (SkyDome)"
+                  - option "艺术渐变 (Gradient)" [selected]
+                  - option "极简纯黑 (Pure Dark)"
+              - generic [ref=f2e506]:
+                - generic [ref=f2e507]: 渐变方向
+                - combobox [ref=f2e508]:
+                  - option "垂直线性 (Vertical)" [selected]
+                  - option "水平线性 (Horizontal)"
+                  - option "径向环形 (Radial)"
+          - generic [ref=f2e401]:
+            - generic [ref=f2e407]:
+              - heading "动态物理粒子系统" [level=3] [ref=f2e408]
+              - paragraph [ref=f2e409]: 漫游在空间中的流体微粒与光斑效果
+            - generic [ref=f2e410]:
+              - generic [ref=f2e411]:
+                - checkbox
+                - generic [ref=f2e412] [cursor=pointer]
+              - generic [ref=f2e413]:
+                - generic [ref=f2e414]: 启用 3D 粒子流
+                - generic [ref=f2e415]: 开启实时物理运动粒子效果
+          - generic [ref=f2e437]:
+            - generic [ref=f2e442]:
+              - heading "电影级后处理滤镜 (Post-processing)" [level=3] [ref=f2e443]
+              - paragraph [ref=f2e444]: 高光溢出辉光 (Unreal Bloom) 与大气景深雾效 (Fog)
+            - generic [ref=f2e445]:
+              - generic [ref=f2e447]:
+                - generic [ref=f2e448]:
+                  - checkbox
+                  - generic [ref=f2e449] [cursor=pointer]
+                - generic [ref=f2e450]:
+                  - generic [ref=f2e451]: 高光溢出辉光 (Bloom)
+                  - generic [ref=f2e452]: 明亮高光散射柔和晕光
+              - generic [ref=f2e458]:
+                - generic [ref=f2e459]:
+                  - checkbox
+                  - generic [ref=f2e460] [cursor=pointer]
+                - generic [ref=f2e461]:
+                  - generic [ref=f2e462]: 空间大气雾效 (Atmospheric Fog)
+                  - generic [ref=f2e463]: 营造深邃远近透视感
+        - complementary [ref=f2e464]:
+          - generic [ref=f2e465]:
+            - generic [ref=f2e466]:
+              - generic [ref=f2e467]: 3D 实时动态预览
+              - button "强制刷新重载" [ref=f2e470] [cursor=pointer]
+            - iframe [ref=f2e478]:
+              - generic [ref=f3e3]:
+                - generic:
+                  - banner:
+                    - generic [ref=f3e4]: VIE GALLERY
+                    - generic [ref=f3e8]:
+                      - generic [ref=f3e9]:
+                        - button "3D 空间" [ref=f3e10] [cursor=pointer]
+                        - button "经典网格" [ref=f3e16] [cursor=pointer]
+                      - button "开启电影级自动漫游" [ref=f3e24] [cursor=pointer]
+                      - button "陀螺仪重力感应视差" [ref=f3e29] [cursor=pointer]
+                      - button "3D 性能指标探针" [ref=f3e33] [cursor=pointer]
+                      - button "氛围特效" [ref=f3e39] [cursor=pointer]
+                      - button "全屏浏览" [ref=f3e44] [cursor=pointer]
+                      - button "分享" [ref=f3e51] [cursor=pointer]
+                  - generic [ref=f3e60]:
+                    - generic:
+                      - paragraph: 单击照片聚焦飞入 · 按住左键旋转视角 · 滚轮缩放星云
+            - generic [ref=f2e479]: 支持在视窗中拖拽旋转视角与缩放 · 实时响应参数变化

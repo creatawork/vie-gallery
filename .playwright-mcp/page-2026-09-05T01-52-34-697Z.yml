@@ -1,0 +1,94 @@
+- generic [ref=e3]:
+  - generic [ref=e52] [cursor=pointer]:
+    - generic [ref=e57]:
+      - heading "操作成功" [level=4] [ref=e58]
+      - paragraph [ref=e59]: 登录成功
+    - button "关闭" [ref=e60]
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: V
+      - generic [ref=e10]:
+        - generic [ref=e11]: VIE Gallery
+        - generic [ref=e12]: Studio Console
+    - navigation "主导航" [ref=e13]:
+      - generic [ref=e14]: 管理工作区
+      - link "相册空间" [ref=e15] [cursor=pointer]:
+        - /url: /app/
+    - generic [ref=e22]:
+      - generic [ref=e23]: Cloud Storage Ready
+      - generic [ref=e26]: v2.4.0 · Pro Studio
+  - main [ref=e28]:
+    - generic [ref=e65]:
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - generic [ref=e68]:
+            - generic [ref=e69]: A
+            - generic [ref=e70]:
+              - generic [ref=e71]: Admin Tester
+              - generic [ref=e72]: Admin Tester Gallery
+          - heading "照片空间管理" [level=1] [ref=e73]
+        - generic [ref=e74]:
+          - button "新建空间" [ref=e75] [cursor=pointer]
+          - button "退出" [ref=e79] [cursor=pointer]
+      - generic [ref=e85]:
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - generic [ref=e93]: 空间总数
+            - generic [ref=e94]: "1"
+          - generic [ref=e95]:
+            - generic [ref=e101]: 当前相册照片
+            - generic [ref=e102]: "2"
+        - button "刷新数据" [ref=e103] [cursor=pointer]
+      - article [ref=e112] [cursor=pointer]:
+        - generic [ref=e113]: PUBLIC
+        - generic [ref=e127]:
+          - generic [ref=e128]:
+            - heading "自然风光摄影空间Nature Space" [level=3] [ref=e129]
+            - code [ref=e131]: /g/nature-2026nature-2026
+          - generic [ref=e132]:
+            - button "3D 空间配置" [ref=e133]
+            - button "在 3D Viewer 中预览" [ref=e136]
+      - generic [ref=e142]:
+        - generic [ref=e143]:
+          - generic [ref=e144]:
+            - generic [ref=e145]:
+              - heading "自然风光摄影空间Nature Space" [level=2] [ref=e146]
+              - generic [ref=e147]: PUBLIC
+            - paragraph [ref=e153]:
+              - generic [ref=e154]:
+                - text: "访问路由:"
+                - code [ref=e155]: /g/nature-2026nature-2026
+              - generic [ref=e156]: ·
+              - generic [ref=e157]: 包含 2 张照片
+          - generic [ref=e158]:
+            - button "3D 视觉配置" [ref=e159] [cursor=pointer]
+            - button "分享链接" [ref=e163] [cursor=pointer]
+            - button "3D 空间漫游" [ref=e172] [cursor=pointer]
+        - generic [ref=e186] [cursor=pointer]:
+          - heading "拖拽照片至此处上传，或 点击选择文件" [level=4] [ref=e187]:
+            - text: 拖拽照片至此处上传，或
+            - generic [ref=e188]: 点击选择文件
+          - paragraph [ref=e189]: 支持 JPG、PNG、WebP 高清图像 · 自动生成多尺度微距缩略图与 WebGL 3D 纹理
+        - generic [ref=e190]:
+          - article [ref=e191] [cursor=pointer]:
+            - generic [ref=e192]:
+              - img "微信图片_2026-08-26_174726_770.jpg" [ref=e193]
+              - generic [ref=e194]:
+                - generic [ref=e195]:
+                  - button "设为相册封面" [ref=e196]
+                  - button "删除照片" [ref=e200]
+                - generic [ref=e205]: 47 KB
+            - generic [ref=e207]:
+              - generic [ref=e208]: 微信图片_2026-08-26_174726_770.jpg
+              - 'generic "状态: READY" [ref=e209]'
+          - article [ref=e210] [cursor=pointer]:
+            - generic [ref=e211]:
+              - img "【哲风壁纸】人物-加油站-周杰伦.jpg" [ref=e212]
+              - generic [ref=e213]:
+                - generic [ref=e214]:
+                  - button "设为相册封面" [ref=e215]
+                  - button "删除照片" [ref=e219]
+                - generic [ref=e224]: 1238 KB
+            - generic [ref=e226]:
+              - generic [ref=e227]: 【哲风壁纸】人物-加油站-周杰伦.jpg
+              - 'generic "状态: READY" [ref=e228]'

@@ -152,7 +152,8 @@ const config = reactive({
 const previewUrl = computed(() => {
   const slug = galleryInfo.value?.slug || 'demo'
   const base = `${window.location.protocol}//${window.location.hostname}:5174`
-  return `${base}/g/${slug}?t=${previewKey.value}&preset=${config.presetName || 'starry-night'}&layout=${config.layout.mode}`
+  // 仅在强制刷新时重新加载 iframe，日常配置更新通过 postMessage 实时同步，避免频繁重载
+  return `${base}/g/${slug}?t=${previewKey.value}`
 })
 
 function deepMerge(target: any, source: any) {

@@ -1,0 +1,94 @@
+- generic [ref=f2e3]:
+  - generic [ref=f2e52] [cursor=pointer]:
+    - generic [ref=f2e57]:
+      - heading "操作成功" [level=4] [ref=f2e58]
+      - paragraph [ref=f2e59]: 登录成功
+    - button "关闭" [ref=f2e60]
+  - complementary [ref=f2e4]:
+    - generic [ref=f2e6]:
+      - generic [ref=f2e7]: V
+      - generic [ref=f2e10]:
+        - generic [ref=f2e11]: VIE Gallery
+        - generic [ref=f2e12]: Studio Console
+    - navigation "主导航" [ref=f2e13]:
+      - generic [ref=f2e14]: 管理工作区
+      - link "相册空间" [ref=f2e15] [cursor=pointer]:
+        - /url: /app/
+    - generic [ref=f2e22]:
+      - generic [ref=f2e23]: Cloud Storage Ready
+      - generic [ref=f2e26]: v2.4.0 · Pro Studio
+  - main [ref=f2e28]:
+    - generic [ref=f2e65]:
+      - generic [ref=f2e66]:
+        - generic [ref=f2e67]:
+          - generic [ref=f2e68]:
+            - generic [ref=f2e69]: A
+            - generic [ref=f2e70]:
+              - generic [ref=f2e71]: Admin Tester
+              - generic [ref=f2e72]: Admin Tester Gallery
+          - heading "照片空间管理" [level=1] [ref=f2e73]
+        - generic [ref=f2e74]:
+          - button "新建空间" [ref=f2e75] [cursor=pointer]
+          - button "退出" [ref=f2e79] [cursor=pointer]
+      - generic [ref=f2e85]:
+        - generic [ref=f2e86]:
+          - generic [ref=f2e87]:
+            - generic [ref=f2e93]: 空间总数
+            - generic [ref=f2e94]: "1"
+          - generic [ref=f2e95]:
+            - generic [ref=f2e101]: 当前相册照片
+            - generic [ref=f2e102]: "2"
+        - button "刷新数据" [ref=f2e103] [cursor=pointer]
+      - article [ref=f2e112] [cursor=pointer]:
+        - generic [ref=f2e113]: PUBLIC
+        - generic [ref=f2e127]:
+          - generic [ref=f2e128]:
+            - heading "自然风光摄影空间Nature Space" [level=3] [ref=f2e129]
+            - code [ref=f2e131]: /g/nature-2026nature-2026
+          - generic [ref=f2e132]:
+            - button "3D 空间配置" [ref=f2e133]
+            - button "在 3D Viewer 中预览" [ref=f2e136]
+      - generic [ref=f2e142]:
+        - generic [ref=f2e143]:
+          - generic [ref=f2e144]:
+            - generic [ref=f2e145]:
+              - heading "自然风光摄影空间Nature Space" [level=2] [ref=f2e146]
+              - generic [ref=f2e147]: PUBLIC
+            - paragraph [ref=f2e153]:
+              - generic [ref=f2e154]:
+                - text: "访问路由:"
+                - code [ref=f2e155]: /g/nature-2026nature-2026
+              - generic [ref=f2e156]: ·
+              - generic [ref=f2e157]: 包含 2 张照片
+          - generic [ref=f2e158]:
+            - button "3D 视觉配置" [ref=f2e159] [cursor=pointer]
+            - button "分享链接" [ref=f2e163] [cursor=pointer]
+            - button "3D 空间漫游" [ref=f2e172] [cursor=pointer]
+        - generic [ref=f2e186] [cursor=pointer]:
+          - heading "拖拽照片至此处上传，或 点击选择文件" [level=4] [ref=f2e187]:
+            - text: 拖拽照片至此处上传，或
+            - generic [ref=f2e188]: 点击选择文件
+          - paragraph [ref=f2e189]: 支持 JPG、PNG、WebP 高清图像 · 自动生成多尺度微距缩略图与 WebGL 3D 纹理
+        - generic [ref=f2e190]:
+          - article [ref=f2e191] [cursor=pointer]:
+            - generic [ref=f2e192]:
+              - img "微信图片_2026-08-26_174726_770.jpg" [ref=f2e193]
+              - generic [ref=f2e194]:
+                - generic [ref=f2e195]:
+                  - button "设为相册封面" [ref=f2e196]
+                  - button "删除照片" [ref=f2e200]
+                - generic [ref=f2e205]: 47 KB
+            - generic [ref=f2e207]:
+              - generic [ref=f2e208]: 微信图片_2026-08-26_174726_770.jpg
+              - 'generic "状态: READY" [ref=f2e209]'
+          - article [ref=f2e210] [cursor=pointer]:
+            - generic [ref=f2e211]:
+              - img "【哲风壁纸】人物-加油站-周杰伦.jpg" [ref=f2e212]
+              - generic [ref=f2e213]:
+                - generic [ref=f2e214]:
+                  - button "设为相册封面" [ref=f2e215]
+                  - button "删除照片" [ref=f2e219]
+                - generic [ref=f2e224]: 1238 KB
+            - generic [ref=f2e226]:
+              - generic [ref=f2e227]: 【哲风壁纸】人物-加油站-周杰伦.jpg
+              - 'generic "状态: READY" [ref=f2e228]'

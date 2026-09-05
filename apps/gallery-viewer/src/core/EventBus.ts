@@ -30,17 +30,23 @@ export class EventBus {
 
   /**
    * 触发事件
+   *
+   * 必须先对监听器集合做快照再遍历。插件的 config 处理器会在响应过程中
+   * off/on 重新注册自身（如 ParticlesPlugin 的卸载重装），而 Set.forEach
+   * 会重新访问迭代期间被删除又加回的成员，导致同一处理器被无限反复唤起、
+   * 主线程彻底死锁。
    */
   emit(event: string, data?: any): void {
     const handlers = this.events.get(event)
-    if (handlers) {
-      handlers.forEach(handler => {
-        try {
-          handler(data)
-        } catch (error) {
-          console.error(`Error in event handler for "${event}":`, error)
-        }
-      })
+    if (!handlers || handlers.size === 0) return
+
+    const snapshot = Array.from(handlers)
+    for (const handler of snapshot) {
+      try {
+        handler(data)
+      } catch (error) {
+        console.error(`Error in event handler for "${event}":`, error)
+      }
     }
   }
 

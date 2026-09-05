@@ -1,0 +1,32 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: V
+      - generic [ref=e10]:
+        - generic [ref=e11]: VIE Gallery
+        - generic [ref=e12]: Studio Console
+    - navigation "主导航" [ref=e13]:
+      - generic [ref=e14]: 管理工作区
+      - link "相册空间" [ref=e15] [cursor=pointer]:
+        - /url: /app/
+    - generic [ref=e22]:
+      - generic [ref=e23]: Cloud Storage Ready
+      - generic [ref=e26]: v2.4.0 · Pro Studio
+  - main [ref=e28]:
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - generic [ref=e33]: A
+            - generic [ref=e34]:
+              - generic [ref=e35]: Admin Tester
+              - generic [ref=e36]: Admin Tester Gallery
+          - heading "照片空间管理" [level=1] [ref=e37]
+        - generic [ref=e38]:
+          - button "新建空间" [ref=e39] [cursor=pointer]
+          - button "退出" [ref=e43] [cursor=pointer]
+      - generic [ref=e49]:
+        - generic [ref=e51]:
+          - generic [ref=e57]: 空间总数
+          - generic [ref=e58]: "0"
+        - button "刷新中…" [disabled] [ref=e59]

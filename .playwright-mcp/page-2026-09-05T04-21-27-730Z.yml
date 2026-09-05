@@ -1,0 +1,27 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]: V
+      - generic [ref=e10]:
+        - generic [ref=e11]: VIE Gallery
+        - generic [ref=e12]: Studio Console
+    - navigation "主导航" [ref=e13]:
+      - generic [ref=e14]: 管理工作区
+      - link "相册空间" [ref=e15] [cursor=pointer]:
+        - /url: /app/
+    - generic [ref=e22]:
+      - generic [ref=e23]: Cloud Storage Ready
+      - generic [ref=e26]: v2.4.0 · Pro Studio
+  - main [ref=e28]:
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - button "返回空间" [ref=e32] [cursor=pointer]
+          - generic [ref=e37]:
+            - heading "相册 · 3D 视觉工作室" [level=1] [ref=e38]
+            - paragraph [ref=e39]: 实时三维参数调优 · 空间几何排布 · 天穹大气 · 动态物理粒子与 Bloom 电影级泛光
+        - generic [ref=e40]:
+          - button "独立窗口预览" [ref=e41] [cursor=pointer]
+          - button "重置默认" [ref=e48] [cursor=pointer]
+          - button "保存发布配置" [ref=e56] [cursor=pointer]
+      - paragraph [ref=e63]: 正在载入相册 3D 视觉配置参数...

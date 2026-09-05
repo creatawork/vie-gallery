@@ -17,6 +17,7 @@ export class ParticlesPlugin implements ViewerPlugin {
 
   private context: ViewerContext | null = null
   private systems: Map<string, ParticleSystem> = new Map()
+  private isReinstalling = false
 
   async install(context: ViewerContext): Promise<void> {
     this.context = context
@@ -72,14 +73,16 @@ export class ParticlesPlugin implements ViewerPlugin {
   }
 
   private handleConfigChange = (data: any): void => {
-    if (!data.particles) return
+    if (!data.particles || this.isReinstalling) return
 
-    // 重新安装生效
+    // 重新安装生效，设置标志防止递归
+    this.isReinstalling = true
     const prevContext = this.context
     this.uninstall()
     if (prevContext) {
       this.install(prevContext)
     }
+    this.isReinstalling = false
   }
 }
 

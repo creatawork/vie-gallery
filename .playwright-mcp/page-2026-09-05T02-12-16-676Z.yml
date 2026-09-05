@@ -1,0 +1,21 @@
+- generic [ref=e3]:
+  - generic:
+    - banner:
+      - generic [ref=e4]:
+        - generic [ref=e5]: VIE GALLERY
+        - generic [ref=e8]:
+          - generic [ref=e9]: 自然风光摄影空间Nature Space
+          - generic [ref=e10]: 2 张照片
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - button "3D 空间" [ref=e13] [cursor=pointer]
+          - button "经典网格" [ref=e19] [cursor=pointer]
+        - button "自动巡航" [ref=e27] [cursor=pointer]
+        - button "陀螺仪重力感应视差" [ref=e33] [cursor=pointer]
+        - button "3D 性能指标探针" [ref=e37] [cursor=pointer]
+        - button "氛围特效" [ref=e43] [cursor=pointer]
+        - button "全屏浏览" [ref=e48] [cursor=pointer]
+        - button "分享" [ref=e55] [cursor=pointer]
+    - generic [ref=e64]:
+      - generic:
+        - paragraph: 单击照片聚焦飞入 · 按住左键旋转视角 · 滚轮缩放星云
