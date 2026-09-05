@@ -409,10 +409,8 @@ onMounted(() => {
 
     <!-- Main Config Studio Layout -->
     <div v-else class="studio-container">
-      <!-- Left Column: Controls & Settings -->
-      <div class="controls-column">
-        <!-- Section 1: Presets -->
-        <section class="config-card">
+      <!-- Section 1: Presets -->
+      <section class="config-card">
           <div class="card-header">
             <div class="card-icon-box">
               <Icon name="sparkles" :size="18" />
@@ -602,38 +600,6 @@ onMounted(() => {
             </div>
           </div>
         </section>
-      </div>
-
-      <!-- Right Column: Live Interactive 3D Preview Frame -->
-      <aside class="preview-column">
-        <div class="preview-sticky-card">
-          <div class="preview-header">
-            <div class="preview-status-pill">
-              <span class="live-dot"></span>
-              <span class="preview-status-title">3D 实时动态预览</span>
-            </div>
-            <button class="preview-refresh-btn" title="强制刷新重载" @click="forceReloadPreview">
-              <Icon name="refresh" :size="15" />
-            </button>
-          </div>
-
-          <div class="preview-viewport">
-            <iframe
-              ref="previewIframeRef"
-              :key="previewKey"
-              :src="previewUrl"
-              class="preview-iframe"
-              title="3D Live Viewer"
-              allow="accelerometer; gyroscope; fullscreen"
-            ></iframe>
-          </div>
-
-          <div class="preview-footer">
-            <Icon name="cube" :size="14" />
-            <span>支持在视窗中拖拽旋转视角与缩放 · 实时响应参数变化</span>
-          </div>
-        </div>
-      </aside>
     </div>
 
     <!-- Confirm Reset Modal -->
@@ -655,8 +621,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 1560px;
-  margin: 0 auto;
 }
 
 .config-top-header {
@@ -665,44 +629,53 @@ onMounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: 18px;
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
 }
 
 .header-left {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 18px;
 }
 
 .back-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-secondary);
+  color: #475569;
   font-size: 13px;
-  font-weight: 500;
-  padding: 4px 8px;
-  margin-left: -8px;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
+  font-weight: 600;
+  padding: 8px 14px;
+  background: rgba(241, 245, 249, 0.9);
+  border: 1px solid rgba(203, 213, 225, 0.6);
+  border-radius: 10px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .back-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-surface-subtle);
+  color: #047857;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border-color: rgba(16, 185, 129, 0.3);
+  transform: translateX(-2px);
 }
 
 .title-meta h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 750;
+  color: #0f172a;
+  letter-spacing: -0.02em;
   margin-bottom: 2px;
 }
 
 .title-meta p {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  color: var(--text-tertiary);
 }
 
 .header-right {
@@ -724,7 +697,7 @@ onMounted(() => {
 .spinner {
   width: 44px;
   height: 44px;
-  border: 3px solid var(--border-strong);
+  border: 3px solid rgba(226, 232, 240, 0.8);
   border-top-color: #10b981;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -734,56 +707,68 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* Studio 2-Column Layout */
+/* Studio Centered Layout */
 .studio-container {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 480px;
-  gap: 24px;
-  align-items: start;
-}
-
-.controls-column {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .config-card {
-  background: #ffffff;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  padding: 22px;
-  box-shadow: var(--shadow-xs);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(250, 252, 251, 0.9) 100%);
+  border: 1.5px solid rgba(226, 232, 240, 0.8);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 
+    0 4px 16px rgba(15, 23, 42, 0.03),
+    0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.25s ease;
+}
+
+.config-card:hover {
+  box-shadow: 
+    0 8px 24px rgba(15, 23, 42, 0.05),
+    0 0 0 1px rgba(16, 185, 129, 0.15) inset;
+  border-color: rgba(16, 185, 129, 0.25);
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 18px;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
 }
 
 .card-icon-box {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: #ecfdf5;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
   color: #059669;
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
 }
 
 .card-header h3 {
-  font-size: 15.5px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
   margin-bottom: 2px;
 }
 
 .card-header p {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  color: #64748b;
 }
 
 .form-grid-2 {
@@ -930,98 +915,5 @@ onMounted(() => {
 .range-slider {
   width: 100%;
   accent-color: #10b981;
-}
-
-/* ==========================================
-   Right Column: Sticky Live Preview
-   ========================================== */
-.preview-column {
-  position: sticky;
-  top: 24px;
-}
-
-.preview-sticky-card {
-  background: #111820;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-}
-
-.preview-header {
-  padding: 14px 18px;
-  background: rgba(18, 25, 30, 0.95);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.preview-status-pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 8px #10b981;
-}
-
-.preview-status-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #f1f5f9;
-}
-
-.preview-refresh-btn {
-  color: #94a3b8;
-  padding: 4px;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-}
-
-.preview-refresh-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.preview-viewport {
-  width: 100%;
-  height: 520px;
-  background: #070a0d;
-}
-
-.preview-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
-.preview-footer {
-  padding: 12px 18px;
-  background: rgba(18, 25, 30, 0.95);
-  font-size: 11.5px;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-@media (max-width: 1180px) {
-  .studio-container {
-    grid-template-columns: 1fr;
-  }
-
-  .preview-column {
-    position: static;
-  }
 }
 </style>
