@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, reactive, computed } from 'vue'
+import { ref, onMounted, reactive, computed, toRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
@@ -19,8 +19,34 @@ const galleryInfo = ref<any>(null)
 const showResetConfirm = ref(false)
 const resetting = ref(false)
 const previewKey = ref(0)
+const previewIframeRef = ref<HTMLIFrameElement | null>(null)
 
-// 3D Visual Config Object
+function sendLiveMessage(msg: any) {
+  if (previewIframeRef.value && previewIframeRef.value.contentWindow) {
+    try {
+      // 剥离 Vue 3 Proxy 与不可结构化克隆的内部引用
+      // 使用 toRaw() 彻底解除响应式代理，避免 JSON.stringify 触发无限响应式依赖
+      const rawMsg = toRaw(msg)
+      const cleanMsg = JSON.parse(JSON.stringify(rawMsg))
+      previewIframeRef.value.contentWindow.postMessage(cleanMsg, '*')
+    } catch (err) {
+      console.warn('postMessage structured clone fallback:', err)
+    }
+  }
+}
+
+function handleLayoutChange(mode: string) {
+  config.layout.mode = mode
+  sendLiveMessage({ type: 'VIE_LAYOUT_CHANGE', mode })
+}
+
+function refreshLivePreview() {
+  sendLiveMessage({ type: 'VIE_CONFIG_UPDATE', config })
+}
+
+function forceReloadPreview() {
+  previewKey.value++
+}
 const config = reactive({
   presetName: 'starry-night' as string | null,
   layout: {
@@ -77,6 +103,41 @@ const previewUrl = computed(() => {
   return `${base}/g/${slug}?t=${previewKey.value}&preset=${config.presetName || 'starry-night'}&layout=${config.layout.mode}`
 })
 
+function deepMerge(target: any, source: any) {
+  if (!source) return target
+  for (const key of Object.keys(source)) {
+    const val = source[key]
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      if (!target[key] || typeof target[key] !== 'object') {
+        target[key] = {}
+      }
+      deepMerge(target[key], val)
+    } else if (Array.isArray(val)) {
+      target[key] = [...val]
+    } else if (val !== undefined) {
+      target[key] = val
+    }
+  }
+  return target
+}
+
+function ensureConfigDefaults() {
+  if (!config.background) config.background = { type: 'sky' } as any
+  if (!config.background.sky) config.background.sky = { theme: 'starry', timeOfDay: 'night' }
+  if (!config.background.gradient) config.background.gradient = { colors: ['#0f172a', '#1e293b'], direction: 'vertical' }
+  if (!config.particles) config.particles = { enabled: true, types: ['stars'], density: 1.0 }
+  if (!Array.isArray(config.particles.types)) config.particles.types = ['stars']
+  if (!config.effects) config.effects = {} as any
+  if (!config.effects.bloom) config.effects.bloom = { enabled: true, strength: 0.75, radius: 0.5, threshold: 0.18 }
+  if (!config.effects.fog) config.effects.fog = { enabled: false, color: '#0f172a', density: 0.0008 }
+  if (!config.layout) config.layout = { mode: 'sphere' }
+}
+
+function onBackgroundTypeChange() {
+  ensureConfigDefaults()
+  refreshLivePreview()
+}
+
 async function loadGalleryAndConfig() {
   loading.value = true
   try {
@@ -93,10 +154,11 @@ async function loadGalleryAndConfig() {
       const data = await response.json()
       if (data && data.configJson) {
         const parsed = JSON.parse(data.configJson)
-        Object.assign(config, parsed)
+        deepMerge(config, parsed)
         if (data.presetName) config.presetName = data.presetName
       }
     }
+    ensureConfigDefaults()
   } catch (err: any) {
     toast.error('加载相册配置失败')
   } finally {
@@ -106,11 +168,12 @@ async function loadGalleryAndConfig() {
 
 async function applyPreset(presetName: string) {
   config.presetName = presetName
+  ensureConfigDefaults()
 
   if (presetName === 'minimal') {
     config.layout.mode = 'sphere'
     config.background.type = 'gradient'
-    config.background.gradient.colors = ['#f8fafc', '#e2e8f0']
+    config.background.gradient = { colors: ['#f8fafc', '#e2e8f0'], direction: 'vertical' }
     config.particles.enabled = false
     config.particles.types = []
     config.effects.bloom.enabled = false
@@ -159,7 +222,7 @@ async function applyPreset(presetName: string) {
   } else if (presetName === 'romantic') {
     config.layout.mode = 'spiral'
     config.background.type = 'gradient'
-    config.background.gradient.colors = ['#4a0e2e', '#831843']
+    config.background.gradient = { colors: ['#4a0e2e', '#831843'], direction: 'radial' }
     config.particles.enabled = true
     config.particles.types = ['hearts']
     config.effects.bloom.enabled = true
@@ -169,10 +232,6 @@ async function applyPreset(presetName: string) {
 
   refreshLivePreview()
   toast.success(`已切换至 “${presetName}” 氛围预设`)
-}
-
-function refreshLivePreview() {
-  previewKey.value++
 }
 
 function toggleParticleType(type: string) {
@@ -188,25 +247,36 @@ function toggleParticleType(type: string) {
 async function save() {
   saving.value = true
   try {
+    ensureConfigDefaults()
+    // 使用 toRaw() 剥离 Vue reactive proxy，避免 JSON.stringify 触发响应式死循环
+    const rawConfig = toRaw(config)
+    const cleanConfig = JSON.parse(JSON.stringify(rawConfig))
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        configJson: JSON.stringify(config),
-        presetName: config.presetName
+        configJson: JSON.stringify(cleanConfig),
+        presetName: config.presetName || 'custom'
       })
     })
 
     if (!response.ok) {
-      throw new Error('保存配置失败')
+      let msg = `保存失败 (${response.status})`
+      try {
+        const data = await response.json()
+        if (data && (data.message || data.code)) {
+          msg = data.message || data.code
+        }
+      } catch (_) {}
+      throw new Error(msg)
     }
 
     toast.success('3D 视觉配置已成功持久化并同步！')
     refreshLivePreview()
   } catch (err: any) {
-    toast.error(err.message || '保存失败')
+    toast.error(err.message || '保存失败，请检查网络或登录状态')
   } finally {
     saving.value = false
   }
@@ -319,7 +389,7 @@ onMounted(() => {
           </div>
           <LayoutSettings
             v-model:mode="config.layout.mode"
-            @update:mode="refreshLivePreview"
+            @update:mode="handleLayoutChange"
           />
         </section>
 
@@ -338,14 +408,14 @@ onMounted(() => {
           <div class="form-grid-2">
             <div class="form-group">
               <label class="form-label">背景模式</label>
-              <select v-model="config.background.type" class="select-input" @change="refreshLivePreview">
+              <select v-model="config.background.type" class="select-input" @change="onBackgroundTypeChange">
                 <option value="sky">沉浸式天空穹顶 (SkyDome)</option>
                 <option value="gradient">艺术渐变 (Gradient)</option>
                 <option value="none">极简纯黑 (Pure Dark)</option>
               </select>
             </div>
 
-            <div v-if="config.background.type === 'sky'" class="form-group">
+            <div v-if="config.background.type === 'sky' && config.background.sky" class="form-group">
               <label class="form-label">天空盒主题</label>
               <select v-model="config.background.sky.theme" class="select-input" @change="refreshLivePreview">
                 <option value="starry">星空银河 (Starry Night)</option>
@@ -355,7 +425,7 @@ onMounted(() => {
               </select>
             </div>
 
-            <div v-if="config.background.type === 'gradient'" class="form-group">
+            <div v-if="config.background.type === 'gradient' && config.background.gradient" class="form-group">
               <label class="form-label">渐变方向</label>
               <select v-model="config.background.gradient.direction" class="select-input" @change="refreshLivePreview">
                 <option value="vertical">垂直线性 (Vertical)</option>
@@ -490,17 +560,19 @@ onMounted(() => {
               <span class="live-dot"></span>
               <span class="preview-status-title">3D 实时动态预览</span>
             </div>
-            <button class="preview-refresh-btn" title="刷新预览" @click="refreshLivePreview">
+            <button class="preview-refresh-btn" title="强制刷新重载" @click="forceReloadPreview">
               <Icon name="refresh" :size="15" />
             </button>
           </div>
 
           <div class="preview-viewport">
             <iframe
+              ref="previewIframeRef"
               :key="previewKey"
               :src="previewUrl"
               class="preview-iframe"
               title="3D Live Viewer"
+              allow="accelerometer; gyroscope; fullscreen"
             ></iframe>
           </div>
 
