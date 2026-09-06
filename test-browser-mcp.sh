@@ -9,11 +9,11 @@ echo "======================================"
 echo ""
 
 # Test Configuration
-ADMIN_URL="http://localhost:5173"
-API_URL="http://localhost:8080"
+ADMIN_URL="${ADMIN_URL:-http://localhost:5173}"
+API_PORT="${API_PORT:-8088}"
+API_URL="${API_URL:-http://localhost:${API_PORT}}"
 TEST_EMAIL="browser-test-$(date +%s)@example.com"
-TEST_PASSWORD="Test123456"
-TEST_USERNAME="browsertest$(date +%s)"
+TEST_PASSWORD="Test12345678"
 
 echo "📋 Test Configuration:"
 echo "  Admin URL: $ADMIN_URL"
@@ -63,12 +63,10 @@ cat > /tmp/vie-gallery-test-data.json <<EOF
   "apiUrl": "$API_URL",
   "testEmail": "$TEST_EMAIL",
   "testPassword": "$TEST_PASSWORD",
-  "testUsername": "$TEST_USERNAME",
   "testImagePath": "$TEST_IMAGE_PATH",
-  "spaceName": "浏览器测试空间",
-  "spaceDescription": "通过 MCP 浏览器自动化创建",
-  "albumName": "测试相册 $(date +%H:%M:%S)",
-  "albumDescription": "自动化测试相册"
+  "galleryName": "浏览器测试 Gallery",
+  "gallerySlug": "browser-gallery-$(date +%s)",
+  "galleryVisibility": "PUBLIC"
 }
 EOF
 
@@ -87,44 +85,36 @@ echo "   - Click register/signup"
 echo "   - Fill form: email=$TEST_EMAIL, password=$TEST_PASSWORD"
 echo "   - Submit and verify redirect to dashboard"
 echo ""
-echo "2️⃣  Create Photo Space:"
-echo "   - Click '创建空间' or 'Create Space' button"
-echo "   - Fill: name='浏览器测试空间', description='通过 MCP 创建'"
-echo "   - Submit and verify space appears in list"
-echo ""
-echo "3️⃣  Create Album:"
-echo "   - Click into the created space"
-echo "   - Click '创建相册' or 'Create Album'"
-echo "   - Fill: name='测试相册', description='自动化测试'"
-echo "   - Submit and verify album created"
+echo "2️⃣  Create Gallery:"
+echo "   - Click '创建空间' or 'Create Gallery' button"
+echo "   - Fill: name='浏览器测试 Gallery', slug='browser-gallery-<timestamp>', visibility='PUBLIC'"
+echo "   - Submit and verify the gallery appears in the gallery list"
 echo ""
 
 if [ -n "$TEST_IMAGE_PATH" ]; then
-echo "4️⃣  Upload Photo:"
-echo "   - Click into the album"
+echo "3️⃣  Upload Photo:"
+echo "   - Open the created Gallery workspace"
 echo "   - Click '上传照片' or 'Upload Photo'"
 echo "   - Select file: $TEST_IMAGE_PATH"
-echo "   - Wait for upload complete"
-echo "   - Verify photo appears in gallery"
+echo "   - Wait for asynchronous processing to finish"
+echo "   - Verify the photo appears in the Gallery workspace"
 echo ""
 fi
 
-echo "5️⃣  Create Share Link:"
-echo "   - Click '分享' or 'Share' button"
-echo "   - Select 'PUBLIC' access type"
+echo "4️⃣  Create Share Link:"
+echo "   - Open the Gallery share panel"
 echo "   - Click '生成链接' or 'Generate Link'"
-echo "   - Copy the share URL"
+echo "   - Copy the generated viewer URL and token"
 echo ""
-echo "6️⃣  Verify Public Access:"
-echo "   - Open share URL in new incognito/private window"
-echo "   - Verify space content loads without login"
-echo "   - Verify photos are visible"
+echo "5️⃣  Verify Public Access:"
+echo "   - Open the viewer URL in a new incognito/private window"
+echo "   - Verify /api/public/g/{slug} resolves the Gallery"
+echo "   - Verify public photos are visible after processing"
 echo ""
-echo "7️⃣  Test Password-Protected Share:"
-echo "   - Back to admin, create new share with PASSWORD type"
-echo "   - Set password: 'secret123'"
-echo "   - Open share URL"
-echo "   - Enter password and verify access"
+echo "6️⃣  Test Password Gallery:"
+echo "   - Create a Gallery with visibility='PASSWORD' when password management is available"
+echo "   - Open /g/{slug} and verify PASSWORD_REQUIRED"
+echo "   - Submit the configured password to /unlock and verify the session"
 echo ""
 echo "================================================"
 echo ""
@@ -134,7 +124,8 @@ cat > /tmp/vie-gallery-validate.sh <<'VALIDATE_SCRIPT'
 #!/bin/bash
 # Quick validation after browser tests
 
-API_URL="http://localhost:8080"
+API_PORT="${API_PORT:-8088}"
+API_URL="${API_URL:-http://localhost:${API_PORT}}"
 
 echo "🔍 Validating test results..."
 

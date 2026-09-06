@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { PublicApiClient, PublicApiError } from '../api/client'
-import type { PublicGalleryResponse, PublicPhoto, PhotoListResponse } from '../types/api'
+import type { PublicGalleryResponse, PublicPhoto, PublicPhotoPage } from '../types/api'
 
 export type ViewerState =
   | 'loading'
@@ -18,8 +18,9 @@ function userMessage(error: PublicApiError, fallback: string) {
   if (error.isShareLinkRequired || error.status === 403) return '此空间需要有效的分享链接才能访问。'
   if (error.isRateLimited) return '尝试次数过多，请稍后再试。'
   if (error.isNetworkError) return '网络连接异常，请检查网络后重试。'
+  if (error.status === 400 || error.status === 422) return '请求参数有误，请稍后重试。'
   if (error.status >= 500) return '服务暂时不可用，请稍后重试。'
-  return error.message || fallback
+  return fallback
 }
 
 export function useViewerState(slug: string) {
@@ -36,6 +37,9 @@ export function useViewerState(slug: string) {
   let requestVersion = 0
 
   const isReady = computed(() => state.value === 'ready')
+  const isPublicReady = computed(() =>
+    (isReady.value || isEmpty.value) && gallery.value?.accessState === 'READY' && gallery.value.visibility === 'PUBLIC'
+  )
   const needsPassword = computed(() => state.value === 'password_prompt')
   const needsShareLink = computed(() => state.value === 'share_required')
   const isEmpty = computed(() => state.value === 'empty')
@@ -96,7 +100,7 @@ export function useViewerState(slug: string) {
   }
 
   async function loadPhotos(page = 0, requestedPageSize = pageSize.value, version = requestVersion) {
-    const response: PhotoListResponse = await client.getPhotos(slug, page, requestedPageSize)
+    const response: PublicPhotoPage = await client.getPhotos(slug, page, requestedPageSize)
     if (version !== requestVersion) return
 
     if (page === 0) photos.value = response.items
@@ -114,7 +118,13 @@ export function useViewerState(slug: string) {
     try {
       await loadPhotos(currentPage.value + 1, pageSize.value)
     } catch (cause) {
-      handleError(cause, '加载更多照片失败，请重试。')
+      // Loading another page must not replace an already usable gallery with a
+      // full-screen error. Keep the ready state and expose a retryable message.
+      if (cause instanceof PublicApiError) {
+        error.value = userMessage(cause, '加载更多照片失败，请重试。')
+      } else {
+        error.value = '加载更多照片失败，请重试。'
+      }
     } finally {
       loadingMore.value = false
     }
@@ -158,6 +168,7 @@ export function useViewerState(slug: string) {
     total,
     loadingMore,
     isReady,
+    isPublicReady,
     needsPassword,
     needsShareLink,
     isEmpty,

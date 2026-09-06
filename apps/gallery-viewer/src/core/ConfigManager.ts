@@ -1,4 +1,5 @@
 import type { ViewerConfig } from './types'
+import { PublicApiClient } from '../api/client'
 
 /**
  * 6 大生产级预设配置定义
@@ -150,6 +151,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
 export class ConfigManager {
   private config: ViewerConfig
   private serverConfig: Partial<ViewerConfig> | null = null
+  private readonly publicApi = new PublicApiClient()
   private readonly STORAGE_KEY = 'vie-gallery-viewer-config'
   private readonly PREFERENCE_KEY = 'vie-gallery-viewer-preference'
 
@@ -164,38 +166,17 @@ export class ConfigManager {
    * 从服务端加载配置（相册所有者设定的风格）
    */
   async loadFromServer(slug: string): Promise<ViewerConfig> {
-    try {
-      const params = new URLSearchParams(window.location.search)
-      const queryToken = params.get('t') || params.get('token')
-      const hashToken = window.location.hash.match(/(?:^#|[&#])s=([^&]+)/)?.[1]
-      const token = queryToken || (hashToken ? decodeURIComponent(hashToken) : null)
-      const headers: Record<string, string> = {}
-      if (token) {
-        headers['X-Share-Token'] = token
-      }
-
-      const response = await fetch(`/api/public/g/${encodeURIComponent(slug)}/viewer-config`, {
-        headers,
-        credentials: 'include'
-      })
-      if (response.ok) {
-        const serverData = await response.json()
-        if (serverData && serverData.configJson) {
-          try {
-            const parsed = JSON.parse(serverData.configJson)
-            this.serverConfig = parsed
-            this.config = this.deepMerge(
-              DEFAULT_CONFIG,
-              parsed,
-              this.loadPreferenceFromStorage()
-            )
-          } catch (e) {
-            console.warn('Failed to parse server config JSON', e)
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to load server config:', error)
+    // Use the public client so HTTP and network failures retain their typed,
+    // non-sensitive error details. Only an empty 404 means no saved config.
+    const serverData = await this.publicApi.getViewerConfig(slug)
+    if (serverData?.configJson) {
+      const parsed = JSON.parse(serverData.configJson) as Partial<ViewerConfig>
+      this.serverConfig = parsed
+      this.config = this.deepMerge(
+        DEFAULT_CONFIG,
+        parsed,
+        this.loadPreferenceFromStorage()
+      )
     }
     return this.getConfig()
   }

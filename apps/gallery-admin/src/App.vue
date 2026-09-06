@@ -15,6 +15,7 @@ const {
   userDisplayName,
   tenantName,
   userInitial,
+  isOwner,
   checkAuth,
   logout
 } = useAuth()
@@ -57,6 +58,10 @@ onMounted(() => {
             <RouterLink to="/" class="nav-tab" :class="{ active: route.path === '/' }">
               <Icon name="gallery" :size="16" />
               <span>相册空间</span>
+            </RouterLink>
+            <RouterLink v-if="isOwner" to="/members" class="nav-tab" :class="{ active: route.path === '/members' }">
+              <Icon name="users" :size="16" />
+              <span>成员管理</span>
             </RouterLink>
           </nav>
         </div>

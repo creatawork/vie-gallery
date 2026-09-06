@@ -15,6 +15,10 @@ public interface ShareLinkMapper {
             "expires_at expiresAt, revoked_at revokedAt, last_accessed_at lastAccessedAt, " +
             "created_at createdAt, updated_at updatedAt";
 
+    String QUALIFIED_COLUMNS = "BIN_TO_UUID(sl.id) id, BIN_TO_UUID(sl.gallery_id) galleryId, " +
+            "sl.token_hash tokenHash, sl.expires_at expiresAt, sl.revoked_at revokedAt, " +
+            "sl.last_accessed_at lastAccessedAt, sl.created_at createdAt, sl.updated_at updatedAt";
+
     @Select("SELECT " + COLUMNS + " FROM share_link WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
     Map<String, Object> findById(@Param("id") String id);
 
@@ -25,7 +29,7 @@ public interface ShareLinkMapper {
             "ORDER BY created_at DESC")
     List<Map<String, Object>> findByGalleryId(@Param("galleryId") String galleryId);
 
-    @Select("SELECT sl." + COLUMNS + " FROM share_link sl " +
+    @Select("SELECT " + QUALIFIED_COLUMNS + " FROM share_link sl " +
             "INNER JOIN gallery g ON sl.gallery_id = g.id " +
             "WHERE sl.gallery_id = UUID_TO_BIN(#{galleryId}) " +
             "AND g.tenant_id = UUID_TO_BIN(#{tenantId}) " +

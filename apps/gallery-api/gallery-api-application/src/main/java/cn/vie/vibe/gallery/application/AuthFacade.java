@@ -89,6 +89,10 @@ public class AuthFacade {
         return new TenantContext(authenticated.user().id(), authenticated.tenant().id(), authenticated.role());
     }
 
+    public java.util.List<cn.vie.vibe.gallery.domain.Capability> capabilities(MembershipRole role) {
+        return WorkspaceCapabilities.forRole(role);
+    }
+
     private Membership resolveMembership(UUID userId) {
         return memberships.findDefaultActiveByUserId(userId)
                 .orElseThrow(() -> new DomainException("AUTH_TENANT_NOT_FOUND", "No active tenant membership"));

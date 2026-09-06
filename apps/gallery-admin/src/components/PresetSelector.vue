@@ -3,6 +3,7 @@ import Icon from './Icon.vue'
 
 defineProps<{
   currentPreset?: string | null
+  disabled?: boolean
 }>()
 
 defineEmits<{
@@ -94,6 +95,7 @@ const presets = [
         type="button"
         class="preset-card"
         :class="{ active: currentPreset === preset.name }"
+        :disabled="disabled"
         :style="{
           '--accent-color': preset.accentColor,
           '--accent-bg': preset.accentBg

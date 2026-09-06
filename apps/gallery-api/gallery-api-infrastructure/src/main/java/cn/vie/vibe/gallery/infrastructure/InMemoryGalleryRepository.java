@@ -49,7 +49,7 @@ public class InMemoryGalleryRepository implements GalleryRepository {
     @Override public void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId) {
         findById(tenantId, galleryId).ifPresent(g -> {
             values.remove(g);
-            values.add(new Gallery(g.id(), g.tenantId(), g.slug(), g.name(), g.visibility(), g.passwordHash(), coverPhotoId, g.deleted(), g.createdAt()));
+            values.add(new Gallery(g.id(), g.tenantId(), g.slug(), g.name(), g.visibility(), g.passwordHash(), coverPhotoId, g.deleted(), g.createdAt(), g.status(), g.publishedAt()));
         });
     }
 }

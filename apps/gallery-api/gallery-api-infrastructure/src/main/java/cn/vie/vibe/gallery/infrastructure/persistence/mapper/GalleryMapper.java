@@ -15,7 +15,7 @@ import java.util.Optional;
 public interface GalleryMapper {
     String COLUMNS = "BIN_TO_UUID(id) id, BIN_TO_UUID(tenant_id) tenantId, slug, name, visibility, " +
             "password_hash passwordHash, BIN_TO_UUID(cover_photo_id) coverPhotoId, " +
-            "(deleted_at IS NOT NULL) deleted, created_at createdAt";
+            "(deleted_at IS NOT NULL) deleted, created_at createdAt, status, published_at publishedAt";
 
     @Select("SELECT " + COLUMNS + " FROM gallery WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND deleted_at IS NULL ORDER BY created_at DESC")
     List<Map<String, Object>> findAll(@Param("tenantId") String tenantId);
@@ -33,17 +33,20 @@ public interface GalleryMapper {
     @Select("SELECT " + COLUMNS + " FROM gallery WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL LIMIT 1")
     Map<String, Object> findByTenantAndId(@Param("tenantId") String tenantId, @Param("id") String id);
 
-    @Insert("INSERT INTO gallery (id, tenant_id, slug, name, visibility, password_hash, cover_photo_id, deleted_at, created_at, updated_at) " +
+    @Insert("INSERT INTO gallery (id, tenant_id, slug, name, visibility, password_hash, cover_photo_id, deleted_at, created_at, updated_at, status, published_at) " +
             "VALUES (UUID_TO_BIN(#{id}), UUID_TO_BIN(#{tenantId}), #{slug}, #{name}, #{visibility}, #{passwordHash}, " +
-            "#{coverPhotoId}, NULL, #{createdAt}, #{updatedAt})")
+            "#{coverPhotoId}, NULL, #{createdAt}, #{updatedAt}, #{status}, #{publishedAt})")
     int insert(@Param("id") String id, @Param("tenantId") String tenantId, @Param("slug") String slug,
                @Param("name") String name, @Param("visibility") String visibility, @Param("passwordHash") String passwordHash,
-               @Param("coverPhotoId") String coverPhotoId, @Param("createdAt") LocalDateTime createdAt, @Param("updatedAt") LocalDateTime updatedAt);
+               @Param("coverPhotoId") String coverPhotoId, @Param("createdAt") LocalDateTime createdAt, @Param("updatedAt") LocalDateTime updatedAt,
+               @Param("status") String status, @Param("publishedAt") LocalDateTime publishedAt);
 
     @Update("UPDATE gallery SET name = #{name}, visibility = #{visibility}, password_hash = #{passwordHash}, " +
-            "cover_photo_id = #{coverPhotoId}, updated_at = #{updatedAt} WHERE id = UUID_TO_BIN(#{id})")
-    int update(@Param("id") String id, @Param("name") String name, @Param("visibility") String visibility,
+            "cover_photo_id = #{coverPhotoId}, status = #{status}, published_at = #{publishedAt}, updated_at = #{updatedAt} " +
+            "WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
+    int update(@Param("tenantId") String tenantId, @Param("id") String id, @Param("name") String name, @Param("visibility") String visibility,
                @Param("passwordHash") String passwordHash, @Param("coverPhotoId") String coverPhotoId,
+               @Param("status") String status, @Param("publishedAt") LocalDateTime publishedAt,
                @Param("updatedAt") LocalDateTime updatedAt);
 
     @Update("UPDATE gallery SET cover_photo_id = UUID_TO_BIN(#{coverPhotoId}), updated_at = #{updatedAt} WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")

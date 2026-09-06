@@ -1,383 +1,221 @@
-# VIE Gallery - MCP 测试指南
+# VIE Gallery 测试与验收指南
 
-## 快速开始
+本文档是当前测试入口。所有示例以 Gallery API、UUID 和 `infra/.env` 的端口为准；旧的 spaces/albums API 资料已移入 [`docs/archive/`](archive/)。
 
-### 方式一：交互式菜单（推荐）
+## 环境要求
 
-```bash
-bash quick-test.sh
-```
+- Docker Compose
+- Java 17+
+- Node.js 18+
+- npm、curl
+- ImageMagick（可选，仅 CLI 流程用于生成测试图片）
 
-这将打开一个交互式菜单，你可以：
-- 启动所有服务
-- 运行 API 测试
-- 运行浏览器 MCP 测试
-- 查看服务状态
-- 停止所有服务
+## 服务地址
 
-### 方式二：命令行
+启动 `infra/docker-compose.yml` 后，宿主端口由 `infra/.env` 控制，当前默认值为：
 
-```bash
-# 启动所有服务
-bash quick-test.sh start
+| 服务 | 地址 |
+| --- | --- |
+| API | <http://localhost:8088> |
+| API 健康检查 | <http://localhost:8088/actuator/health> |
+| Admin | <http://localhost:5173> |
+| Viewer | <http://localhost:5174> |
+| MySQL | `localhost:3307` |
+| Redis | `localhost:6379` |
+| MinIO API | <http://localhost:9000> |
+| MinIO Console | <http://localhost:9001> |
 
-# 运行 API 测试
-bash quick-test.sh test
+API 容器内部仍监听 8080；8088 是当前 Compose 的宿主映射，不要把两者混用。
 
-# 运行浏览器测试指南
-bash quick-test.sh test-browser
-
-# 查看服务状态
-bash quick-test.sh status
-
-# 停止所有服务
-bash quick-test.sh stop
-```
-
-## 测试脚本说明
-
-### 1. `start-services.sh` - 启动后端服务
-
-启动 Docker 容器中的所有后端服务：
-- MySQL (端口 3306)
-- Redis (端口 6379)
-- MinIO (端口 9000, 9001)
-- Spring Boot API (端口 8080)
+## 启动和停止
 
 ```bash
-bash start-services.sh
-```
+# 构建后端 jar
+cd apps/gallery-api
+mvn -DskipTests package
 
-**验证服务启动：**
-```bash
-# 检查 Docker 容器
-cd infra && docker-compose ps
+# 启动后端依赖和 API
+cd ../../infra
+docker compose up -d
 
-# 测试 API 健康检查
-curl http://localhost:8080/actuator/health
-
-# 访问 MinIO 控制台
-# http://localhost:9001
-# 用户名: vie_local
-# 密码: vie_local_secret
-```
-
-### 2. `start-frontend.sh` - 启动前端服务
-
-启动两个前端应用：
-- Admin UI (Vue.js) - http://localhost:5173
-- Viewer UI (Three.js) - http://localhost:5174
-
-```bash
+# 启动两个前端（另开终端）
+cd ..
 bash start-frontend.sh
+
+# 停止服务；不要默认删除数据卷
+docker compose -f infra/docker-compose.yml down
 ```
 
-前端会在后台运行，日志保存在：
-- Admin: `/tmp/vie-admin.log`
-- Viewer: `/tmp/vie-viewer.log`
+## 自动化检查
 
-### 3. `test-mcp-flow.sh` - API 全流程测试
+### 后端
 
-使用 curl 测试完整的 API 流程：
+```bash
+cd apps/gallery-api
+mvn test
+mvn -DskipTests verify
+```
 
-✅ 测试覆盖：
-- 用户注册
-- 用户登录（获取 SESSION）
-- 创建照片空间
-- 创建相册
-- 上传照片
-- 创建公开分享链接
-- 创建密码保护分享链接
-- 验证公开访问
-- 用户登出
+重点测试公开访问、分享 Token、密码 Session、READY 过滤和分页：
+
+- `PublicAccessFacadeTest`
+- `PublicGalleryControllerTest`
+- `ShareLinkFacadeTest`
+
+### 前端
+
+```bash
+cd apps/gallery-admin
+npm install
+npm run build
+
+cd ../gallery-viewer
+npm install
+npm run build
+```
+
+Viewer build 应包含 TypeScript 检查；前端单测配置完成后，使用各应用 package.json 中声明的 test 命令运行。
+
+### CLI 主流程
+
+服务健康后，从仓库根目录运行：
 
 ```bash
 bash test-mcp-flow.sh
 ```
 
-**输出示例：**
-```
-🧪 VIE Gallery - Full MCP Test Suite
-====================================
-
-📋 Step 0: Checking service availability...
-Checking API Health... ✓
-Checking Admin UI... ✓
-Checking Viewer UI... ✓
-
-📋 Step 1: User Registration
-----------------------------
-✓ Registration successful
-  User ID: 1
-
-📋 Step 2: User Login
----------------------
-✓ Login successful
-  Session cookie saved to /tmp/vie-gallery-session.txt
-...
-```
-
-### 4. `test-browser-mcp.sh` - 浏览器 MCP 测试指南
-
-准备浏览器自动化测试所需的测试数据和步骤指南。
+可通过环境变量覆盖地址：
 
 ```bash
-bash test-browser-mcp.sh
+API_BASE=http://localhost:8088 \
+ADMIN_UI=http://localhost:5173 \
+VIEWER_UI=http://localhost:5174 \
+bash test-mcp-flow.sh
 ```
 
-这会：
-1. 生成测试用的图片文件
-2. 创建测试数据 JSON
-3. 显示详细的手动测试步骤
+脚本应只调用当前接口：
 
-**测试步骤：**
-```
-1️⃣ Registration & Login
-2️⃣ Create Photo Space
-3️⃣ Create Album
-4️⃣ Upload Photo
-5️⃣ Create Share Link
-6️⃣ Verify Public Access
-7️⃣ Test Password-Protected Share
-```
-
-### 5. `quick-test.sh` - 一站式测试脚本
-
-集成所有功能的总控脚本，提供交互式菜单或命令行模式。
-
-```bash
-# 交互式
-bash quick-test.sh
-
-# 命令行
-bash quick-test.sh start   # 启动所有服务
-bash quick-test.sh test    # 运行 API 测试
-bash quick-test.sh stop    # 停止所有服务
+```text
+POST /api/auth/register
+POST /api/auth/login
+GET  /api/me
+POST /api/galleries
+GET  /api/galleries
+GET  /api/galleries/{id}
+POST /api/galleries/{id}/photos
+POST /api/galleries/{id}/publish
+POST /api/galleries/{id}/unpublish
+GET  /api/galleries/{id}/photos
+POST /api/galleries/{id}/share-links
+GET  /api/public/g/{slug}
+POST /api/public/g/{slug}/unlock
+GET  /api/public/g/{slug}/photos
+POST /api/auth/logout
 ```
 
-## 测试前准备
+M4 当前 CLI 已验证：新 Gallery 为 DRAFT、上传并等待 READY、发布后公开访问、PRIVATE Token、PASSWORD 前置状态和分享列表。尚未覆盖：撤回后重新发布、撤销链接后旧 Token 失效、PASSWORD 成功解锁及 Session 过期。
 
-### 系统要求
+脚本失败时应输出 HTTP status、endpoint、业务 code 和 requestId。不要用旧的数字 Space ID、Album ID 或只通过 grep 响应字符串判断成功。
 
-- Docker & Docker Compose
-- Node.js 18+
-- Java 17+
-- curl
-- (可选) ImageMagick - 用于生成测试图片
+## 发布验收矩阵
 
-### 安装依赖
+- 新 Gallery 默认 `DRAFT`，匿名公开端返回 404。
+- 至少一张 READY 照片后才可 publish。
+- PUBLISHED PUBLIC 页面可访问；Viewer 页面为 `index,follow` 且 canonical 不含 Token。
+- unpublish 后公开端立即返回 404；Viewer 设置 `noindex,nofollow` 并清理 canonical。
+- DRAFT/ARCHIVED 无法创建新分享链接，已有 Token/Session 不得绕过发布状态。
+- Docker Compose 本地默认以 `host.docker.internal:9000` 作为签名 URL 公开端点；生产必须通过 `STORAGE_PUBLIC_ENDPOINT` 设置真实外部地址。
 
-```bash
-# 前端依赖
-cd apps/gallery-admin && npm install
-cd ../gallery-viewer && npm install
+## 公开访问验收矩阵
 
-# 后端已构建好，在 apps/gallery-api/gallery-api-boot/target/
-```
+### PUBLIC
 
-## 服务 URL 速查
+- 无登录、无 Token 打开 `/g/:slug` 成功。
+- 只返回 READY 且未软删除的照片。
+- `photoCount`、分页 `total` 与实际照片数量一致。
+- 空相册返回空列表，不返回 404。
 
-| 服务 | URL | 用途 |
-|------|-----|------|
-| API | http://localhost:8080 | 后端 REST API |
-| API Health | http://localhost:8080/actuator/health | 健康检查 |
-| Admin UI | http://localhost:5173 | 管理端界面 |
-| Viewer UI | http://localhost:5174 | 公开展示页 |
-| MySQL | localhost:3306 | 数据库 |
-| Redis | localhost:6379 | Session 存储 |
-| MinIO | http://localhost:9000 | 对象存储 API |
-| MinIO Console | http://localhost:9001 | MinIO 管理界面 |
+### PRIVATE
 
-## 测试数据
+- 无 Token 显示需要分享链接。
+- 当前 Gallery 的有效 Token 可访问。
+- 其他 Gallery、无效、过期和撤销 Token 均被拒绝。
+- 新链接格式为 `/g/:slug?t=<rawToken>`。
 
-### 默认用户
+### PASSWORD
 
-测试脚本会自动创建临时用户：
-- Email: `test-{timestamp}@example.com`
-- Password: `Test123456`
+- 未解锁显示密码输入。
+- 正确密码创建当前 Gallery 绑定的短期 Session。
+- 错误密码不会创建授权 Session。
+- Session 过期或跨 slug 使用时回到密码输入/明确拒绝。
 
-### 数据库连接
+### 分页和错误
 
-```bash
-docker exec -it vie-gallery-mysql-1 mysql -uvie -pvie_local vie_gallery
-```
+- `page >= 0`、`1 <= pageSize <= 100`。
+- 非法参数返回 400/422，不产生负 offset。
+- 401、403、404、409、429、5xx、HTML body、空 body 和网络断开都显示可恢复状态。
+- Viewer 不展示 stack trace、tenantId、tokenHash、对象 key 或内部异常。
 
-常用查询：
-```sql
--- 查看所有用户
-SELECT id, username, email, created_at FROM users;
+## 浏览器 E2E 手工流程
 
--- 查看照片空间
-SELECT id, name, slug, user_id FROM spaces;
+1. 打开 <http://localhost:5173>，注册并登录。
+2. 创建 Gallery，确认跳转到 `/app/galleries/{id}`。
+3. 上传一张图片，等待状态变为 READY。
+4. 设置封面并打开配置页，刷新后确认上下文仍存在。
+5. 发布 Gallery，确认工作区显示已发布状态，Viewer 可访问。
+6. 创建分享链接，确认链接使用 `/g/{slug}?t=`；检查列表与撤销确认。
+7. 撤回发布，确认公开端 404、Viewer noindex；重新发布后按 visibility 恢复访问。
+8. 分别验证 PRIVATE Token、PASSWORD 解锁、错误密码、过期 Session、空相册和不存在 slug。
+9. 在 390px 移动端宽度检查无横向溢出和错误恢复入口。
 
--- 查看相册
-SELECT id, name, space_id FROM albums;
+已知限制：当前尚无 Gallery 密码设置 API/UI，因此 PASSWORD 的成功解锁只能在补齐该能力后验收。
 
--- 查看照片
-SELECT id, filename, album_id, storage_key FROM photos;
+## M5 当前验收状态
 
--- 查看分享链接
-SELECT id, slug, access_type, space_id FROM shares;
-```
+已完成：
 
-### Redis 连接
+- 后端 44 项测试全部通过。
+- Admin/Viewer/shared contracts 构建通过。
+- Docker V7 migration 和健康检查通过。
+- OWNER/EDITOR/VIEWER 的 `/api/me` role/capabilities 已验证。
+- OWNER 成员列表、添加 EDITOR、EDITOR/VIEWER 受限写操作 403 已验证。
+- OWNER Admin 成员页和添加成员交互已通过浏览器 MCP 验证。
 
-```bash
-docker exec -it vie-gallery-redis-1 redis-cli
+待补：
 
-# 查看所有 session keys
-KEYS vie:session:v2:*
+- 三角色完整 HTTP API 矩阵。
+- V7 从已有 V1–V6 数据升级报告。
+- 最后 OWNER 并发保护集成测试。
+- 成员移除后旧 Session 失效验证。
+- EDITOR/VIEWER 完整浏览器交互验收。
 
-# 查看 session 详情
-GET vie:session:v2:{session_id}
-```
+## M6 预验收入口
 
-### MinIO 控制台
-
-访问 http://localhost:9001
-- 用户名: `vie_local`
-- 密码: `vie_local_secret`
-
-查看 bucket: `vie-gallery`
-- `photos/` - 原图
-- `thumbnails/` - 缩略图
+M6 上传任务生产化尚未实现。任务列表、详情扩展、retry、cancel、刷新恢复、批量部分成功和 Worker 可观测性计划见 [`next-slice-upload-task-productionization.md`](next-slice-upload-task-productionization.md)。当前 `test-mcp-flow.sh` 不调用这些规划中的接口。
 
 ## 故障排查
 
-### 服务无法启动
-
 ```bash
-# 查看 Docker 日志
-cd infra
-docker-compose logs -f
+# 服务状态和日志
+docker compose -f infra/docker-compose.yml ps
+docker compose -f infra/docker-compose.yml logs -f gallery-api
 
-# 单独查看某个服务
-docker-compose logs -f mysql
-docker-compose logs -f gallery-api
+# API 和 MinIO 健康检查
+curl -i http://localhost:8088/actuator/health
+curl -i http://localhost:9000/minio/health/live
 
-# 重启所有服务
-docker-compose restart
+# 前端日志
+# Admin: /tmp/vie-admin.log
+# Viewer: /tmp/vie-viewer.log
 ```
 
-### API 返回 500 错误
+如果 API 无法访问，先检查 `infra/.env` 的宿主映射，再检查容器内 8080 监听；不要直接把脚本改回 8080。若图片地址在浏览器不可达，检查 `STORAGE_PUBLIC_ENDPOINT`、反向代理和对象存储签名策略。
 
-1. 检查数据库连接：
-```bash
-docker exec vie-gallery-mysql-1 mysqladmin ping -h localhost -uroot -proot_local
-```
+## 当前质量门槛
 
-2. 查看 API 日志：
-```bash
-docker-compose -f infra/docker-compose.yml logs gallery-api
-```
+进入下一阶段发布能力前，必须满足：
 
-3. 检查 Redis：
-```bash
-docker exec vie-gallery-redis-1 redis-cli ping
-```
-
-### 前端无法访问 API
-
-1. 检查 CORS 配置
-2. 检查前端环境变量中的 API URL
-3. 查看浏览器控制台网络请求
-
-### 照片上传失败
-
-1. 检查 MinIO 服务：
-```bash
-curl http://localhost:9000/minio/health/live
-```
-
-2. 检查 MinIO bucket 是否存在：
-   - 访问 http://localhost:9001
-   - 查看 `vie-gallery` bucket
-
-3. 检查文件大小限制（默认 100MB）
-
-## 清理测试数据
-
-```bash
-# 停止并删除所有容器和数据卷
-cd infra
-docker-compose down -v
-
-# 清理测试文件
-rm /tmp/vie-gallery-*.txt
-rm /tmp/vie-gallery-*.jpg
-rm /tmp/vie-*.log
-rm /tmp/vie-*.pid
-
-# 重新启动干净环境
-docker-compose up -d
-```
-
-## 进阶：使用浏览器 MCP
-
-如果你有浏览器 MCP 服务，可以实现完全自动化的 E2E 测试：
-
-```javascript
-// 伪代码示例
-async function testVieGallery() {
-  // 1. 打开管理端
-  await browser.navigate('http://localhost:5173');
-  
-  // 2. 注册用户
-  await browser.click('text=注册');
-  await browser.fill('input[name="email"]', 'test@example.com');
-  await browser.fill('input[name="password"]', 'Test123456');
-  await browser.click('button[type="submit"]');
-  
-  // 3. 创建空间
-  await browser.click('text=创建空间');
-  await browser.fill('input[name="name"]', '测试空间');
-  await browser.click('button:has-text("提交")');
-  
-  // 4. 上传照片
-  await browser.click('text=上传照片');
-  await browser.setInputFiles('input[type="file"]', '/tmp/test-photo.jpg');
-  await browser.waitForSelector('.photo-item');
-  
-  // 5. 创建分享链接
-  await browser.click('text=分享');
-  const shareUrl = await browser.textContent('.share-url');
-  
-  // 6. 验证公开访问
-  await browser.navigate(shareUrl);
-  await browser.waitForSelector('.gallery-viewer');
-}
-```
-
-## 持续集成
-
-在 CI/CD 中运行测试：
-
-```yaml
-# .github/workflows/test.yml
-name: E2E Tests
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Start services
-        run: bash start-services.sh
-        
-      - name: Wait for services
-        run: sleep 30
-        
-      - name: Run API tests
-        run: bash test-mcp-flow.sh
-        
-      - name: Stop services
-        run: cd infra && docker-compose down
-```
-
-## 相关文档
-
-- [完整测试指南](docs/mcp-test-guide.md) - 详细的 API 测试文档
-- [项目 README](README.md) - 项目整体说明
-- [重构计划](docs/reconstruction-plan.md) - 架构设计文档
+- 当前文档、脚本不再使用旧 spaces/albums API（archive 除外）。
+- 后端测试、Admin/Viewer build 和 Compose 健康检查通过。
+- PUBLIC、PRIVATE、PASSWORD 的访问、错误、分页和恢复链路有自动化或等价运行态证据。
+- 公开照片 URL 使用短期签名策略，不依赖永久公开对象地址。

@@ -49,11 +49,11 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> domain(DomainException exception, HttpServletRequest request) {
         HttpStatus status = switch (exception.code()) {
             case "AUTH_REQUIRED", "AUTH_INVALID_CREDENTIALS" -> HttpStatus.UNAUTHORIZED;
-            case "AUTH_USER_DISABLED", "AUTH_TENANT_NOT_FOUND" -> HttpStatus.FORBIDDEN;
-            case "RESOURCE_NOT_FOUND", "GALLERY_NOT_FOUND", "PHOTO_NOT_FOUND", "TASK_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+            case "AUTH_USER_DISABLED", "AUTH_TENANT_NOT_FOUND", "MEMBER_FORBIDDEN", "ROLE_REQUIRED" -> HttpStatus.FORBIDDEN;
+            case "RESOURCE_NOT_FOUND", "GALLERY_NOT_FOUND", "PHOTO_NOT_FOUND", "TASK_NOT_FOUND", "MEMBERSHIP_NOT_FOUND" -> HttpStatus.NOT_FOUND;
             case "VALIDATION_FAILED", "FILE_INVALID", "FILE_TYPE_UNSUPPORTED", "IMAGE_DECODE_FAILED", "IMAGE_DIMENSIONS_INVALID", "INVALID_PAGE", "INVALID_PAGE_SIZE", "INVALID_PARAMETER" -> HttpStatus.BAD_REQUEST;
             case "DEPENDENCY_UNAVAILABLE", "STORAGE_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
-            case "AUTH_EMAIL_UNAVAILABLE", "GALLERY_SLUG_CONFLICT", "QUOTA_EXCEEDED", "FILE_TOO_LARGE" -> HttpStatus.CONFLICT;
+            case "AUTH_EMAIL_UNAVAILABLE", "GALLERY_SLUG_CONFLICT", "GALLERY_ALREADY_ARCHIVED", "GALLERY_NOT_READY", "GALLERY_STATE_CONFLICT", "MEMBERSHIP_CONFLICT", "LAST_OWNER", "QUOTA_EXCEEDED", "FILE_TOO_LARGE" -> HttpStatus.CONFLICT;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(errors.create(request, exception.code(), exception.getMessage()));

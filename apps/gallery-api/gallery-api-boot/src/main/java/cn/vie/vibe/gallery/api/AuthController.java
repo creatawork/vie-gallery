@@ -3,6 +3,7 @@ package cn.vie.vibe.gallery.api;
 import cn.vie.vibe.gallery.application.AuthFacade;
 import cn.vie.vibe.gallery.application.AuthenticatedUser;
 import cn.vie.vibe.gallery.application.CurrentPrincipal;
+import cn.vie.vibe.gallery.domain.Capability;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Cookie;
@@ -89,7 +90,7 @@ public class AuthController {
         }
         Authentication authentication = new UsernamePasswordAuthenticationToken(
                 new CurrentPrincipal(result.user().id()), null,
-                List.of(new SimpleGrantedAuthority("ROLE_OWNER")));
+                List.of(new SimpleGrantedAuthority("ROLE_" + result.role().name())));
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
@@ -113,10 +114,10 @@ public class AuthController {
                                @NotBlank @Size(min = 12, max = 128) String password) {
     }
 
-    public record AuthResponse(UserResponse user, TenantResponse tenant, String role) {
+    public record AuthResponse(UserResponse user, TenantResponse tenant, String role, List<Capability> capabilities) {
         static AuthResponse from(AuthenticatedUser authenticated) {
             return new AuthResponse(UserResponse.from(authenticated), TenantResponse.from(authenticated),
-                    authenticated.role().name());
+                    authenticated.role().name(), cn.vie.vibe.gallery.application.WorkspaceCapabilities.forRole(authenticated.role()));
         }
     }
 

@@ -4,6 +4,7 @@ import Icon from '../Icon.vue'
 
 defineProps<{
   photo: WorkspacePhoto
+  canWrite?: boolean
 }>()
 
 defineEmits<{
@@ -45,6 +46,7 @@ function formatBytes(bytes?: number) {
       <div class="photo-hover-overlay" @click.stop>
         <div class="overlay-top">
           <button
+            v-if="canWrite"
             class="photo-action-btn"
             :class="{ active: photo.cover }"
             :aria-label="photo.cover ? '当前相册封面' : '设为相册封面'"
@@ -54,7 +56,7 @@ function formatBytes(bytes?: number) {
           >
             <Icon name="star" :size="15" />
           </button>
-          <button class="photo-action-btn btn-danger" aria-label="删除照片" title="删除照片" type="button" @click="$emit('delete')">
+          <button v-if="canWrite" class="photo-action-btn btn-danger" aria-label="删除照片" title="删除照片" type="button" @click="$emit('delete')">
             <Icon name="trash" :size="15" />
           </button>
         </div>

@@ -18,6 +18,7 @@ interface Props {
   show: boolean
   photos: PhotoItem[]
   currentIndex: number
+  canWrite?: boolean
 }
 
 const props = defineProps<Props>()
@@ -64,7 +65,7 @@ function formatBytes(bytes?: number) {
 
         <div class="topbar-actions">
           <button
-            v-if="!photos[currentIndex].cover"
+            v-if="canWrite && !photos[currentIndex].cover"
             class="action-btn"
             title="设为相册封面"
             @click="emit('set-cover', photos[currentIndex])"
@@ -78,6 +79,7 @@ function formatBytes(bytes?: number) {
           </span>
 
           <button
+            v-if="canWrite"
             class="action-btn action-danger"
             title="删除照片"
             @click="emit('delete', photos[currentIndex])"

@@ -9,13 +9,14 @@ import Icon from '../components/Icon.vue'
 
 const router = useRouter()
 const toast = useToast()
-const { currentUser, setUser, logout } = useAuth()
+const { currentUser, setUser, logout, can } = useAuth()
+const canCreateGallery = can('GALLERY_CREATE')
 
 const authMode = ref<'login' | 'register'>('login')
 const authForm = ref({
   email: 'tester@example.com',
   password: 'Password123456',
-  displayName: 'Admin Tester'
+  displayName: 'Creator Tester'
 })
 const authLoading = ref(false)
 const authError = ref('')
@@ -121,6 +122,10 @@ function slugify(text: string) {
 }
 
 async function handleCreateGallery() {
+  if (!canCreateGallery.value) {
+    toast.error('当前角色没有创建空间的权限。')
+    return
+  }
   if (!createForm.value.name.trim() || !createForm.value.slug.trim()) {
     createError.value = '请填写空间名称和标识符（Slug）。'
     return
@@ -164,7 +169,7 @@ async function handleCreateGallery() {
       <div class="auth-header">
         <div class="brand-badge"><Icon name="gallery" :size="24" /></div>
         <h2>VIE Gallery Console</h2>
-        <p>{{ authMode === 'register' ? '注册新管理员工作区，开启沉浸式相册' : '登录你的创作者管理后台' }}</p>
+        <p>{{ authMode === 'register' ? '注册新创作者工作区，开启沉浸式相册' : '登录你的创作者管理后台' }}</p>
       </div>
       <div class="auth-tabs">
         <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'; authError = ''">账号登录</button>
@@ -200,7 +205,7 @@ async function handleCreateGallery() {
         <p class="page-subtitle">管理和编辑你的 3D 沉浸式相册</p>
       </div>
       <div class="header-right">
-        <button id="btn-open-create-modal" class="btn btn-primary" type="button" @click="showCreateModal = true">
+        <button v-if="canCreateGallery" id="btn-open-create-modal" class="btn btn-primary" type="button" @click="showCreateModal = true">
           <Icon name="plus" :size="16" /><span>新建空间</span>
         </button>
       </div>
@@ -253,6 +258,10 @@ async function handleCreateGallery() {
             <div v-else class="card-pattern"><Icon name="gallery" :size="36" /></div>
             <div class="card-glow"></div>
             <div class="card-top-badges">
+              <span class="badge" :class="`overview-status-${gallery.status.toLowerCase()}`">
+                <Icon :name="gallery.status === 'PUBLISHED' ? 'check' : gallery.status === 'ARCHIVED' ? 'lock' : 'alert-circle'" :size="12" />
+                <span>{{ gallery.status === 'PUBLISHED' ? '已发布' : gallery.status === 'ARCHIVED' ? '已归档' : '草稿' }}</span>
+              </span>
               <span class="badge" :class="gallery.visibility === 'PUBLIC' ? 'badge-public' : 'badge-private'">
                 <Icon :name="gallery.visibility === 'PUBLIC' ? 'globe' : 'lock'" :size="12" />
                 <span>{{ gallery.visibility === 'PUBLIC' ? '公开' : '私密' }}</span>
@@ -271,13 +280,13 @@ async function handleCreateGallery() {
           </div>
         </article>
 
-        <button v-if="galleries.length" class="create-gallery-card" type="button" @click="showCreateModal = true">
+        <button v-if="galleries.length && canCreateGallery" class="create-gallery-card" type="button" @click="showCreateModal = true">
           <span class="create-gallery-icon"><Icon name="plus" :size="22" /></span><strong>新建空间</strong><span>创建另一个 3D 相册空间</span>
         </button>
         <div v-if="!loading && !galleries.length && !loadError" class="empty-state">
           <div class="empty-icon-box"><Icon name="gallery" :size="32" /></div>
           <h3>还没有照片空间</h3><p>创建一个属于你的 3D 沉浸式相册，上传照片并选择你的展示风格。</p>
-          <button class="btn btn-primary" type="button" @click="showCreateModal = true"><Icon name="plus" :size="16" /><span>创建第一个空间</span></button>
+          <button v-if="canCreateGallery" class="btn btn-primary" type="button" @click="showCreateModal = true"><Icon name="plus" :size="16" /><span>创建第一个空间</span></button>
         </div>
       </div>
     </section>
@@ -615,7 +624,14 @@ async function handleCreateGallery() {
   top: 12px;
   left: 12px;
   z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
+
+.overview-status-draft { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; }
+.overview-status-published { color: #047857; background: #ecfdf5; border: 1px solid rgba(16, 185, 129, 0.25); }
+.overview-status-archived { color: #475569; background: #f1f5f9; border: 1px solid #cbd5e1; }
 
 .card-body {
   padding: 20px;

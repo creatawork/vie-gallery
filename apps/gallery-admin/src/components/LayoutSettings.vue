@@ -3,6 +3,7 @@ import Icon from './Icon.vue'
 
 defineProps<{
   mode: string
+  disabled?: boolean
 }>()
 
 defineEmits<{
@@ -64,6 +65,7 @@ const layouts = [
         type="button"
         class="layout-option"
         :class="{ active: mode === layout.mode }"
+        :disabled="disabled"
         @click="$emit('update:mode', layout.mode)"
       >
         <div class="layout-icon-circle" :style="{ '--layout-color': layout.color }">

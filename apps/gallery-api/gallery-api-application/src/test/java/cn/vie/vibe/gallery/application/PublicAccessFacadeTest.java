@@ -3,6 +3,7 @@ package cn.vie.vibe.gallery.application;
 import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.Gallery;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
+import cn.vie.vibe.gallery.domain.GalleryStatus;
 import cn.vie.vibe.gallery.domain.Photo;
 import cn.vie.vibe.gallery.domain.PhotoStatus;
 import cn.vie.vibe.gallery.domain.PublicAccessException;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -45,6 +47,34 @@ class PublicAccessFacadeTest {
         assertEquals(PublicAccessState.READY, result.accessState());
         assertEquals(GalleryVisibility.PUBLIC, result.visibility());
         assertEquals(1, result.photoCount());
+    }
+
+    @Test
+    void unpublishedGalleryIsNotFoundForAllPublicCredentials() {
+        Fixture fixture = new Fixture();
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PUBLIC, null, "draft-gallery");
+        fixture.galleries.values.put(gallery.id(), new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                gallery.visibility(), gallery.passwordHash(), gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
+                GalleryStatus.DRAFT, null));
+
+        PublicAccessException exception = assertThrows(PublicAccessException.class,
+                () -> fixture.facade.resolvePublicGallery(gallery.slug(), null));
+        assertEquals(PublicAccessException.GALLERY_NOT_FOUND, exception.getCode());
+        assertThrows(PublicAccessException.class,
+                () -> fixture.facade.listPublicPhotos(gallery.slug(), "anything", null, 0, 10));
+    }
+
+    @Test
+    void archivedGalleryIsNotFound() {
+        Fixture fixture = new Fixture();
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PUBLIC, null, "archived-gallery");
+        fixture.galleries.values.put(gallery.id(), new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                gallery.visibility(), gallery.passwordHash(), gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
+                GalleryStatus.ARCHIVED, gallery.publishedAt()));
+
+        PublicAccessException exception = assertThrows(PublicAccessException.class,
+                () -> fixture.facade.resolvePublicGallery(gallery.slug(), null));
+        assertEquals(PublicAccessException.GALLERY_NOT_FOUND, exception.getCode());
     }
 
     @Test
@@ -462,7 +492,8 @@ class PublicAccessFacadeTest {
         public void delete(String key) {
         }
 
-        public URI createReadUrl(String key) {
+        public URI createReadUrl(String key, Duration ttl) {
+            assertEquals(ObjectStoragePort.DEFAULT_READ_URL_TTL, ttl);
             return URI.create("https://cdn.test/" + key);
         }
     }

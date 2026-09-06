@@ -21,16 +21,13 @@ cat << 'EOF'
   • quick-test.sh           - 一站式交互测试控制台
 
 🧪 测试脚本：
-  • test-mcp-flow.sh        - API 自动化测试（13 个步骤）
+  • test-mcp-flow.sh        - 当前 Gallery API 自动化冒烟测试
   • test-browser-mcp.sh     - 浏览器 MCP 测试指南
 
 📖 文档：
-  • QUICK-START.txt         - 快速启动卡片（⭐首选）
-  • TEST-SUMMARY.md         - 测试总结和概览
-  • TESTING-HOST.md         - 主机端详细指南
-  • docs/testing-guide.md   - 完整测试手册
-  • docs/mcp-test-guide.md  - API 测试详细文档
-  • README.md               - 已更新测试章节
+  • docs/testing-guide.md   - 当前测试、启动和故障排查入口
+  • README.md               - 项目概览和当前阶段
+  • docs/archive/           - 历史实现记录和旧验收材料
 
 
 ═══════════════════════════════════════════════════════════════
@@ -52,12 +49,12 @@ cd E:\workspace\vie-gallery
 bash test-mcp-flow.sh
 
 这将自动测试：
-  ✓ 用户注册登录
-  ✓ 创建空间和相册
-  ✓ 上传照片
-  ✓ 生成分享链接
-  ✓ 公开访问验证
-  ✓ 密码保护测试
+  ✓ 用户注册登录（含 CSRF）
+  ✓ 创建并列出 Gallery
+  ✓ 上传并列出照片（异步处理 API）
+  ✓ 创建并列出分享链接
+  ✓ 使用 X-Share-Token 验证私密 Gallery 访问
+  ✓ 验证 PASSWORD Gallery 的 PASSWORD_REQUIRED 状态
 
 
 ═══════════════════════════════════════════════════════════════
@@ -67,24 +64,25 @@ bash test-mcp-flow.sh
 API 端点（自动化测试）：
   1.  POST   /api/auth/register          - 用户注册
   2.  POST   /api/auth/login             - 用户登录
-  3.  GET    /api/auth/me                - 获取当前用户
-  4.  POST   /api/spaces                 - 创建照片空间
-  5.  GET    /api/spaces                 - 列出我的空间
-  6.  POST   /api/spaces/{id}/albums     - 创建相册
-  7.  GET    /api/spaces/{id}/albums     - 列出相册
-  8.  POST   /api/.../photos             - 上传照片
-  9.  GET    /api/.../photos             - 列出照片
-  10. POST   /api/spaces/{id}/shares     - 创建分享链接
-  11. GET    /api/public/g/{slug}        - 公开访问空间
-  12. POST   /api/public/g/{slug}/verify - 验证分享密码
-  13. POST   /api/auth/logout            - 用户登出
+  3.  GET    /api/me                    - 获取当前用户
+  4.  POST   /api/galleries              - 创建 Gallery
+  5.  GET    /api/galleries              - 列出 Gallery
+  6.  GET    /api/galleries/{id}         - 获取单个 Gallery
+  7.  POST   /api/galleries/{id}/photos  - 上传照片（202，异步处理）
+  8.  GET    /api/galleries/{id}/photos - 列出照片
+  9.  POST   /api/galleries/{id}/share-links - 创建分享链接
+  10. GET    /api/galleries/{id}/share-links - 列出分享链接
+  11. GET    /api/public/g/{slug}        - 公开访问 Gallery
+  12. POST   /api/public/g/{slug}/unlock - 密码 Gallery 解锁
+  13. GET    /api/public/g/{slug}/photos - 公开照片分页
+  14. POST   /api/auth/logout            - 用户登出
 
 前端功能（手动测试）：
-  • 管理端注册/登录界面
-  • 空间和相册管理
-  • 照片上传和展示
-  • 分享链接生成
-  • 公开展示页（3D 照片墙）
+  • Admin 注册/登录界面
+  • Gallery 总览和单 Gallery 工作区
+  • 照片上传、处理状态和封面
+  • 分享链接生成与 Token 访问
+  • Viewer 公开状态和 3D 照片墙
 
 数据和存储：
   • MySQL 数据持久化
@@ -97,8 +95,8 @@ API 端点（自动化测试）：
 🔗 服务地址（启动后可访问）
 ═══════════════════════════════════════════════════════════════
 
-  API:             http://localhost:8080
-  API Health:      http://localhost:8080/actuator/health
+  API:             http://localhost:8088
+  API Health:      http://localhost:8088/actuator/health
   Admin UI:        http://localhost:5173
   Viewer UI:       http://localhost:5174
   MinIO Console:   http://localhost:9001
@@ -116,7 +114,7 @@ API 端点（自动化测试）：
 2. 等待服务就绪（60 秒）
 
 3. 验证服务健康
-   curl http://localhost:8080/actuator/health
+   curl http://localhost:8088/actuator/health
 
 4. 运行 API 自动化测试
    cd E:\workspace\vie-gallery
@@ -149,7 +147,7 @@ API 端点（自动化测试）：
 10. 查看数据库数据
     docker exec -it vie-gallery-mysql-1 mysql -uvie -pvie_local vie_gallery
     SELECT * FROM users;
-    SELECT * FROM spaces;
+    SELECT * FROM galleries;
     SELECT * FROM photos;
 
 
@@ -158,10 +156,10 @@ API 端点（自动化测试）：
 ═══════════════════════════════════════════════════════════════
 
 自动化测试应该：
-  ✓ 所有 13 个 API 测试步骤都显示 ✓
-  ✓ 生成有效的分享链接
-  ✓ 公开访问返回正确的空间数据
-  ✓ 密码验证正常工作
+  ✓ 当前自动化 API 冒烟流程中的检查全部通过
+  ✓ 生成有效的分享链接并通过 Token 访问私密 Gallery
+  ✓ 公开访问返回正确的 Gallery 状态
+  ✓ 密码 Gallery 返回 PASSWORD_REQUIRED；成功 /unlock 需先配置 Gallery 密码
 
 手动测试应该：
   ✓ 能够注册和登录
@@ -193,17 +191,16 @@ API 端点（自动化测试）：
   docker-compose up -d
 
 查看详细故障排查指南：
-  cat TESTING-HOST.md | grep -A 20 "故障排查"
+  cat docs/testing-guide.md
 
 
 ═══════════════════════════════════════════════════════════════
 📚 更多信息
 ═══════════════════════════════════════════════════════════════
 
-• 快速参考：      cat QUICK-START.txt
-• 测试总结：      cat TEST-SUMMARY.md
-• 详细指南：      cat docs/testing-guide.md
-• API 文档：      cat docs/mcp-test-guide.md
+• 当前测试指南：  cat docs/testing-guide.md
+• 项目概览：      cat README.md
+• 历史资料：      ls docs/archive
 
 
 ═══════════════════════════════════════════════════════════════

@@ -3,6 +3,7 @@ package cn.vie.vibe.gallery.application;
 import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.Gallery;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
+import cn.vie.vibe.gallery.domain.GalleryStatus;
 import cn.vie.vibe.gallery.domain.MembershipRole;
 import cn.vie.vibe.gallery.domain.ShareLink;
 import cn.vie.vibe.gallery.domain.ShareLinkStatus;
@@ -33,6 +34,18 @@ class ShareLinkFacadeTest {
     }
 
     @Test
+    void editorCannotManageShareLinks() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "editor-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.EDITOR));
+
+        assertCode(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, () -> fixture.facade.listShareLinks(gallery.id().toString()));
+        assertCode(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, () -> fixture.facade.createShareLink(
+                new CreateShareLinkCommand(gallery.id().toString(), null)));
+    }
+
+    @Test
     void createShareLinkUsesQueryTokenUrlAndStoresOnlyTokenHash() {
         UUID tenantId = UUID.randomUUID();
         Gallery gallery = gallery(tenantId, "summer-gallery");
@@ -50,6 +63,19 @@ class ShareLinkFacadeTest {
         ShareLink saved = fixture.links.values.values().iterator().next();
         assertEquals(fixture.tokens.hashToken("raw-token"), saved.getTokenHash());
         assertFalse(saved.getTokenHash().contains("raw-token"));
+    }
+
+    @Test
+    void draftGalleryCannotCreateShareLink() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = new Gallery(UUID.randomUUID(), tenantId, "draft", "draft", GalleryVisibility.PRIVATE,
+                null, null, false, CREATED_AT, GalleryStatus.DRAFT, null);
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+
+        DomainException exception = assertThrows(DomainException.class, () -> fixture.facade.createShareLink(
+                new CreateShareLinkCommand(gallery.id().toString(), Instant.now().plusSeconds(3600))));
+        assertEquals("GALLERY_NOT_FOUND", exception.code());
     }
 
     @Test

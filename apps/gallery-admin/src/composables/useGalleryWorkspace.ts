@@ -84,6 +84,7 @@ export function useGalleryWorkspace(
   const uploading = ref(false)
   const uploadProgress = ref(0)
   const uploadStatusText = ref('')
+  const publishing = ref(false)
 
   let requestVersion = 0
   let uploadVersion = 0
@@ -128,18 +129,9 @@ export function useGalleryWorkspace(
     loading.value = true
     error.value = null
     try {
-      const response = await apiFetch('/api/galleries')
-      if (!response.ok) throw await responseError(response, '空间列表加载失败。')
-      const galleries = await response.json() as Gallery[]
-      const found = galleries.find(item => item.id === galleryIdValue) || null
-      if (!found) {
-        if (isCurrent(version)) {
-          gallery.value = null
-          photos.value = []
-          error.value = { kind: 'not-found', message: '找不到这个相册空间，可能已被移除或链接有误。', status: 404 }
-        }
-        return
-      }
+      const response = await apiFetch(`/api/galleries/${galleryIdValue}`)
+      if (!response.ok) throw await responseError(response, '空间信息加载失败。')
+      const found = await response.json() as Gallery
       if (isCurrent(version)) gallery.value = found
       await loadPhotos(galleryIdValue, version)
     } catch (cause) {
@@ -230,6 +222,30 @@ export function useGalleryWorkspace(
     await reload()
   }
 
+  async function setPublished(publish: boolean) {
+    const galleryIdValue = id.value
+    if (!galleryIdValue || publishing.value) return
+    publishing.value = true
+    try {
+      const response = await apiFetch(`/api/galleries/${galleryIdValue}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST' })
+      if (!response.ok) throw await responseError(response, publish ? '发布空间失败。' : '撤回发布失败。')
+      const updated = response.status === 204 ? null : await response.json().catch(() => null) as Gallery | null
+      if (updated && gallery.value?.id === galleryIdValue) gallery.value = updated
+      await reload()
+      return updated || gallery.value
+    } finally {
+      publishing.value = false
+    }
+  }
+
+  function publish() {
+    return setPublished(true)
+  }
+
+  function unpublish() {
+    return setPublished(false)
+  }
+
   watch([id, isEnabled], reload, { immediate: true })
   onUnmounted(() => {
     requestVersion += 1
@@ -244,6 +260,9 @@ export function useGalleryWorkspace(
     uploading,
     uploadProgress,
     uploadStatusText,
+    publishing,
+    publish,
+    unpublish,
     reload,
     uploadFiles,
     setCover,

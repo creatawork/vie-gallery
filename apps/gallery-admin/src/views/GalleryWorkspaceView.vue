@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import type { ShareLinkStatus } from '@vie/gallery-contracts'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
@@ -17,7 +18,10 @@ import GalleryPhotoGrid from '../components/gallery-workspace/GalleryPhotoGrid.v
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { currentUser, loading: authLoading } = useAuth()
+const { currentUser, loading: authLoading, can } = useAuth()
+const canPhotoWrite = can('PHOTO_WRITE')
+const canPublish = can('PUBLISH')
+const canShareManage = can('SHARE_MANAGE')
 const galleryId = computed(() => String(route.params.id || ''))
 const workspace = useGalleryWorkspace(galleryId, computed(() => !!currentUser.value && !authLoading.value))
 
@@ -32,7 +36,19 @@ const deletingPhoto = ref(false)
 const showShareModal = ref(false)
 const generatingShare = ref(false)
 const shareLinkData = ref<{ shareUrl: string; expiresAt?: string } | null>(null)
+const shareLinks = ref<ShareLink[]>([])
+const shareLinksLoading = ref(false)
+const shareLinkToRevoke = ref<ShareLink | null>(null)
+const revokingShareLink = ref(false)
 const copied = ref(false)
+
+type ShareLink = {
+  id: string
+  status: ShareLinkStatus | string
+  expiresAt?: string | null
+  createdAt?: string | null
+  lastAccessedAt?: string | null
+}
 
 const processingCount = computed(() => workspace.photos.value.filter(photo => photo.status === 'PROCESSING').length)
 const failedCount = computed(() => workspace.photos.value.filter(photo => photo.status === 'FAILED').length)
@@ -74,7 +90,28 @@ function openLightbox(index: number) {
   showLightbox.value = true
 }
 
+async function handlePublish() {
+  if (!canPublish.value) return
+  try {
+    await workspace.publish()
+    toast.success('空间已发布，访客现在可以访问。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '发布空间失败，请重试。')
+  }
+}
+
+async function handleUnpublish() {
+  if (!canPublish.value) return
+  try {
+    await workspace.unpublish()
+    toast.success('空间已撤回发布。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '撤回发布失败，请重试。')
+  }
+}
+
 async function handleUpload(files: FileList | File[]) {
+  if (!canPhotoWrite.value) return
   try {
     const summary = await workspace.uploadFiles(files)
     if (summary.failed || summary.timedOut) {
@@ -88,6 +125,7 @@ async function handleUpload(files: FileList | File[]) {
 }
 
 async function handleSetCover(photo: Pick<WorkspacePhoto, 'id'>) {
+  if (!canPhotoWrite.value) return
   try {
     await workspace.setCover(photo)
     toast.success('已成功设为相册封面！')
@@ -97,6 +135,7 @@ async function handleSetCover(photo: Pick<WorkspacePhoto, 'id'>) {
 }
 
 function promptDeletePhoto(photo: Pick<WorkspacePhoto, 'id'>) {
+  if (!canPhotoWrite.value) return
   photoToDelete.value = photo
 }
 
@@ -115,30 +154,86 @@ async function confirmDeletePhoto() {
   }
 }
 
+async function loadShareLinks() {
+  if (!canShareManage.value) return
+  const gallery = workspace.gallery.value
+  if (!gallery || gallery.status !== 'PUBLISHED') return
+  shareLinksLoading.value = true
+  try {
+    const response = await apiFetch(`/api/galleries/${gallery.id}/share-links`)
+    if (!response.ok) throw new Error('分享链接加载失败，请稍后重试。')
+    shareLinks.value = await response.json() as ShareLink[]
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '分享链接加载失败。')
+  } finally {
+    shareLinksLoading.value = false
+  }
+}
+
 async function openShareModal() {
-  if (!workspace.gallery.value) return
+  if (!canShareManage.value) return
+  const gallery = workspace.gallery.value
+  if (!gallery || gallery.status !== 'PUBLISHED') return
   showShareModal.value = true
-  generatingShare.value = true
+  generatingShare.value = false
   shareLinkData.value = null
   copied.value = false
+  await loadShareLinks()
+}
+
+async function createShareLink() {
+  if (!canShareManage.value) return
+  const gallery = workspace.gallery.value
+  if (!gallery || gallery.status !== 'PUBLISHED' || generatingShare.value) return
+  generatingShare.value = true
   try {
-    const response = await apiFetch(`/api/galleries/${workspace.gallery.value.id}/share-links`, {
+    const response = await apiFetch(`/api/galleries/${gallery.id}/share-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     })
     if (!response.ok) throw new Error('生成分享链接失败，请稍后重试。')
-    const data = await response.json() as { shareUrl?: string; rawToken?: string; expiresAt?: string }
-    const shareUrl = data.shareUrl || (data.rawToken ? `${viewerUrl(workspace.gallery.value.slug)}?t=${encodeURIComponent(data.rawToken)}` : '')
+    const data = await response.json() as { id?: string; shareUrl?: string; rawToken?: string; expiresAt?: string }
+    const shareUrl = data.shareUrl || (data.rawToken ? `${viewerUrl(gallery.slug)}?t=${encodeURIComponent(data.rawToken)}` : '')
     if (!shareUrl) throw new Error('分享凭证生成失败，请稍后重试。')
-    shareLinkData.value = {
-      shareUrl: normalizeViewerShareUrl(shareUrl),
-      expiresAt: data.expiresAt
-    }
+    shareLinkData.value = { shareUrl: normalizeViewerShareUrl(shareUrl), expiresAt: data.expiresAt }
+    await loadShareLinks()
+    toast.success('分享链接已创建。')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '生成分享链接失败。')
   } finally {
     generatingShare.value = false
+  }
+}
+
+function formatShareDate(value?: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
+function shareStatusLabel(status: string) {
+  return status === 'ACTIVE' ? '有效' : status === 'EXPIRED' ? '已过期' : status === 'REVOKED' ? '已撤销' : status
+}
+
+function promptRevokeShareLink(link: ShareLink) {
+  shareLinkToRevoke.value = link
+}
+
+async function confirmRevokeShareLink() {
+  const link = shareLinkToRevoke.value
+  if (!link || revokingShareLink.value) return
+  revokingShareLink.value = true
+  try {
+    const response = await apiFetch(`/api/share-links/${link.id}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error('撤销分享链接失败，请稍后重试。')
+    toast.success('分享链接已撤销。')
+    shareLinkToRevoke.value = null
+    await loadShareLinks()
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '撤销分享链接失败。')
+  } finally {
+    revokingShareLink.value = false
   }
 }
 
@@ -203,11 +298,18 @@ function closeShareModal() {
       </div>
 
       <template v-else-if="workspace.gallery.value">
-        <GalleryWorkspaceHeader
+          <GalleryWorkspaceHeader
           :gallery="workspace.gallery.value"
           :photo-count="workspace.photos.value.length"
+          :publishing="workspace.publishing.value"
+          :can-config="can('CONFIG_WRITE').value"
+          :can-share="canShareManage"
+          :can-publish="canPublish"
+
           @config="goToConfig"
           @share="openShareModal"
+          @publish="handlePublish"
+          @unpublish="handleUnpublish"
           @preview="openViewer"
         />
 
@@ -224,14 +326,17 @@ function closeShareModal() {
             </div>
           </div>
 
-          <GalleryUploadDropzone
+            <GalleryUploadDropzone
+            v-if="canPhotoWrite"
             :uploading="workspace.uploading.value"
+
             :progress="workspace.uploadProgress.value"
             :status-text="workspace.uploadStatusText.value"
             @files="handleUpload"
           />
           <GalleryPhotoGrid
             :photos="workspace.photos.value"
+            :can-write="canPhotoWrite"
             @open="openLightbox"
             @set-cover="handleSetCover"
             @delete="promptDeletePhoto"
@@ -256,23 +361,56 @@ function closeShareModal() {
             </button>
           </div>
 
+          <div class="share-toolbar">
+            <p class="share-tips"><Icon name="lock" :size="14" />任何拥有有效链接的用户都可以打开访客预览。</p>
+            <button class="btn btn-primary" type="button" :disabled="generatingShare" @click="createShareLink">
+              <Icon v-if="generatingShare" name="refresh" :size="16" class="spin" />
+              <Icon v-else name="plus" :size="16" />
+              <span>{{ generatingShare ? '创建中…' : '创建分享链接' }}</span>
+            </button>
+          </div>
           <div v-if="generatingShare" class="generating-box" role="status">
             <Icon name="refresh" :size="24" class="spin" />
             <p>正在生成加密分享凭证…</p>
           </div>
-          <div v-else-if="shareLinkData" class="share-content">
+          <div v-if="shareLinkData" class="share-content">
             <div class="link-display-group">
-              <input :value="shareLinkData.shareUrl" readonly aria-label="分享链接" class="form-input share-url-input" />
+              <input :value="shareLinkData.shareUrl" readonly aria-label="新创建的分享链接" class="form-input share-url-input" />
               <button class="btn btn-primary copy-btn" type="button" @click="copyShareUrl">
                 <Icon :name="copied ? 'check' : 'copy'" :size="16" />
                 <span>{{ copied ? '已复制' : '复制链接' }}</span>
               </button>
             </div>
-            <p class="share-tips"><Icon name="lock" :size="14" />任何拥有此链接的用户都可以打开访客预览。</p>
+            <span v-if="shareLinkData.expiresAt" class="share-expiry">有效期至 {{ formatShareDate(shareLinkData.expiresAt) }}</span>
           </div>
+          <div v-if="shareLinksLoading" class="share-loading" role="status">正在加载分享链接…</div>
+          <div v-else-if="!shareLinks.length" class="share-empty">暂无分享链接，创建一个链接开始分享。</div>
+          <ul v-else class="share-link-list" aria-label="分享链接列表">
+            <li v-for="link in shareLinks" :key="link.id" class="share-link-row">
+              <div class="share-link-info">
+                <span class="share-status" :class="`share-status-${link.status.toLowerCase()}`">{{ shareStatusLabel(link.status) }}</span>
+                <span>创建于 {{ formatShareDate(link.createdAt) }}</span>
+                <span>到期 {{ formatShareDate(link.expiresAt) }}</span>
+              </div>
+              <button v-if="link.status === 'ACTIVE'" class="icon-action-btn revoke-share-btn" type="button" aria-label="撤销分享链接" title="撤销分享链接" @click="promptRevokeShareLink(link)">
+                <Icon name="trash" :size="15" />
+              </button>
+            </li>
+          </ul>
         </div>
       </div>
     </Transition>
+
+    <ConfirmModal
+      :show="!!shareLinkToRevoke"
+      title="撤销分享链接"
+      message="确定要撤销这个分享链接吗？撤销后，持有该链接的访客将无法继续访问。"
+      confirm-text="确认撤销"
+      :danger="true"
+      :loading="revokingShareLink"
+      @confirm="confirmRevokeShareLink"
+      @cancel="shareLinkToRevoke = null"
+    />
 
     <ConfirmModal
       :show="!!photoToDelete"
@@ -289,6 +427,7 @@ function closeShareModal() {
       :show="showLightbox"
       :photos="lightboxPhotos"
       :current-index="lightboxIndex"
+      :can-write="canPhotoWrite"
       @close="showLightbox = false"
       @select="index => lightboxIndex = index"
       @set-cover="handleSetCover"
@@ -535,10 +674,61 @@ function closeShareModal() {
   color: var(--text-secondary);
 }
 
-.share-content { margin-top: 26px; }
+.share-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 22px;
+}
+.share-content { margin-top: 18px; }
 .link-display-group { align-items: stretch; gap: 8px; }
 .share-url-input { min-width: 0; font-family: var(--font-mono); font-size: 12px; }
 .copy-btn { flex-shrink: 0; }
+.share-expiry, .share-loading, .share-empty {
+  display: block;
+  margin-top: 9px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.share-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  margin: 18px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.share-link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-subtle);
+}
+.share-link-info {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.share-status {
+  padding: 3px 7px;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+}
+.share-status-active { color: #047857; background: #ecfdf5; }
+.share-status-expired { color: #92400e; background: #fffbeb; }
+.share-status-revoked { color: #64748b; background: #f1f5f9; }
+.revoke-share-btn { flex-shrink: 0; color: #b91c1c; }
 .share-tips {
   align-items: center;
   gap: 8px;
@@ -561,6 +751,8 @@ function closeShareModal() {
   .state-actions { width: 100%; flex-direction: column; }
   .state-actions .btn { width: 100%; }
   .workspace-share-modal { padding: 24px 18px; }
+  .share-toolbar { align-items: stretch; flex-direction: column; }
+  .share-toolbar .btn { width: 100%; }
   .link-display-group { flex-direction: column; }
   .copy-btn { width: 100%; }
 }

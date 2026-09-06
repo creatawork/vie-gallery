@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
 import { useViewerState } from './composables/useViewerState'
+import { applyViewerSeo, clearViewerSeo } from './lib/seo'
 import { ViewerEngine, type EngineMetrics } from './core/ViewerEngine'
 import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
@@ -14,6 +15,13 @@ const slug = location.pathname.split('/').filter(Boolean).pop() || 'demo'
 
 // 状态机
 const viewer = useViewerState(slug)
+
+// SEO defaults to noindex until the public gallery has loaded successfully.
+watch(
+  () => [viewer.state.value, viewer.gallery.value, viewer.isPublicReady.value],
+  () => applyViewerSeo({ slug, isPublicReady: viewer.isPublicReady.value, gallery: viewer.gallery.value }),
+  { immediate: true }
+)
 
 // 视图模式: '3d' 空间漫游 vs '2d' 策展画廊
 const viewMode = ref<'3d' | '2d'>('3d')
@@ -65,6 +73,7 @@ onUnmounted(() => {
   window.removeEventListener('deviceorientation', handleOrientation, true)
   window.removeEventListener('message', handlePostMessage)
   destroy3DEngine()
+  clearViewerSeo()
 })
 
 // 动态按需挂载陀螺仪监听（避免权限策略拦截与无意义开销）

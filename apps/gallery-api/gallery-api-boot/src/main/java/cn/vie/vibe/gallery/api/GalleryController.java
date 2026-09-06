@@ -37,18 +37,38 @@ public class GalleryController {
 
     @GetMapping public List<GalleryResponse> list() {
         UUID tenant = tenantContext.requireContext().tenantId();
-        return facade.list().stream().map(g -> {
-            String coverUrl = null;
-            if (g.coverPhotoId() != null) {
-                coverUrl = photos.findById(tenant, g.coverPhotoId())
-                        .filter(p -> p.status() == PhotoStatus.READY)
-                        .flatMap(p -> objects.findById(tenant, p.storageObjectId()))
-                        .filter(o -> o.status() == StorageObjectStatus.READY)
-                        .map(o -> storage.createReadUrl(o.thumbnailKey() != null ? o.thumbnailKey() : o.objectKey()).toString())
-                        .orElse(null);
-            }
-            return GalleryResponse.from(g, coverUrl);
-        }).toList();
+        return facade.list().stream().map(g -> toResponse(g, tenant)).toList();
+    }
+
+    @GetMapping("/{galleryId}")
+    public GalleryResponse get(@PathVariable UUID galleryId) {
+        UUID tenant = tenantContext.requireContext().tenantId();
+        return toResponse(facade.get(galleryId), tenant);
+    }
+
+    private GalleryResponse toResponse(Gallery gallery, UUID tenant) {
+        String coverUrl = null;
+        if (gallery.coverPhotoId() != null) {
+            coverUrl = photos.findById(tenant, gallery.coverPhotoId())
+                    .filter(p -> p.status() == PhotoStatus.READY)
+                    .flatMap(p -> objects.findById(tenant, p.storageObjectId()))
+                    .filter(o -> o.status() == StorageObjectStatus.READY)
+                    .map(o -> storage.createReadUrl(o.thumbnailKey() != null ? o.thumbnailKey() : o.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())
+                    .orElse(null);
+        }
+        return GalleryResponse.from(gallery, coverUrl);
+    }
+
+    @PostMapping("/{galleryId}/publish")
+    public GalleryResponse publish(@PathVariable UUID galleryId) {
+        UUID tenant = tenantContext.requireContext().tenantId();
+        return toResponse(facade.publish(galleryId), tenant);
+    }
+
+    @PostMapping("/{galleryId}/unpublish")
+    public GalleryResponse unpublish(@PathVariable UUID galleryId) {
+        UUID tenant = tenantContext.requireContext().tenantId();
+        return toResponse(facade.unpublish(galleryId), tenant);
     }
 
     @PostMapping
@@ -64,11 +84,13 @@ public class GalleryController {
     }
 
     public record GalleryResponse(String id, String slug, String name, GalleryVisibility visibility,
+                                  cn.vie.vibe.gallery.domain.GalleryStatus status, java.time.Instant publishedAt,
                                   String coverPhotoId, String coverThumbnailUrl,
                                   java.time.Instant createdAt) {
         static GalleryResponse from(Gallery gallery, String coverThumbnailUrl) {
             return new GalleryResponse(gallery.id().toString(), gallery.slug(), gallery.name(),
-                    gallery.visibility(), gallery.coverPhotoId() != null ? gallery.coverPhotoId().toString() : null,
+                    gallery.visibility(), gallery.status(), gallery.publishedAt(),
+                    gallery.coverPhotoId() != null ? gallery.coverPhotoId().toString() : null,
                     coverThumbnailUrl, gallery.createdAt());
         }
     }

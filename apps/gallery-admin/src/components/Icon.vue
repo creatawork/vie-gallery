@@ -26,8 +26,15 @@ withDefaults(defineProps<Props>(), {
     stroke-linejoin="round"
     class="vie-icon"
   >
+    <!-- Users -->
+    <g v-if="name === 'users'">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </g>
+
     <!-- Gallery / Layers -->
-    <g v-if="name === 'gallery'">
+    <g v-else-if="name === 'gallery'">
       <path d="M4 3h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <polyline points="21 15 16 10 5 21" />

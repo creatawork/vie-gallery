@@ -5,6 +5,7 @@ import Icon from '../Icon.vue'
 
 defineProps<{
   photos: WorkspacePhoto[]
+  canWrite?: boolean
 }>()
 
 defineEmits<{
@@ -20,6 +21,7 @@ defineEmits<{
       v-for="(photo, index) in photos"
       :key="photo.id"
       :photo="photo"
+      :can-write="canWrite"
       @open="$emit('open', index)"
       @set-cover="$emit('set-cover', photo)"
       @delete="$emit('delete', photo)"

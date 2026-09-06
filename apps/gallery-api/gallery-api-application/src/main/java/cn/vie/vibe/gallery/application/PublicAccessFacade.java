@@ -129,6 +129,7 @@ public class PublicAccessFacade {
     private Gallery findGallery(String slug) {
         return galleryRepository.findBySlug(slug)
                 .filter(g -> !g.deleted())
+                .filter(g -> g.status() == GalleryStatus.PUBLISHED)
                 .orElseThrow(PublicAccessException::galleryNotFound);
     }
 
@@ -155,7 +156,7 @@ public class PublicAccessFacade {
                 .map(object -> {
                     String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
                     return new PublicGalleryView.CoverView(
-                            objectStoragePort.createReadUrl(key).toString(),
+                            objectStoragePort.createReadUrl(key, ObjectStoragePort.DEFAULT_READ_URL_TTL).toString(),
                             object.width() == null ? 0 : object.width(),
                             object.height() == null ? 0 : object.height()
                     );
@@ -169,7 +170,7 @@ public class PublicAccessFacade {
                     String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
                     return new PublicPhotoView(
                             photo.title(),
-                            objectStoragePort.createReadUrl(key).toString(),
+                            objectStoragePort.createReadUrl(key, ObjectStoragePort.DEFAULT_READ_URL_TTL).toString(),
                             object.width() == null ? 0 : object.width(),
                             object.height() == null ? 0 : object.height(),
                             photo.sortOrder()

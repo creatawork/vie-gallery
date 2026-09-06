@@ -18,13 +18,15 @@ public class M3ShareLinkConfig {
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
             TokenGenerator tokenGenerator,
-            @Value("${gallery.public.base-url:https://gallery.vie-vibe.cn}") String publicBaseUrl
+            @Value("${gallery.public.base-url:https://gallery.vie-vibe.cn}") String publicBaseUrl,
+            WorkspaceAuthorizationPolicy authorization
     ) {
         return new ShareLinkFacade(
                 shareLinkRepository,
                 galleryRepository,
                 tokenGenerator,
-                publicBaseUrl
+                publicBaseUrl,
+                authorization
         );
     }
 
@@ -52,11 +54,13 @@ public class M3ShareLinkConfig {
     @Bean
     public GalleryViewerConfigFacade galleryViewerConfigFacade(
             GalleryViewerConfigRepository galleryViewerConfigRepository,
-            GalleryRepository galleryRepository
+            GalleryRepository galleryRepository,
+            WorkspaceAuthorizationPolicy authorization
     ) {
         return new GalleryViewerConfigFacade(
                 galleryViewerConfigRepository,
-                galleryRepository
+                galleryRepository,
+                authorization
         );
     }
 }

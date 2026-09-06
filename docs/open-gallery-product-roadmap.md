@@ -166,23 +166,24 @@ PLATFORM_ADMIN
 建议新增或规划：
 
 ```text
-status              DRAFT | PROCESSING | READY | PUBLISHED | ERROR
-updatedAt           最近一次内容或配置变更时间
+status              DRAFT | PUBLISHED | ARCHIVED
 publishedAt         最近一次发布的时间
-createdBy           创建者用户 ID
-updatedBy           最近修改者用户 ID
-photoCount          服务端聚合数量
-failedPhotoCount    处理失败数量
+updatedAt           最近一次内容或配置变更时间（后续摘要切片补齐）
+createdBy           创建者用户 ID（后续协作切片补齐）
+updatedBy           最近修改者用户 ID（后续协作切片补齐）
+photoCount          服务端聚合数量（后续摘要切片补齐）
+failedPhotoCount    处理失败数量（后续摘要切片补齐）
 ```
 
-访问权限和生命周期必须分开：
+访问权限、Gallery 生命周期和 Photo 处理状态必须分开：
 
 ```text
-visibility = PUBLIC | PRIVATE | PASSWORD
-status     = DRAFT | PROCESSING | READY | PUBLISHED | ERROR
+visibility     = PUBLIC | PRIVATE | PASSWORD
+Gallery.status = DRAFT | PUBLISHED | ARCHIVED
+Photo.status   = PROCESSING | READY | FAILED
 ```
 
-`PUBLIC` 表示谁可以访问；`PUBLISHED` 表示空间是否已经准备好对外展示。
+`PUBLIC` 表示谁可以访问；Photo `READY` 表示内容处理完成；只有 `Gallery.status = PUBLISHED` 且满足 visibility 凭证规则时，空间才可以对外展示。
 
 ### 4.2 推荐创作者 API
 
@@ -428,17 +429,17 @@ slug 修改时需要明确策略：
 
 不建议一次性重写整个系统，建议按垂直切片推进。
 
-### Slice 1：真正进入空间
+### Slice 1：真正进入空间 ✅
 
 目标：先修复主流程。
 
-- 新增前端 `/galleries/:id` 路由
+- 新增前端 `/app/galleries/:id` 路由
 - 将当前照片管理区迁移/复用到独立工作台
 - 总览卡片和创建成功后导航到该路由
 - 增加返回总览
 - 暂不改变后端 API 路径
 
-完成标准：用户可以创建空间、进入空间、上传截图、设置封面、预览。
+完成标准：用户可以创建空间、进入空间、上传照片、设置封面、预览。当前代码已完成；单空间详情 API 和完整浏览器验收列入 M3.5 加固。
 
 ### Slice 2：空间摘要规范化
 
@@ -448,27 +449,36 @@ slug 修改时需要明确策略：
 - 移除前端用当前选中空间猜测全局统计
 - 真实实现公开/私密筛选
 
-### Slice 3：授权规范化
+### Slice 3：授权规范化（M5，核心完成，验收收尾）
 
-- 将写操作统一接入 Membership 权限校验
-- OWNER / EDITOR / VIEWER 生效
-- 前端根据权限显示操作
+详细实施计划：[next-slice-membership-and-authorization.md](./next-slice-membership-and-authorization.md)
+
+- OWNER / EDITOR / VIEWER 角色和 capabilities 已实现
+- 成员 CRUD API 和 Admin 成员页已实现
+- Gallery、Photo、Config、Share 写操作已接入服务层授权
 - 后端始终做最终判断
+- 真实 HTTP 全矩阵、迁移升级、并发和完整三角色浏览器证据待补
 
-### Slice 4：访客与发布
+### Slice 4：访客与发布（M4，核心完成，验收收尾）
+
+详细实施计划：[next-slice-publishing-and-seo.md](./next-slice-publishing-and-seo.md)
 
 - 完善发布状态机
 - 公开 API 只返回已发布数据
 - 访客页面支持锁定、错误、空状态
 - 分享链接可撤销
+- 公开 Viewer 提供安全的 SEO 元信息
 
-### Slice 5：上传任务生产化
+### Slice 5：上传任务生产化（M6，下一阶段）
+
+详细实施计划：[next-slice-upload-task-productionization.md](./next-slice-upload-task-productionization.md)
 
 - 任务列表接口
 - 重试接口
 - 取消接口
 - 处理失败可观测
 - 前端刷新后恢复任务
+- 批量部分成功和 Worker 状态恢复
 
 ---
 
@@ -518,32 +528,34 @@ slug 修改时需要明确策略：
 
 ## 11. 当前最推荐的下一步
 
-下一步只做一个垂直切片，不要同时做权限、状态机和视觉大改：
+M3.5 公开访问、M4 发布核心和 M5 协作授权核心已经完成，当前优先补齐 M5 的集成验收证据，再进入 M6：
 
-### 任务：建立单相册空间工作台
+### M5 验收收尾
 
-具体范围：
+详细规范：[next-slice-membership-and-authorization.md](./next-slice-membership-and-authorization.md)
 
-1. 前端新增 `/app/galleries/:id` 路由
-2. 新建 `GalleryWorkspaceView.vue`
-3. 将当前 `OverviewView.vue` 中的照片上传、照片网格、分享、配置、Viewer 操作迁移或抽取到工作台
-4. `OverviewView.vue` 只保留空间总览
-5. 卡片“进入空间”使用真实路由跳转
-6. 创建成功后跳转到新空间工作台
-7. 增加工作台的返回总览入口
-8. 保持当前后端 API 不变
-9. 增加路由和核心交互测试
+- 完成真实三角色 HTTP 全矩阵和被移除成员旧 Session 验证。
+- 完成 V7 从已有 V1–V6 数据升级的报告。
+- 补充最后 OWNER 并发保护验证和完整三角色浏览器证据。
+- 保持 M4/M3.5 的 PASSWORD、Token 撤销和重新发布缺口独立记录。
 
-### 暂不做
+### 任务：上传任务生产化（M6）
 
-- 暂不重命名数据库中的 Tenant
-- 暂不大规模改 Membership 表
-- 暂不实现完整发布状态机
-- 暂不实现最近编辑筛选
-- 暂不增加没有后端支持的按钮
-- 暂不引入新的状态管理库
+详细实施计划：[next-slice-upload-task-productionization.md](./next-slice-upload-task-productionization.md)
 
-这是风险最低、用户价值最高的下一步：先让产品形成完整主路径，再继续规范后端和权限。
+1. 建立持久化任务列表、详情和状态筛选。
+2. 支持失败分类、retry、backoff、max attempts 和 stale lease 恢复。
+3. 支持 queued/processing 取消和终态保护。
+4. Admin 刷新后从服务端恢复任务，展示单文件进度和失败原因。
+5. 解决批量部分成功、幂等和 Worker 可观测性。
+
+### M6 暂不做
+
+- 不引入独立消息队列、SSR 或大型视觉改版。
+- 不把任务字段暴露给公开 Viewer。
+- 不提前实现完整任务历史、批量导入和复杂存储回收产品。
+
+这是下一条最直接的生产化路径：让上传失败可理解、可重试、可恢复，而不是要求用户重新上传整批照片。
 
 ---
 

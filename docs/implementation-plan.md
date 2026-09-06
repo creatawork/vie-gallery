@@ -1,6 +1,8 @@
 # VIE Gallery 实现文档
 
-本文档是 `docs/reconstruction-plan.md` 的执行版，约束后续开发顺序、模块职责和验收口径。当前工程使用 Java 17（与本机 JDK 一致），Spring Boot 保持 3.3.x；升级 Java 版本不属于 MVP 范围。
+本文档是当前架构、API 和里程碑规范。早期重构方案已归档至 `docs/archive/reconstruction-plan.md`，不再作为当前契约。当前工程使用 Java 17（与本机 JDK 一致），Spring Boot 保持 3.3.x；升级 Java 版本不属于 MVP 范围。
+
+当前状态：M1/M2 基础能力、M3 Gallery 工作区、M3.5 公开访问稳定化、M4 发布状态和 M5 Membership 授权核心实现已落地。M5 已支持 OWNER/EDITOR/VIEWER、成员 CRUD、统一 Facade policy 和 Admin capability gating；44 项后端测试、Admin/Viewer build、Docker 三角色 API 和 OWNER 成员页已验证。真实 HTTP 全矩阵、V7 升级报告、最后 OWNER 并发、旧 Session 失效和完整三角色浏览器证据仍待补。下一开发切片是 M6 上传任务生产化。
 
 ## 1. 目标与边界
 
@@ -32,8 +34,9 @@ infra/                           本地 MySQL、Redis、MinIO、Nginx 配置
 
 1. `users`：邮箱唯一、显示名称、密码哈希、状态、最后登录时间。
 2. `tenant`：名称、slug、状态；注册时同步创建一个租户。
-3. `membership`：`user_id`、`tenant_id`、角色，唯一约束防重复成员。
-4. `gallery`：租户、slug、名称、可见性（PUBLIC/PRIVATE/PASSWORD）、密码哈希、封面照片 ID。
+3. `membership`：`user_id`、`tenant_id`、角色（OWNER/EDITOR/VIEWER），唯一约束防重复成员。
+4. `gallery`：租户、slug、名称、可见性（PUBLIC/PRIVATE/PASSWORD）、发布状态（DRAFT/PUBLISHED/ARCHIVED）、密码哈希、封面照片 ID。Gallery 发布状态与 Photo 处理状态分离；Photo 使用 PROCESSING/READY/FAILED 等状态。
+5. `photo_processing_task`：照片、租户、任务状态、重试次数、锁定时间和错误信息；M6 将扩展为可恢复任务中心。
 5. `storage_object`：bucket、object_key、thumbnail_key、MIME、字节数、宽高、sha256、存储状态。
 6. `photo`：租户、相册、存储对象、标题、排序号、封面标识、软删除时间。
 7. `share_link`：相册、token_hash、过期时间、撤销时间、密码哈希、最近访问时间。
@@ -58,11 +61,11 @@ M1 先加入数据库连接池、Flyway、Redis Session、统一 JSON 错误处�
 
 ### 4.4 上传链路
 
-`POST /api/galleries/{id}/photos/upload` 先检查租户配额、文件数量和请求频率，再校验扩展名、声明 MIME 与实际图片解码结果。服务端生成随机 object key，原图和缩略图分离保存。上传成功后写 `storage_object` 和 `photo`；任一阶段失败都删除已上传对象并记录审计。返回短期签名 URL，不返回永久 OSS 地址。
+`POST /api/galleries/{id}/photos` 先检查租户配额、文件数量和请求频率，再校验扩展名、声明 MIME 与实际图片解码结果。服务端生成随机 object key，原图和缩略图分离保存。上传成功后写 `storage_object` 和 `photo`；任一阶段失败都删除已上传对象并记录审计。返回短期签名 URL，不返回永久 OSS 地址。
 
 ### 4.5 公开展示
 
-`GET /api/public/g/{slug}` 只返回展示所需字段；密码相册通过 `/unlock` 创建短期访问 Session，后续照片接口校验该 Session。公开接口禁止返回内部 ID、租户 ID、bucket、object key 和管理字段。过期或撤销链接统一返回 404，避免泄露资源存在性。
+`GET /api/public/g/{slug}` 只返回展示所需字段；公开访问必须先验证 Gallery 为 PUBLISHED，DRAFT、ARCHIVED、已删除和不存在资源统一按 404 处理。密码相册通过 `/unlock` 创建短期访问 Session，后续照片接口校验该 Session；Token 或 Session 不能绕过发布状态。公开接口禁止返回内部 ID、租户 ID、bucket、object key 和管理字段。过期或撤销链接统一返回 404，避免泄露资源存在性。
 
 ## 5. API 契约
 
@@ -72,11 +75,14 @@ M1 先加入数据库连接池、Flyway、Redis Session、统一 JSON 错误处�
 POST /api/auth/register|login|logout
 GET  /api/me
 GET|POST /api/galleries
-PATCH|DELETE /api/galleries/{id}
+GET  /api/galleries/{id}
+POST /api/galleries/{id}/publish
+POST /api/galleries/{id}/unpublish
 GET|POST /api/galleries/{id}/photos
 PATCH|DELETE /api/photos/{id}
-POST /api/galleries/{id}/share-links
+GET|POST /api/galleries/{id}/share-links
 DELETE /api/share-links/{id}
+GET|PUT|DELETE /api/galleries/{id}/viewer-config
 ```
 
 公开端：
@@ -85,6 +91,7 @@ DELETE /api/share-links/{id}
 GET  /api/public/g/{slug}
 POST /api/public/g/{slug}/unlock
 GET  /api/public/g/{slug}/photos
+GET  /api/public/g/{slug}/viewer-config
 ```
 
 统一响应错误结构为 `{ code, message, requestId, details }`。分页统一使用 `items`、`page`、`pageSize`、`total`。API 类型变更先更新 `packages/gallery-contracts`，再修改两个前端。
@@ -99,14 +106,18 @@ GET  /api/public/g/{slug}/photos
 
 后端：领域规则单测、Repository 集成测试、MockMvc API 测试、跨租户访问测试、上传恶意文件测试、分享过期/撤销测试。前端：类型检查、组件测试、移动端浏览器测试和公开页 WebGL 降级测试。
 
-每个里程碑必须通过：`mvn -DskipTests verify`、`npm run build`、Docker Compose 健康检查。M1 的详细实施、API 契约、迁移边界和运行态验收见 [`docs/m1-implementation-plan.md`](m1-implementation-plan.md)。数据库迁移按里程碑分阶段执行：M1 先落地身份、租户、membership 和 gallery 基础表，M2 再增加照片、对象元数据和配额相关表。
+每个里程碑必须通过：`mvn -DskipTests verify`、`npm run build`、Docker Compose 健康检查。M1 的历史实施记录见 [`docs/archive/m1-implementation-plan.md`](archive/m1-implementation-plan.md)。当前测试和运行态验收以 [`docs/testing-guide.md`](testing-guide.md) 为准。数据库迁移按里程碑分阶段执行：M1 先落地身份、租户、membership 和 gallery 基础表，M2 再增加照片、对象元数据和配额相关表。
 
 文件存储后续接入阿里云 OSS。M1 不引入 OSS SDK、凭据、永久 URL 或文件上传旁路；M2 通过应用层对象存储端口接入 OSS 适配器。
 
 ## 8. 里程碑
 
-1. M0（当前）：工程骨架、Java 17、前端双入口、共享契约、本地依赖编排。
-2. M1：数据库迁移、认证、Redis Session、租户上下文、Gallery 持久化和统一错误处理。详细规格见 [`docs/m1-implementation-plan.md`](m1-implementation-plan.md)。
+1. M0：工程骨架、Java 17、前端双入口、共享契约、本地依赖编排。
+2. M1：数据库迁移、认证、Redis Session、租户上下文、Gallery 持久化和统一错误处理。详细规格见 [`docs/archive/m1-implementation-plan.md`](archive/m1-implementation-plan.md)。
 3. M2：相册/照片 CRUD、对象存储上传、缩略图和配额。
 4. M3：公开链接、密码访问、Three.js 展示和移动端适配。
-5. M4：迁移工具 dry-run/幂等/校验报告、全链路测试和部署演练。
+5. M3.5 ✅：公开访问稳定化验收、共享契约、单 Gallery 详情、短期签名 URL、前端测试和部署加固。
+6. [M4 ✅：发布状态、公开隔离、分享撤销与 SEO](next-slice-publishing-and-seo.md)：核心代码、后端测试、Docker/API 和 Viewer SEO 已验证，保留少量运行态补验收。
+7. [M5 ✅：Membership 协作权限和前端能力 gating](next-slice-membership-and-authorization.md)：核心代码、44 项后端测试、前端构建、Docker 三角色 API 和 OWNER 成员页已验证，保留集成验收。
+8. [M6：上传任务生产化](next-slice-upload-task-productionization.md)：持久任务、重试、取消、恢复和 Worker 可观测性。
+9. M7：Viewer 配置版本化、CDN 和 3D 性能优化。

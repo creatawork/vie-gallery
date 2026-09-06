@@ -15,18 +15,30 @@ public class PhotoFacade {
     private static final Set<String> TYPES = Set.of("image/jpeg", "image/png", "image/webp");
     private final GalleryRepository galleries; private final PhotoRepository photos; private final StorageObjectRepository objects;
     private final PhotoProcessingTaskRepository tasks; private final TenantQuotaRepository quotas; private final ObjectStoragePort storage;
-    private final TenantContextResolver context; private final long maxFileSize, maxPixels, maxBytes, maxPhotos;
+    private final TenantContextResolver context; private final WorkspaceAuthorizationPolicy authorization; private final long maxFileSize, maxPixels, maxBytes, maxPhotos;
     public PhotoFacade(GalleryRepository galleries, PhotoRepository photos, StorageObjectRepository objects, PhotoProcessingTaskRepository tasks,
                        TenantQuotaRepository quotas, ObjectStoragePort storage, TenantContextResolver context,
                        @Value("${gallery.quota.max-file-size:104857600}") long maxFileSize,
                        @Value("${gallery.quota.max-pixels:40000000}") long maxPixels,
                        @Value("${gallery.quota.max-bytes:5368709120}") long maxBytes,
                        @Value("${gallery.quota.max-photos:10000}") long maxPhotos) {
-        this.galleries=galleries;this.photos=photos;this.objects=objects;this.tasks=tasks;this.quotas=quotas;this.storage=storage;this.context=context;
+        this(galleries, photos, objects, tasks, quotas, storage, context, new WorkspaceAuthorizationPolicy(context),
+                maxFileSize, maxPixels, maxBytes, maxPhotos);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PhotoFacade(GalleryRepository galleries, PhotoRepository photos, StorageObjectRepository objects, PhotoProcessingTaskRepository tasks,
+                       TenantQuotaRepository quotas, ObjectStoragePort storage, TenantContextResolver context,
+                       WorkspaceAuthorizationPolicy authorization,
+                       @Value("${gallery.quota.max-file-size:104857600}") long maxFileSize,
+                       @Value("${gallery.quota.max-pixels:40000000}") long maxPixels,
+                       @Value("${gallery.quota.max-bytes:5368709120}") long maxBytes,
+                       @Value("${gallery.quota.max-photos:10000}") long maxPhotos) {
+        this.galleries=galleries;this.photos=photos;this.objects=objects;this.tasks=tasks;this.quotas=quotas;this.storage=storage;this.context=context;this.authorization=authorization;
         this.maxFileSize=maxFileSize;this.maxPixels=maxPixels;this.maxBytes=maxBytes;this.maxPhotos=maxPhotos;
     }
     @Transactional public UploadResult upload(UUID galleryId, PhotoUpload upload) {
-        UUID tenant=context.requireContext().tenantId();
+        UUID tenant=authorization.requireEditor().tenantId();
         galleries.findById(tenant,galleryId).orElseThrow(()->new DomainException("GALLERY_NOT_FOUND","Gallery not found"));
         if (upload.size()<=0) throw new DomainException("FILE_INVALID","Empty file");
         if (upload.size()>maxFileSize) throw new DomainException("FILE_TOO_LARGE","File is too large");
@@ -48,7 +60,7 @@ public class PhotoFacade {
     private static String normalize(String type){return type==null?"":type.toLowerCase(Locale.ROOT).split(";")[0].trim();}
     public List<Photo> list(UUID galleryId){UUID t=context.requireContext().tenantId();galleries.findById(t,galleryId).orElseThrow(()->new DomainException("GALLERY_NOT_FOUND","Gallery not found"));return photos.findByGallery(t,galleryId);}
     @Transactional public void delete(UUID photoId){
-        UUID t=context.requireContext().tenantId();
+        UUID t=authorization.requireEditor().tenantId();
         Photo p=photos.findById(t,photoId).orElseThrow(()->new DomainException("PHOTO_NOT_FOUND","Photo not found"));
         if(photos.softDelete(t,photoId)==0)throw new DomainException("PHOTO_NOT_FOUND","Photo not found");
         galleries.findById(t, p.galleryId()).ifPresent(g -> {
@@ -60,7 +72,7 @@ public class PhotoFacade {
         objects.softDelete(t,p.storageObjectId());
     }
     @Transactional public Photo update(UUID photoId,String title,Integer sortOrder,Boolean cover){
-        UUID t=context.requireContext().tenantId();
+        UUID t=authorization.requireEditor().tenantId();
         Photo p = photos.findById(t,photoId).orElseThrow(()->new DomainException("PHOTO_NOT_FOUND","Photo not found"));
         if (cover != null) {
             if (Boolean.TRUE.equals(cover)) {

@@ -1,109 +1,136 @@
 # VIE Gallery
 
-多租户照片展示与分享平台。项目基于 `E:/workspace/vie-mei` 的现有视觉实现进行重构，部署目标为 `gallery.vie-vibe.cn`。
+VIE Gallery 是一个面向创作者的照片空间与分享平台。创作者可以创建 Gallery、上传照片、配置 3D 展示并通过稳定 URL 分享给访客；访客通过 Viewer 浏览公开内容。
 
-## 定位
+当前分支已完成 Gallery 工作区、M3.5 公开访问稳定化、M4 发布状态核心实现和 M5 协作授权核心实现。M5 已支持 OWNER / EDITOR / VIEWER、成员 CRUD、统一 Facade 授权和 Admin 成员页；后端 44 项测试、Admin/Viewer build、Docker API 三角色和 OWNER 成员页已验证。M5 的真实 HTTP 全矩阵、V7 升级演练、最后 OWNER 并发、旧 Session 失效和部分浏览器证据仍待补。当前采用默认工作区协作模型；多工作区切换、邮件邀请和生产级上传任务队列属于后续阶段。
 
-- 公开用户可以创建照片空间并生成专属分享链接
-- 管理端使用 Vue 3 + TypeScript
-- 后端使用 Spring Boot，统一处理用户、租户、相册、照片、分享链接和对象存储
-- 公开展示页保留原项目的 Three.js 3D 照片墙作为可选展示模式
+## 当前用户路径
+
+```text
+登录 → /app/ → /app/galleries/:id
+                 ├─ 上传照片、设置封面、删除照片
+                 ├─ 配置 3D 展示 → /app/galleries/:id/config
+                 └─ 生成分享链接 → /g/:slug?t=<token>
+```
 
 ## URL 规划
 
-```text
-vie-vibe.cn                         个人主页与项目介绍
-gallery.vie-vibe.cn                 照片平台入口
-gallery.vie-vibe.cn/app             登录后的管理端
-gallery.vie-vibe.cn/g/{slug}        公开照片空间
-api.gallery.vie-vibe.cn             后端 API（可选独立域名）
-```
+| URL | 用途 |
+| --- | --- |
+| `/app/` | 登录后的 Gallery 总览 |
+| `/app/galleries/:id` | 单 Gallery 工作区 |
+| `/app/galleries/:id/config` | 当前 Gallery 的 Viewer 配置 |
+| `/g/:slug` | 访客公开 Viewer |
+| `/g/:slug?t=<token>` | 携带分享 Token 的访客 Viewer |
 
-第一版采用路径分享链接。泛域名子域名分享作为后续能力，不作为 MVP 前置条件。
+## 当前 API
 
-## 当前重构原则
-
-1. 保留原项目的页面视觉和 3D 展示效果。
-2. 重写认证、租户隔离、相册持久化和文件访问边界。
-3. 相册和照片数据统一进入关系数据库，不再以 JSON 或内存对象作为主数据源。
-4. 图片文件放在对象存储，数据库只保存对象元数据和 key。
-5. 管理接口和公开展示接口分离。
-6. 所有租户上下文从登录身份或分享令牌取得，不接受客户端传入的 `userId` 作为身份依据。
-
-## MVP
-
-- 注册、登录、退出
-- 创建照片空间
-- 创建相册
-- 单张和批量上传照片
-- 图片缩略图和基础元数据
-- 公开/私密/密码访问
-- 生成、撤销和过期分享链接
-- 保留原 3D 展示页作为公开空间展示模式
-- 管理端照片排序、封面设置和软删除
-
-## 后续能力
-
-- AI 自动标签、智能选封面和重复照片检测
-- 相册协作与成员权限
-- 定时备份和存储配额
-- 自定义主题和模板
-- 自定义子域名
-
-## 目录规划
+管理端：
 
 ```text
-vie-gallery/
-├── apps/
-│   ├── gallery-api/       # Spring Boot API
-│   ├── gallery-admin/     # Vue 管理端
-│   └── gallery-viewer/    # 公开展示页，复用 Three.js 视觉层
-├── docs/
-│   └── reconstruction-plan.md
-└── infra/                 # Docker、反向代理和部署配置
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/me
+GET  /api/galleries
+GET  /api/galleries/{id}
+POST /api/galleries
+POST /api/galleries/{id}/photos
+GET  /api/galleries/{id}/photos
+PATCH /api/photos/{id}
+DELETE /api/photos/{id}
+POST /api/galleries/{id}/share-links
+GET  /api/galleries/{id}/share-links
+DELETE /api/share-links/{id}
 ```
 
-## 测试
+公开端：
 
-项目包含完整的 MCP 测试套件，支持自动化 API 测试和浏览器端到端测试。
+```text
+GET  /api/public/g/{slug}
+POST /api/public/g/{slug}/unlock
+GET  /api/public/g/{slug}/photos?page=0&pageSize=50
+GET  /api/public/g/{slug}/viewer-config
+```
 
-### 快速测试
+公开照片和 `photoCount` 只包含 `READY` 且未软删除的照片。新分享链接统一使用 query Token；Viewer 暂时兼容旧的 `token` 参数和 `#s=` 格式。
+
+## 目录
+
+```text
+apps/
+├── gallery-api/       # Spring Boot 多模块 API
+├── gallery-admin/     # Vue 3 + TypeScript 创作者工作台
+└── gallery-viewer/    # Vue 3 + Three.js 公开展示端
+packages/
+└── gallery-contracts/ # 前后端共享 TypeScript 契约
+infra/                 # Docker Compose、Nginx 和本地依赖
+ docs/                  # 当前规范、阶段计划和归档记录
+```
+
+## 本地启动
+
+要求：Docker Compose、Java 17、Node.js 18+、npm、curl；ImageMagick 仅用于 CLI 测试生成测试图片。
 
 ```bash
-# 1. 启动所有服务
-cd infra
-docker-compose up -d
+# 构建后端（从仓库根目录）
+cd apps/gallery-api
+mvn -DskipTests package
 
-# 2. 运行自动化测试
-bash test-mcp-flow.sh
+# 启动 MySQL、Redis、MinIO 和 API
+cd ../../infra
+docker compose up -d
 
-# 3. 启动前端（可选）
+# 启动 Admin 与 Viewer（另开终端）
+cd ..
 bash start-frontend.sh
 ```
 
-### 测试文档
-
-- **[QUICK-START.txt](QUICK-START.txt)** - 快速启动参考卡片（⭐推荐）
-- **[TEST-SUMMARY.md](TEST-SUMMARY.md)** - 测试总结和概览
-- **[TESTING-HOST.md](TESTING-HOST.md)** - 主机端详细执行指南
-- **[docs/testing-guide.md](docs/testing-guide.md)** - 完整测试使用指南
-- **[docs/mcp-test-guide.md](docs/mcp-test-guide.md)** - API 测试详细文档
-
-### 测试脚本
-
-- `test-mcp-flow.sh` - 自动化 API 测试（13 个端点）
-- `test-browser-mcp.sh` - 浏览器 MCP 测试准备
-- `quick-test.sh` - 交互式测试控制台
-
-### 服务地址
+本地宿主端口由 `infra/.env` 控制，当前默认值如下：
 
 | 服务 | 地址 | 说明 |
-|------|------|------|
-| API | http://localhost:8080 | Spring Boot 后端 |
-| Admin UI | http://localhost:5173 | Vue 管理端 |
-| Viewer | http://localhost:5174 | 公开展示页 |
-| MinIO Console | http://localhost:9001 | 对象存储控制台 |
+| --- | --- | --- |
+| API | <http://localhost:8088> | 宿主端口；容器内部为 8080 |
+| Admin | <http://localhost:5173> | 创作者工作台 |
+| Viewer | <http://localhost:5174> | 公开展示端 |
+| MySQL | `localhost:3307` | 宿主端口；容器内部为 3306 |
+| Redis | `localhost:6379` | Session 和任务状态 |
+| MinIO API | <http://localhost:9000> | 本地对象存储 |
+| MinIO Console | <http://localhost:9001> | 对象存储控制台 |
 
-## 参考项目
+如果修改 `infra/.env`，同时设置 `API_BASE`、`ADMIN_UI`、`VIEWER_UI` 或让脚本读取对应环境变量。
 
-旧项目位于 `E:/workspace/vie-mei`。它作为视觉和数据迁移参考，不直接作为新平台的业务基础。
+## 测试与验收
+
+唯一的测试说明入口是 [`docs/testing-guide.md`](docs/testing-guide.md)。常用命令：
+
+```bash
+# 后端测试
+cd apps/gallery-api && mvn test
+
+# 前端构建
+cd apps/gallery-admin && npm install && npm run build
+cd ../gallery-viewer && npm install && npm run build
+
+# 服务启动后运行当前 Gallery API CLI 流程
+cd ../..
+bash test-mcp-flow.sh
+```
+
+当前自动化验收已覆盖注册、登录、Gallery 创建与详情、上传 READY 照片、发布、PRIVATE Token、PASSWORD 前置状态、分享链接和公开访问。M5 Docker/API 已验证 OWNER/EDITOR/VIEWER 的 `/api/me`、capabilities、成员列表和受限写操作 403；浏览器 MCP 已验证 OWNER 成员页和添加 EDITOR。仍未覆盖 M5 的真实 HTTP 全矩阵、V7 升级报告、最后 OWNER 并发和旧 Session 失效。M4/M3.5 的 PASSWORD 成功解锁、撤销 Token、重新发布恢复和 Admin IAB 发布交互也仍保留为补验收项。
+
+## 文档入口
+
+- [`docs/open-gallery-product-roadmap.md`](docs/open-gallery-product-roadmap.md)：产品路线和阶段目标。
+- [`docs/implementation-plan.md`](docs/implementation-plan.md)：架构、API 和里程碑规范。
+- [`docs/next-slice-public-access-stabilization.md`](docs/next-slice-public-access-stabilization.md)：公开访问稳定化切片与验收标准。
+- [`docs/testing-guide.md`](docs/testing-guide.md)：当前测试、启动和故障排查指南。
+- [`docs/archive/README.md`](docs/archive/README.md)：历史文档索引；归档资料不覆盖当前规范。
+
+## 后续路线
+
+1. M3.5 ✅：公开访问、测试、签名 URL 和部署配置生产化加固。
+2. [M4 ✅：发布状态、公开隔离、分享撤销与 SEO](docs/next-slice-publishing-and-seo.md)：核心代码、后端测试、Docker/API 和 Viewer SEO 已验证，保留少量运行态补验收。
+3. [M5 ✅：Workspace Membership 与 OWNER / EDITOR / VIEWER 授权](docs/next-slice-membership-and-authorization.md)：核心代码、44 项后端测试、前端构建、Docker 三角色 API 和 OWNER 成员页已验证，保留集成验收。
+4. [M6：上传任务生产化](docs/next-slice-upload-task-productionization.md)。
+5. M7：Viewer 配置版本化、CDN 和 3D 性能优化。

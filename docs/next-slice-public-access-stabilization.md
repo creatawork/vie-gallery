@@ -1,15 +1,16 @@
 # 下一阶段实现指导：访客访问与公开数据一致性稳定化
 
 > 上位规范：[open-gallery-product-roadmap.md](./open-gallery-product-roadmap.md)  
-> 上一阶段：[next-slice-gallery-workspace-implementation.md](./next-slice-gallery-workspace-implementation.md)  
-> 阶段定位：完成 Admin 单相册工作台之后，优先修通访客访问闭环和公开数据契约。  
-> 建议分支：从当前已完成工作区切片分支继续开发，单独提交本阶段变更。
+> 上一阶段（归档记录）：[next-slice-gallery-workspace-implementation.md](./archive/next-slice-gallery-workspace-implementation.md)
+> 阶段定位：完成 Gallery 单相册工作台之后，优先修通访客访问闭环和公开数据契约。
+> 当前状态：M3.5 核心修复、单 Gallery 详情、短期签名 URL 和 Docker CLI 主流程已验证。PASSWORD 成功解锁、签名 URL 过期恢复、Token 日志审计和前端自动化测试仍待补证。
+> 建议分支：从当前工作区切片分支继续开发，阶段提交保持可独立构建。
 
 ---
 
 ## 1. 阶段结论
 
-当前项目已经完成了创作者侧的第一条主路径：
+当前项目已经完成了创作者侧的第一条主路径（代码已落地，运行态 E2E 仍需在 M3.5 验收）：
 
 ```text
 登录 → /app/ → /app/galleries/:id → 上传/封面/分享/配置 → /g/:slug
@@ -85,7 +86,7 @@
 
 ### 3.1 已有能力
 
-当前后端和 Viewer 已经具备大部分基础能力：
+以下能力已在当前代码中落地；自动化/运行态验收状态见本文 Definition of Done：
 
 - `GET /api/public/g/{slug}`：返回公开相册访问状态、封面和照片数量。
 - `POST /api/public/g/{slug}/unlock`：验证 PASSWORD 相册密码并创建 Session。
@@ -93,7 +94,7 @@
 - `GET /api/public/g/{slug}/viewer-config`：读取启用的 Viewer 配置。
 - `POST /api/galleries/{galleryId}/share-links`：Admin 创建分享链接。
 - `GET /api/galleries/{galleryId}/share-links`：Admin 查看分享链接。
-- `DELETE /api/share-links/{shareLinkId}`：后端已有撤销能力，但本阶段不扩展 Admin 管理 UI。
+- `DELETE /api/share-links/{shareLinkId}`：后端撤销能力已在 M4 接入 Admin 分享列表、状态展示和二次确认 UI。
 - Viewer 已有 `loading`、`ready`、`password_prompt`、`share_required`、`empty`、`not_found`、`error` 状态机。
 
 ### 3.2 关键文件
@@ -645,35 +646,36 @@ db migration（除非测试证明 Session/索引必须持久化）
 
 ### 访客访问
 
-- [ ] PUBLIC 相册可直接打开并浏览。
-- [ ] PRIVATE 相册只接受当前 gallery 的有效分享 Token。
-- [ ] PASSWORD 相册解锁后可以读取照片。
-- [ ] PASSWORD Session 绑定真实 gallery，不能跨 slug 复用。
-- [ ] Session 过期后回到密码输入状态。
-- [ ] 无效、过期、撤销分享链接显示明确状态。
+- [x] 后端 PUBLIC/PRIVATE/PASSWORD 访问判定已实现。
+- [x] PASSWORD 相册 Session 绑定真实 gallery，不能跨 slug 复用。
+- [x] 无效、过期、撤销分享链接由后端拒绝。
+- [ ] PUBLIC、PRIVATE、PASSWORD 完整运行态链路通过 E2E。
+- [ ] Session 过期后 Viewer 回到密码输入状态并完成手工验收。
 
 ### 公开数据
 
-- [ ] 公开照片只包含 `READY` 且未删除记录。
-- [ ] `photoCount` 与可见照片总数一致。
-- [ ] `PhotoListResponse.total` 是全量 total，不是当前页长度。
-- [ ] 分页不会因非 READY 照片占位而缺项。
-- [ ] 空相册返回稳定的空列表状态。
-- [ ] page/pageSize 参数有边界校验。
+- [x] 公开照片只包含 `READY` 且未删除记录。
+- [x] `photoCount` 与可见照片总数一致。
+- [x] `PhotoListResponse.total` 是全量 total，不是当前页长度。
+- [x] 分页不会因非 READY 照片占位而缺项。
+- [x] 空相册返回稳定的空列表状态。
+- [x] page/pageSize 参数有边界校验。
 
 ### 分享与契约
 
-- [ ] 新分享 URL 统一使用 `?t=`。
-- [ ] Admin、后端和 Viewer 使用同一 token 约定。
-- [ ] raw token 不出现在列表响应、普通错误或日志。
-- [ ] contracts 覆盖公开 Gallery、Photo、分页、解锁和错误响应。
+- [x] 新分享 URL 统一使用 `?t=`。
+- [x] Admin、后端和 Viewer 使用同一 token 约定。
+- [x] raw token 不出现在列表响应和普通错误。
+- [x] contracts 覆盖公开 Gallery、Photo、分页、解锁和错误响应。
+- [ ] 生产日志和部署环境完成 raw token 泄露审计。
 
 ### Viewer 稳定性
 
-- [ ] JSON、空 body、HTML 错误均能转为可读状态。
-- [ ] 401/403/404/429/5xx 有明确状态和恢复入口。
-- [ ] 重试不会丢失 slug 或有效 token。
-- [ ] 中文文案不暴露内部异常细节。
+- [x] JSON、空 body、HTML 错误均能转为可读状态。
+- [x] 401/403/404/429/5xx 有明确状态和恢复入口。
+- [x] 重试不会丢失 slug 或有效 token。
+- [x] 中文文案不暴露内部异常细节。
+- [ ] 图片签名 URL 过期后完成重新加载验收。
 
 ### 回归与质量
 
@@ -689,12 +691,12 @@ db migration（除非测试证明 Session/索引必须持久化）
 
 本阶段稳定后，再按产品路线进入：
 
-1. **空间摘要规范化**：Gallery Summary、photoCount、updatedAt、status 和真实筛选。
-2. **授权规范化**：Membership 角色、写操作授权和前端能力 gating。
-3. **访客与发布**：DRAFT/PUBLISHED、未发布数据隔离、分享撤销 UI、SEO 元数据。
-4. **上传任务生产化**：任务列表、重试、取消、失败可观测、刷新恢复。
+1. **M4 发布与公开隔离**：[next-slice-publishing-and-seo.md](next-slice-publishing-and-seo.md)：DRAFT/PUBLISHED/ARCHIVED、未发布数据隔离、分享撤销 UI、SEO 元数据。
+2. **M5 Membership 与授权**：[next-slice-membership-and-authorization.md](next-slice-membership-and-authorization.md)：角色、成员 CRUD 和服务层能力 gating。
+3. **M6 上传任务生产化**：[next-slice-upload-task-productionization.md](next-slice-upload-task-productionization.md)：任务列表、重试、取消、失败可观测、刷新恢复。
+4. **空间摘要规范化**：Gallery Summary、photoCount、updatedAt、status 和真实筛选。
 5. **配置协议与 Viewer 性能**：共享 schema、iframe handshake、资源 URL、配置版本/回滚、移动端性能。
 
-下一阶段只完成访问稳定化，不提前实现完整权限和发布状态机。产品判断标准仍然是：
+M3.5 已完成核心访问稳定化，剩余 PASSWORD 成功解锁、签名 URL 过期恢复和 Token 审计作为补验收保留。M4 发布核心也已实现并进入验收收尾；下一开发切片进入 [M5 Membership 与角色授权](next-slice-membership-and-authorization.md)。产品判断标准仍然是：
 
 > 访客能打开正确的空间，看到正确的照片；拥有正确凭证的人能继续访问，没有凭证的人得到明确且可恢复的反馈。

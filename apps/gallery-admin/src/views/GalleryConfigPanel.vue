@@ -7,8 +7,11 @@ import PresetSelector from '../components/PresetSelector.vue'
 import LayoutSettings from '../components/LayoutSettings.vue'
 import Icon from '../components/Icon.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
+import { useAuth } from '../composables/useAuth'
 
 const route = useRoute()
+const { can } = useAuth()
+const canConfigWrite = can('CONFIG_WRITE')
 const router = useRouter()
 const toast = useToast()
 const galleryId = route.params.id as string
@@ -86,6 +89,7 @@ function sendLiveMessage(msg: any) {
 }
 
 function handleLayoutChange(mode: string) {
+  if (!canConfigWrite.value) return
   config.layout.mode = mode
   sendLiveMessage({ type: 'VIE_LAYOUT_CHANGE', mode })
 }
@@ -195,10 +199,9 @@ async function loadGalleryAndConfig() {
   loading.value = true
   try {
     // 1. 获取相册基础信息
-    const gallRes = await apiFetch('/api/galleries')
+    const gallRes = await apiFetch(`/api/galleries/${galleryId}`)
     if (gallRes.ok) {
-      const list = await gallRes.json()
-      galleryInfo.value = list.find((g: any) => g.id === galleryId) || null
+      galleryInfo.value = await gallRes.json()
     }
 
     // 2. 获取相册 3D 配置
@@ -220,6 +223,7 @@ async function loadGalleryAndConfig() {
 }
 
 async function applyPreset(presetName: string) {
+  if (!canConfigWrite.value) return
   config.presetName = presetName
   ensureConfigDefaults()
 
@@ -298,6 +302,10 @@ function toggleParticleType(type: string) {
 }
 
 async function save() {
+  if (!canConfigWrite.value) {
+    toast.error('当前角色没有修改配置的权限。')
+    return
+  }
   saving.value = true
   try {
     ensureConfigDefaults()
@@ -335,6 +343,7 @@ async function save() {
 }
 
 async function confirmReset() {
+  if (!canConfigWrite.value) return
   resetting.value = true
   try {
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`, {
@@ -389,11 +398,11 @@ onMounted(() => {
           <Icon name="external" :size="16" />
           <span>独立窗口预览</span>
         </button>
-        <button class="btn btn-ghost" @click="showResetConfirm = true">
+        <button v-if="canConfigWrite" class="btn btn-ghost" @click="showResetConfirm = true">
           <Icon name="refresh" :size="16" />
           <span>重置默认</span>
         </button>
-        <button class="btn btn-primary" :disabled="saving" @click="save">
+        <button v-if="canConfigWrite" class="btn btn-primary" :disabled="saving" @click="save">
           <Icon v-if="saving" name="refresh" :size="16" class="spin" />
           <Icon v-else name="check" :size="16" />
           <span>{{ saving ? '保存中…' : '保存发布配置' }}</span>
@@ -408,7 +417,7 @@ onMounted(() => {
     </div>
 
     <!-- Main Config Studio Layout -->
-    <div v-else class="studio-container">
+    <fieldset v-else class="studio-container config-fieldset" :disabled="!canConfigWrite">
       <!-- Section 1: Presets -->
       <section class="config-card">
           <div class="card-header">
@@ -422,6 +431,7 @@ onMounted(() => {
           </div>
           <PresetSelector
             :current-preset="config.presetName"
+            :disabled="!canConfigWrite"
             @select="applyPreset"
           />
         </section>
@@ -439,6 +449,7 @@ onMounted(() => {
           </div>
           <LayoutSettings
             v-model:mode="config.layout.mode"
+            :disabled="!canConfigWrite"
             @update:mode="handleLayoutChange"
           />
         </section>
@@ -458,7 +469,7 @@ onMounted(() => {
           <div class="form-grid-2">
             <div class="form-group">
               <label class="form-label">背景模式</label>
-              <select v-model="config.background.type" class="select-input" @change="onBackgroundTypeChange">
+              <select v-model="config.background.type" class="select-input" :disabled="!canConfigWrite" @change="onBackgroundTypeChange">
                 <option value="sky">沉浸式天空穹顶 (SkyDome)</option>
                 <option value="gradient">艺术渐变 (Gradient)</option>
                 <option value="none">极简纯黑 (Pure Dark)</option>
@@ -467,7 +478,7 @@ onMounted(() => {
 
             <div v-if="config.background.type === 'sky' && config.background.sky" class="form-group">
               <label class="form-label">天空盒主题</label>
-              <select v-model="config.background.sky.theme" class="select-input" @change="refreshLivePreview">
+              <select v-model="config.background.sky.theme" class="select-input" :disabled="!canConfigWrite" @change="refreshLivePreview">
                 <option value="starry">星空银河 (Starry Night)</option>
                 <option value="forest">暮色森林 (Forest)</option>
                 <option value="ocean">蔚蓝深海 (Ocean Breeze)</option>
@@ -477,7 +488,7 @@ onMounted(() => {
 
             <div v-if="config.background.type === 'gradient' && config.background.gradient" class="form-group">
               <label class="form-label">渐变方向</label>
-              <select v-model="config.background.gradient.direction" class="select-input" @change="refreshLivePreview">
+              <select v-model="config.background.gradient.direction" class="select-input" :disabled="!canConfigWrite" @change="refreshLivePreview">
                 <option value="vertical">垂直线性 (Vertical)</option>
                 <option value="horizontal">水平线性 (Horizontal)</option>
                 <option value="radial">径向环形 (Radial)</option>
@@ -500,7 +511,7 @@ onMounted(() => {
 
           <div class="toggle-row">
             <label class="switch-container">
-              <input type="checkbox" v-model="config.particles.enabled" class="switch-input" @change="refreshLivePreview" />
+              <input type="checkbox" v-model="config.particles.enabled" :disabled="!canConfigWrite" class="switch-input" @change="refreshLivePreview" />
               <span class="switch-slider"></span>
             </label>
             <div class="toggle-label-text">
@@ -513,7 +524,7 @@ onMounted(() => {
             <div
               class="particle-chip"
               :class="{ active: config.particles.types.includes('stars') }"
-              @click="toggleParticleType('stars')"
+              @click="canConfigWrite && toggleParticleType('stars')"
             >
               <Icon name="star" :size="16" />
               <span>璀璨星尘 (Stars)</span>
@@ -521,7 +532,7 @@ onMounted(() => {
             <div
               class="particle-chip"
               :class="{ active: config.particles.types.includes('sakura') }"
-              @click="toggleParticleType('sakura')"
+              @click="canConfigWrite && toggleParticleType('sakura')"
             >
               <Icon name="sparkles" :size="16" />
               <span>飘落樱花 (Sakura)</span>
@@ -529,7 +540,7 @@ onMounted(() => {
             <div
               class="particle-chip"
               :class="{ active: config.particles.types.includes('hearts') }"
-              @click="toggleParticleType('hearts')"
+              @click="canConfigWrite && toggleParticleType('hearts')"
             >
               <Icon name="star" :size="16" />
               <span>心动爱心 (Hearts)</span>
@@ -537,7 +548,7 @@ onMounted(() => {
             <div
               class="particle-chip"
               :class="{ active: config.particles.types.includes('snow') }"
-              @click="toggleParticleType('snow')"
+              @click="canConfigWrite && toggleParticleType('snow')"
             >
               <Icon name="sparkles" :size="16" />
               <span>静谧雪花 (Snow)</span>
@@ -561,7 +572,7 @@ onMounted(() => {
             <div class="effect-box">
               <div class="toggle-row">
                 <label class="switch-container">
-                  <input type="checkbox" v-model="config.effects.bloom.enabled" class="switch-input" @change="refreshLivePreview" />
+                  <input type="checkbox" v-model="config.effects.bloom.enabled" :disabled="!canConfigWrite" class="switch-input" @change="refreshLivePreview" />
                   <span class="switch-slider"></span>
                 </label>
                 <div class="toggle-label-text">
@@ -579,6 +590,7 @@ onMounted(() => {
                     max="1.8"
                     step="0.05"
                     v-model.number="config.effects.bloom.strength"
+                    :disabled="!canConfigWrite"
                     class="range-slider"
                     @input="refreshLivePreview"
                   />
@@ -589,7 +601,7 @@ onMounted(() => {
             <div class="effect-box">
               <div class="toggle-row">
                 <label class="switch-container">
-                  <input type="checkbox" v-model="config.effects.fog.enabled" class="switch-input" @change="refreshLivePreview" />
+                  <input type="checkbox" v-model="config.effects.fog.enabled" :disabled="!canConfigWrite" class="switch-input" @change="refreshLivePreview" />
                   <span class="switch-slider"></span>
                 </label>
                 <div class="toggle-label-text">
@@ -600,7 +612,7 @@ onMounted(() => {
             </div>
           </div>
         </section>
-    </div>
+    </fieldset>
 
     <!-- Confirm Reset Modal -->
     <ConfirmModal
