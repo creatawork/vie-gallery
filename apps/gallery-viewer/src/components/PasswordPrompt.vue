@@ -4,6 +4,7 @@ import Icon from './Icon.vue'
 
 defineProps<{
   isUnlocking: boolean
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -37,6 +38,7 @@ function handleSubmit() {
         <p>此空间已被所有者设为密码保护，请输入访问密码以解锁沉浸式浏览体验。</p>
       </div>
 
+      <p v-if="error" class="prompt-error" role="alert">{{ error }}</p>
       <form @submit.prevent="handleSubmit" class="password-form">
         <div class="input-container">
           <input
@@ -130,6 +132,17 @@ function handleSubmit() {
   color: #94a3b8;
   line-height: 1.5;
   margin-bottom: 24px;
+}
+
+.prompt-error {
+  margin: 0 0 16px;
+  padding: 9px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 9px;
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.25);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .password-form {

@@ -8,9 +8,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * 公开访问门面，处理公开展示和密码解锁逻辑
+ * 公开访问门面，处理公开展示和密码解锁逻辑。
  */
 public class PublicAccessFacade {
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final GalleryRepository galleryRepository;
     private final ShareLinkRepository shareLinkRepository;
     private final PhotoRepository photoRepository;
@@ -38,141 +40,156 @@ public class PublicAccessFacade {
     }
 
     /**
-     * 解析公开相册状态
+     * 解析公开相册状态。
      */
     public PublicGalleryView resolvePublicGallery(String slug, String shareToken) {
-        Gallery gallery = galleryRepository.findBySlug(slug)
-                .filter(g -> !g.deleted())
-                .orElseThrow(PublicAccessException::galleryNotFound);
+        return resolvePublicGallery(slug, shareToken, null);
+    }
 
+    public PublicGalleryView resolvePublicGallery(String slug, String shareToken, UUID publicSessionGalleryId) {
+        Gallery gallery = findGallery(slug);
         Instant now = Instant.now();
-
-        // 根据可见性决定访问状态
-        PublicAccessState accessState = determineAccessState(gallery, shareToken, now);
-
-        // 获取照片数量
-        int photoCount = photoRepository.countByGalleryId(gallery.id());
-
-        // 获取封面
-        PublicGalleryView.CoverView cover = null;
-        if (gallery.coverPhotoId() != null) {
-            cover = photoRepository.findById(gallery.coverPhotoId())
-                    .filter(p -> p.status() == PhotoStatus.READY)
-                    .flatMap(photo -> storageObjectRepository.findById(gallery.tenantId(), photo.storageObjectId()))
-                    .map(storageObject -> {
-                        String key = storageObject.thumbnailKey() != null ? storageObject.thumbnailKey() : storageObject.objectKey();
-                        String url = objectStoragePort.createReadUrl(key).toString();
-                        return new PublicGalleryView.CoverView(url, storageObject.width(), storageObject.height());
-                    })
-                    .orElse(null);
-        }
-        if (cover == null) {
-            cover = photoRepository.findByGallery(gallery.tenantId(), gallery.id()).stream()
-                    .filter(p -> p.status() == PhotoStatus.READY && p.cover())
-                    .findFirst()
-                    .flatMap(photo -> storageObjectRepository.findById(gallery.tenantId(), photo.storageObjectId()))
-                    .map(storageObject -> {
-                        String key = storageObject.thumbnailKey() != null ? storageObject.thumbnailKey() : storageObject.objectKey();
-                        String url = objectStoragePort.createReadUrl(key).toString();
-                        return new PublicGalleryView.CoverView(url, storageObject.width(), storageObject.height());
-                    })
-                    .orElse(null);
-        }
+        PublicAccessState accessState = determineAccessState(gallery, shareToken, publicSessionGalleryId, now);
+        boolean canExposePhotos = accessState == PublicAccessState.READY;
+        int photoCount = canExposePhotos
+                ? photoRepository.countPublicReadyByGalleryId(gallery.tenantId(), gallery.id())
+                : 0;
 
         return new PublicGalleryView(
                 gallery.slug(),
                 gallery.name(),
                 gallery.visibility(),
                 accessState,
-                cover,
+                canExposePhotos ? findCover(gallery) : null,
                 photoCount
         );
     }
 
     /**
-     * 解锁密码相册
+     * 解锁密码相册，并返回真实的相册 ID 供 Controller 创建 gallery-scoped Session。
      */
-    public void unlockGallery(String slug, String shareToken, String password) {
-        Gallery gallery = galleryRepository.findBySlug(slug)
-                .filter(g -> !g.deleted())
-                .orElseThrow(PublicAccessException::galleryNotFound);
+    public UUID unlockGallery(String slug, String shareToken, String password) {
+        Gallery gallery = findGallery(slug);
 
-        // 验证可见性
         if (gallery.visibility() != GalleryVisibility.PASSWORD) {
             throw new DomainException("INVALID_OPERATION", "Gallery does not require password");
         }
 
-        // 验证分享链接
-        Instant now = Instant.now();
-        ShareLink shareLink = validateShareToken(shareToken, gallery.id(), now);
-
-        // 验证密码
+        validateShareToken(shareToken, gallery.id(), Instant.now());
         if (gallery.passwordHash() == null || !passwordHasher.matches(password, gallery.passwordHash())) {
             throw PublicAccessException.passwordInvalid();
         }
 
-        // 密码验证成功，由调用方创建公开访问 Session
+        return gallery.id();
     }
 
     /**
-     * 列出公开照片
+     * 验证公开 Viewer 配置的访问权限。
      */
-    public List<PublicPhotoView> listPublicPhotos(
+    public void validateViewerConfigAccess(String slug, String shareToken, UUID publicSessionGalleryId) {
+        Gallery gallery = findGallery(slug);
+        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, Instant.now());
+    }
+
+    /**
+     * 列出公开照片。READY 过滤和 total 由 Repository/Facade 统一保证。
+     */
+    public PublicPhotoPage listPublicPhotos(
             String slug,
             String shareToken,
             UUID publicSessionGalleryId,
             int page,
             int pageSize
     ) {
-        Gallery gallery = galleryRepository.findBySlug(slug)
-                .filter(g -> !g.deleted())
-                .orElseThrow(PublicAccessException::galleryNotFound);
+        validatePage(page, pageSize);
+        Gallery gallery = findGallery(slug);
+        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, Instant.now());
 
-        Instant now = Instant.now();
+        long offsetLong = (long) page * pageSize;
+        if (offsetLong > Integer.MAX_VALUE) {
+            throw new DomainException("INVALID_PAGE", "Page is out of range");
+        }
 
-        // 验证访问权限
-        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, now);
-
-        // 限制分页大小
-        int effectivePageSize = Math.min(pageSize, 100);
-        int offset = page * effectivePageSize;
-
-        // 查询照片
-        List<Photo> photos = photoRepository.findByGalleryIdWithPagination(
+        int total = photoRepository.countPublicReadyByGalleryId(gallery.tenantId(), gallery.id());
+        List<Photo> photos = photoRepository.findPublicReadyByGalleryId(
+                gallery.tenantId(),
                 gallery.id(),
-                offset,
-                effectivePageSize
+                (int) offsetLong,
+                pageSize
         );
 
-        // 转换为公开视图
-        return photos.stream()
-                .filter(p -> p.status() == PhotoStatus.READY)
-                .map(photo -> storageObjectRepository.findById(gallery.tenantId(), photo.storageObjectId())
-                        .map(storageObject -> {
-                            String key = storageObject.thumbnailKey() != null ? storageObject.thumbnailKey() : storageObject.objectKey();
-                            String thumbnailUrl = objectStoragePort.createReadUrl(key).toString();
-                            return new PublicPhotoView(
-                                    photo.title(),
-                                    thumbnailUrl,
-                                    storageObject.width(),
-                                    storageObject.height(),
-                                    photo.sortOrder()
-                            );
-                        })
-                        .orElse(null)
-                )
-                .filter(view -> view != null)
+        List<PublicPhotoView> items = photos.stream()
+                .map(photo -> toPublicPhoto(gallery, photo))
+                .flatMap(Optional::stream)
                 .toList();
+
+        return new PublicPhotoPage(items, page, pageSize, total);
     }
 
-    /**
-     * 确定访问状态
-     */
-    private PublicAccessState determineAccessState(Gallery gallery, String shareToken, Instant now) {
+    private Gallery findGallery(String slug) {
+        return galleryRepository.findBySlug(slug)
+                .filter(g -> !g.deleted())
+                .orElseThrow(PublicAccessException::galleryNotFound);
+    }
+
+    private PublicGalleryView.CoverView findCover(Gallery gallery) {
+        if (gallery.coverPhotoId() != null) {
+            Optional<PublicGalleryView.CoverView> explicit = photoRepository.findById(gallery.tenantId(), gallery.coverPhotoId())
+                    .filter(photo -> photo.galleryId().equals(gallery.id()))
+                    .filter(photo -> photo.status() == PhotoStatus.READY)
+                    .flatMap(photo -> toCover(gallery, photo));
+            if (explicit.isPresent()) return explicit.get();
+        }
+
+        return photoRepository.findByGallery(gallery.tenantId(), gallery.id()).stream()
+                .filter(photo -> photo.status() == PhotoStatus.READY && photo.cover())
+                .map(photo -> toCover(gallery, photo))
+                .flatMap(Optional::stream)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Optional<PublicGalleryView.CoverView> toCover(Gallery gallery, Photo photo) {
+        return storageObjectRepository.findById(gallery.tenantId(), photo.storageObjectId())
+                .filter(object -> object.status() == StorageObjectStatus.READY)
+                .map(object -> {
+                    String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
+                    return new PublicGalleryView.CoverView(
+                            objectStoragePort.createReadUrl(key).toString(),
+                            object.width() == null ? 0 : object.width(),
+                            object.height() == null ? 0 : object.height()
+                    );
+                });
+    }
+
+    private Optional<PublicPhotoView> toPublicPhoto(Gallery gallery, Photo photo) {
+        return storageObjectRepository.findById(gallery.tenantId(), photo.storageObjectId())
+                .filter(object -> object.status() == StorageObjectStatus.READY)
+                .map(object -> {
+                    String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
+                    return new PublicPhotoView(
+                            photo.title(),
+                            objectStoragePort.createReadUrl(key).toString(),
+                            object.width() == null ? 0 : object.width(),
+                            object.height() == null ? 0 : object.height(),
+                            photo.sortOrder()
+                    );
+                });
+    }
+
+    private void validatePage(int page, int pageSize) {
+        if (page < 0) {
+            throw new DomainException("INVALID_PAGE", "Page must be greater than or equal to zero");
+        }
+        if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+            throw new DomainException("INVALID_PAGE_SIZE", "Page size must be between 1 and 100");
+        }
+    }
+
+    private PublicAccessState determineAccessState(Gallery gallery, String shareToken, UUID publicSessionGalleryId, Instant now) {
         return switch (gallery.visibility()) {
             case PUBLIC -> PublicAccessState.READY;
             case PRIVATE -> {
-                // PRIVATE 需要有效的分享链接
                 if (shareToken == null || shareToken.isBlank()) {
                     yield PublicAccessState.SHARE_LINK_REQUIRED;
                 }
@@ -183,13 +200,15 @@ public class PublicAccessFacade {
                     yield PublicAccessState.SHARE_LINK_REQUIRED;
                 }
             }
-            case PASSWORD -> PublicAccessState.PASSWORD_REQUIRED;
+            case PASSWORD -> {
+                if (publicSessionGalleryId != null && publicSessionGalleryId.equals(gallery.id())) {
+                    yield PublicAccessState.READY;
+                }
+                yield PublicAccessState.PASSWORD_REQUIRED;
+            }
         };
     }
 
-    /**
-     * 验证分享 token
-     */
     private ShareLink validateShareToken(String shareToken, UUID galleryId, Instant now) {
         if (shareToken == null || shareToken.isBlank()) {
             throw PublicAccessException.shareLinkRequired();
@@ -199,12 +218,9 @@ public class PublicAccessFacade {
         ShareLink shareLink = shareLinkRepository.findByTokenHash(tokenHash)
                 .orElseThrow(PublicAccessException::shareLinkInvalid);
 
-        // 验证链接属于该相册
         if (!shareLink.getGalleryId().equals(galleryId)) {
             throw PublicAccessException.shareLinkInvalid();
         }
-
-        // 验证链接状态
         if (shareLink.isRevoked()) {
             throw PublicAccessException.shareLinkRevoked();
         }
@@ -215,9 +231,6 @@ public class PublicAccessFacade {
         return shareLink;
     }
 
-    /**
-     * 验证公开访问权限
-     */
     private void validatePublicAccess(
             Gallery gallery,
             String shareToken,
@@ -226,14 +239,10 @@ public class PublicAccessFacade {
     ) {
         switch (gallery.visibility()) {
             case PUBLIC -> {
-                // PUBLIC 相册无需验证
+                // PUBLIC 相册无需验证。
             }
-            case PRIVATE -> {
-                // PRIVATE 相册需要有效的分享链接
-                validateShareToken(shareToken, gallery.id(), now);
-            }
+            case PRIVATE -> validateShareToken(shareToken, gallery.id(), now);
             case PASSWORD -> {
-                // PASSWORD 相册需要有效的公开访问 Session
                 if (publicSessionGalleryId == null || !publicSessionGalleryId.equals(gallery.id())) {
                     throw PublicAccessException.sessionExpired();
                 }

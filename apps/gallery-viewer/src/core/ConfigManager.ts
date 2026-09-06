@@ -165,13 +165,19 @@ export class ConfigManager {
    */
   async loadFromServer(slug: string): Promise<ViewerConfig> {
     try {
-      const token = new URLSearchParams(window.location.search).get('t') || new URLSearchParams(window.location.search).get('token')
+      const params = new URLSearchParams(window.location.search)
+      const queryToken = params.get('t') || params.get('token')
+      const hashToken = window.location.hash.match(/(?:^#|[&#])s=([^&]+)/)?.[1]
+      const token = queryToken || (hashToken ? decodeURIComponent(hashToken) : null)
       const headers: Record<string, string> = {}
       if (token) {
         headers['X-Share-Token'] = token
       }
 
-      const response = await fetch(`/api/public/g/${slug}/viewer-config`, { headers })
+      const response = await fetch(`/api/public/g/${encodeURIComponent(slug)}/viewer-config`, {
+        headers,
+        credentials: 'include'
+      })
       if (response.ok) {
         const serverData = await response.json()
         if (serverData && serverData.configJson) {

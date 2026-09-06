@@ -1,169 +1,161 @@
 import type {
+  ApiError,
   PublicGalleryResponse,
   UnlockResponse,
-  PhotoListResponse,
-  ApiError
+  PhotoListResponse
 } from '../types/api'
 
+interface ErrorPayload {
+  code?: string
+  message?: string
+  requestId?: string
+  details?: Record<string, unknown>
+}
+
+function statusMessage(status: number) {
+  if (status === 401) return '访问凭证已失效，请重新解锁。'
+  if (status === 403) return '当前凭证无权访问这个空间。'
+  if (status === 404) return '找不到这个相册空间。'
+  if (status === 409) return '请求与当前空间状态冲突。'
+  if (status === 429) return '尝试次数过多，请稍后再试。'
+  if (status >= 500) return '服务暂时不可用，请稍后重试。'
+  return '请求失败，请稍后重试。'
+}
+
+export async function parseApiError(response: Response): Promise<PublicApiError> {
+  let payload: ErrorPayload = {}
+  try {
+    const parsed = await response.json() as ErrorPayload
+    if (parsed && typeof parsed === 'object') payload = parsed
+  } catch {
+    // Proxies and unavailable services may return HTML or an empty body.
+  }
+
+  return new PublicApiError(
+    payload.code || `HTTP_${response.status}`,
+    payload.message || statusMessage(response.status),
+    response.status,
+    payload.requestId,
+    payload.details
+  )
+}
+
+function readShareToken() {
+  const params = new URLSearchParams(window.location.search)
+  const queryToken = params.get('t') || params.get('token')
+  if (queryToken) return queryToken
+
+  const hash = window.location.hash
+  const match = hash.match(/(?:^#|[&#])s=([^&]+)/)
+  if (!match) return null
+
+  return decodeURIComponent(match[1])
+}
+
 /**
- * 公开 API 客户端
+ * 公开 API 客户端。
  */
 export class PublicApiClient {
-  private baseUrl: string
+  private readonly baseUrl: string
   private shareToken: string | null = null
 
   constructor(baseUrl: string = '/api/public') {
     this.baseUrl = baseUrl
-    // 从 URL 获取分享 token (query 't' or 'token')
-    const params = new URLSearchParams(window.location.search)
-    this.shareToken = params.get('t') || params.get('token')
+    this.shareToken = readShareToken()
   }
 
-  /**
-   * 获取公开相册状态
-   */
+  private headers(contentType?: string) {
+    const headers: Record<string, string> = {}
+    if (contentType) headers['Content-Type'] = contentType
+    if (this.shareToken) headers['X-Share-Token'] = this.shareToken
+    return headers
+  }
+
   async getGallery(slug: string): Promise<PublicGalleryResponse> {
-    const headers: Record<string, string> = {}
-    if (this.shareToken) {
-      headers['X-Share-Token'] = this.shareToken
-    }
-
-    const response = await fetch(`${this.baseUrl}/g/${slug}`, { headers })
-
-    if (!response.ok) {
-      const error: ApiError = await response.json()
-      throw new PublicApiError(error.code, error.message, response.status)
-    }
-
-    return response.json()
-  }
-
-  /**
-   * 解锁密码相册
-   */
-  async unlock(slug: string, password: string): Promise<UnlockResponse> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
-    if (this.shareToken) {
-      headers['X-Share-Token'] = this.shareToken
-    }
-
-    const response = await fetch(`${this.baseUrl}/g/${slug}/unlock`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ password }),
-      credentials: 'include' // 重要：携带 session cookie
-    })
-
-    if (!response.ok) {
-      const error: ApiError = await response.json()
-      throw new PublicApiError(error.code, error.message, response.status)
-    }
-
-    return response.json()
-  }
-
-  /**
-   * 获取公开照片列表
-   */
-  async getPhotos(
-    slug: string,
-    page: number = 0,
-    pageSize: number = 50
-  ): Promise<PhotoListResponse> {
-    const headers: Record<string, string> = {}
-    if (this.shareToken) {
-      headers['X-Share-Token'] = this.shareToken
-    }
-
-    const url = `${this.baseUrl}/g/${slug}/photos?page=${page}&pageSize=${pageSize}`
-    const response = await fetch(url, {
-      headers,
-      credentials: 'include' // 重要：携带 session cookie
-    })
-
-    if (!response.ok) {
-      const error: ApiError = await response.json()
-      throw new PublicApiError(error.code, error.message, response.status)
-    }
-
-    return response.json()
-  }
-
-  /**
-   * 获取公开相册展示配置
-   */
-  async getViewerConfig(slug: string): Promise<any | null> {
-    const headers: Record<string, string> = {}
-    if (this.shareToken) {
-      headers['X-Share-Token'] = this.shareToken
-    }
-
+    let response: Response
     try {
-      const response = await fetch(`${this.baseUrl}/g/${slug}/viewer-config`, { headers })
-      if (response.ok) {
-        return await response.json()
-      }
-    } catch (e) {
-      console.warn('Failed to fetch viewer config from public api', e)
+      response = await fetch(`${this.baseUrl}/g/${encodeURIComponent(slug)}`, {
+        headers: this.headers(),
+        credentials: 'include'
+      })
+    } catch {
+      throw new PublicApiError('NETWORK_ERROR', '网络连接异常，请检查网络后重试。', 0)
     }
-    return null
+    if (!response.ok) throw await parseApiError(response)
+    return response.json() as Promise<PublicGalleryResponse>
   }
 
-  /**
-   * 设置分享 token（用于编程式设置）
-   */
+  async unlock(slug: string, password: string): Promise<UnlockResponse> {
+    let response: Response
+    try {
+      response = await fetch(`${this.baseUrl}/g/${encodeURIComponent(slug)}/unlock`, {
+        method: 'POST',
+        headers: this.headers('application/json'),
+        body: JSON.stringify({ password }),
+        credentials: 'include'
+      })
+    } catch {
+      throw new PublicApiError('NETWORK_ERROR', '网络连接异常，请检查网络后重试。', 0)
+    }
+    if (!response.ok) throw await parseApiError(response)
+    return response.json() as Promise<UnlockResponse>
+  }
+
+  async getPhotos(slug: string, page: number = 0, pageSize: number = 50): Promise<PhotoListResponse> {
+    let response: Response
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+    try {
+      response = await fetch(`${this.baseUrl}/g/${encodeURIComponent(slug)}/photos?${params}`, {
+        headers: this.headers(),
+        credentials: 'include'
+      })
+    } catch {
+      throw new PublicApiError('NETWORK_ERROR', '网络连接异常，请检查网络后重试。', 0)
+    }
+    if (!response.ok) throw await parseApiError(response)
+    return response.json() as Promise<PhotoListResponse>
+  }
+
+  async getViewerConfig(slug: string): Promise<any | null> {
+    try {
+      const response = await fetch(`${this.baseUrl}/g/${encodeURIComponent(slug)}/viewer-config`, {
+        headers: this.headers(),
+        credentials: 'include'
+      })
+      if (response.ok) return await response.json()
+      return null
+    } catch {
+      return null
+    }
+  }
+
   setShareToken(token: string | null) {
     this.shareToken = token
   }
 }
 
 /**
- * 公开 API 错误
+ * 公开 API 错误。
  */
 export class PublicApiError extends Error {
   constructor(
-    public code: string,
+    public readonly code: string,
     message: string,
-    public status: number
+    public readonly status: number,
+    public readonly requestId?: string,
+    public readonly details?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'PublicApiError'
   }
 
-  /**
-   * 是否是相册未找到
-   */
-  get isNotFound(): boolean {
-    return this.code === 'GALLERY_NOT_FOUND' || this.status === 404
-  }
-
-  /**
-   * 是否需要密码
-   */
-  get isPasswordRequired(): boolean {
-    return this.code === 'PASSWORD_REQUIRED'
-  }
-
-  /**
-   * 密码是否错误
-   */
-  get isPasswordInvalid(): boolean {
-    return this.code === 'PASSWORD_INVALID'
-  }
-
-  /**
-   * 是否需要分享链接
-   */
-  get isShareLinkRequired(): boolean {
-    return this.code === 'SHARE_LINK_REQUIRED'
-  }
-
-  /**
-   * 是否被限流
-   */
-  get isRateLimited(): boolean {
-    return this.code === 'RATE_LIMITED' || this.status === 429
-  }
+  get isNetworkError() { return this.code === 'NETWORK_ERROR' }
+  get isNotFound() { return this.code === 'GALLERY_NOT_FOUND' || this.status === 404 }
+  get isPasswordRequired() { return this.code === 'PASSWORD_REQUIRED' }
+  get isPasswordInvalid() { return this.code === 'PASSWORD_INVALID' }
+  get isShareLinkRequired() { return this.code === 'SHARE_LINK_REQUIRED' }
+  get isSessionExpired() { return this.code === 'PUBLIC_SESSION_EXPIRED' }
+  get isRateLimited() { return this.code === 'RATE_LIMITED' || this.status === 429 }
 }
+
+export type { ApiError }

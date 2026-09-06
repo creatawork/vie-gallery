@@ -49,6 +49,21 @@ function viewerUrl(slug: string) {
   return `${window.location.protocol}//${window.location.hostname}:5174/g/${slug}`
 }
 
+function normalizeViewerShareUrl(value: string) {
+  const isLocalDevelopment = window.location.port === '5173' &&
+    ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+  if (!isLocalDevelopment) return value
+  try {
+    const url = new URL(value, window.location.origin)
+    url.protocol = window.location.protocol
+    url.hostname = window.location.hostname
+    url.port = '5174'
+    return url.toString()
+  } catch {
+    return value
+  }
+}
+
 function openViewer() {
   if (!workspace.gallery.value) return
   window.open(viewerUrl(workspace.gallery.value.slug), '_blank', 'noopener,noreferrer')
@@ -113,10 +128,11 @@ async function openShareModal() {
       body: JSON.stringify({})
     })
     if (!response.ok) throw new Error('生成分享链接失败，请稍后重试。')
-    const data = await response.json() as { rawToken?: string; expiresAt?: string }
-    if (!data.rawToken) throw new Error('分享凭证生成失败，请稍后重试。')
+    const data = await response.json() as { shareUrl?: string; rawToken?: string; expiresAt?: string }
+    const shareUrl = data.shareUrl || (data.rawToken ? `${viewerUrl(workspace.gallery.value.slug)}?t=${encodeURIComponent(data.rawToken)}` : '')
+    if (!shareUrl) throw new Error('分享凭证生成失败，请稍后重试。')
     shareLinkData.value = {
-      shareUrl: `${viewerUrl(workspace.gallery.value.slug)}?t=${data.rawToken}`,
+      shareUrl: normalizeViewerShareUrl(shareUrl),
       expiresAt: data.expiresAt
     }
   } catch (error) {

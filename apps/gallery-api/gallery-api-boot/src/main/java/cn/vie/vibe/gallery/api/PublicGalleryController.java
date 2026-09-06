@@ -3,8 +3,8 @@ package cn.vie.vibe.gallery.api;
 import cn.vie.vibe.gallery.application.GalleryViewerConfigFacade;
 import cn.vie.vibe.gallery.application.PublicAccessFacade;
 import cn.vie.vibe.gallery.application.PublicGalleryView;
+import cn.vie.vibe.gallery.application.PublicPhotoPage;
 import cn.vie.vibe.gallery.application.PublicPhotoView;
-import cn.vie.vibe.gallery.domain.GalleryViewerConfig;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
 import cn.vie.vibe.gallery.domain.PublicAccessState;
 import jakarta.servlet.http.HttpSession;
@@ -19,15 +19,17 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 公开展示 Controller
+ * 公开展示 Controller。
  */
 @RestController
 @RequestMapping("/api/public/g")
 public class PublicGalleryController {
-    private final PublicAccessFacade publicAccessFacade;
-    private final GalleryViewerConfigFacade configFacade;
     private static final String PUBLIC_SESSION_GALLERY_ID = "public_gallery_id";
     private static final String PUBLIC_SESSION_EXPIRES_AT = "public_expires_at";
+    private static final int PUBLIC_SESSION_TTL_SECONDS = 1800;
+
+    private final PublicAccessFacade publicAccessFacade;
+    private final GalleryViewerConfigFacade configFacade;
 
     public PublicGalleryController(
             PublicAccessFacade publicAccessFacade,
@@ -38,23 +40,21 @@ public class PublicGalleryController {
     }
 
     /**
-     * 获取公开相册状态
+     * 获取公开相册状态。
      */
     @GetMapping("/{slug}")
     public PublicGalleryResponse getGallery(
             @PathVariable("slug") String slug,
-            @RequestHeader(value = "X-Share-Token", required = false) String shareToken
+            @RequestHeader(value = "X-Share-Token", required = false) String shareToken,
+            HttpSession session
     ) {
-        PublicGalleryView view = publicAccessFacade.resolvePublicGallery(slug, shareToken);
+        PublicGalleryView view = publicAccessFacade.resolvePublicGallery(slug, shareToken, readSessionGalleryId(session));
 
-        CoverResponse cover = null;
-        if (view.cover() != null) {
-            cover = new CoverResponse(
-                    view.cover().url(),
-                    view.cover().width(),
-                    view.cover().height()
-            );
-        }
+        CoverResponse cover = view.cover() == null ? null : new CoverResponse(
+                view.cover().url(),
+                view.cover().width(),
+                view.cover().height()
+        );
 
         return new PublicGalleryResponse(
                 view.slug(),
@@ -67,12 +67,15 @@ public class PublicGalleryController {
     }
 
     /**
-     * 获取相册 3D 视觉展示配置
+     * 获取相册 3D 视觉展示配置。
      */
     @GetMapping("/{slug}/viewer-config")
     public ResponseEntity<GalleryViewerConfigController.GalleryViewerConfigResponse> getViewerConfig(
-            @PathVariable("slug") String slug
+            @PathVariable("slug") String slug,
+            @RequestHeader(value = "X-Share-Token", required = false) String shareToken,
+            HttpSession session
     ) {
+        publicAccessFacade.validateViewerConfigAccess(slug, shareToken, readSessionGalleryId(session));
         return configFacade.getPublicConfig(slug)
                 .map(config -> new GalleryViewerConfigController.GalleryViewerConfigResponse(
                         config.id().toString(),
@@ -88,7 +91,7 @@ public class PublicGalleryController {
     }
 
     /**
-     * 解锁密码相册
+     * 解锁密码相册。
      */
     @PostMapping("/{slug}/unlock")
     public UnlockResponse unlock(
@@ -97,19 +100,19 @@ public class PublicGalleryController {
             @Valid @RequestBody UnlockRequest request,
             HttpSession session
     ) {
-        publicAccessFacade.unlockGallery(slug, shareToken, request.password());
+        UUID galleryId = publicAccessFacade.unlockGallery(slug, shareToken, request.password());
+        Instant expiresAt = Instant.now().plusSeconds(PUBLIC_SESSION_TTL_SECONDS);
 
-        // 创建公开访问 Session（30 分钟有效期）
-        Instant expiresAt = Instant.now().plusSeconds(1800);
-        session.setAttribute(PUBLIC_SESSION_GALLERY_ID, slug);
+        // 只保存真实 gallery ID 和绝对过期时间，不保存密码或 raw token。
+        session.setAttribute(PUBLIC_SESSION_GALLERY_ID, galleryId.toString());
         session.setAttribute(PUBLIC_SESSION_EXPIRES_AT, expiresAt.toString());
-        session.setMaxInactiveInterval(1800);
+        session.setMaxInactiveInterval(PUBLIC_SESSION_TTL_SECONDS);
 
         return new UnlockResponse(true, expiresAt);
     }
 
     /**
-     * 获取公开照片列表
+     * 获取公开照片列表。
      */
     @GetMapping("/{slug}/photos")
     public PhotoListResponse getPhotos(
@@ -119,17 +122,8 @@ public class PublicGalleryController {
             @RequestParam(value = "pageSize", defaultValue = "50") int pageSize,
             HttpSession session
     ) {
-        // 从 Session 获取公开访问相册 ID
-        String sessionGallerySlug = (String) session.getAttribute(PUBLIC_SESSION_GALLERY_ID);
-        UUID publicSessionGalleryId = null;
-
-        // 简化：将 slug 用于验证，实际应该存储 gallery ID
-        if (slug.equals(sessionGallerySlug)) {
-            // Session 有效，允许访问
-            publicSessionGalleryId = UUID.randomUUID(); // 占位，实际应从相册查询
-        }
-
-        List<PublicPhotoView> photos = publicAccessFacade.listPublicPhotos(
+        UUID publicSessionGalleryId = readSessionGalleryId(session);
+        PublicPhotoPage result = publicAccessFacade.listPublicPhotos(
                 slug,
                 shareToken,
                 publicSessionGalleryId,
@@ -137,7 +131,7 @@ public class PublicGalleryController {
                 pageSize
         );
 
-        List<PhotoResponse> items = photos.stream()
+        List<PhotoResponse> items = result.items().stream()
                 .map(p -> new PhotoResponse(
                         p.title(),
                         p.thumbnailUrl(),
@@ -147,10 +141,35 @@ public class PublicGalleryController {
                 ))
                 .toList();
 
-        return new PhotoListResponse(items, page, pageSize, items.size());
+        return new PhotoListResponse(items, result.page(), result.pageSize(), result.total());
     }
 
-    // Request & Response records
+    private UUID readSessionGalleryId(HttpSession session) {
+        Object rawGalleryId = session.getAttribute(PUBLIC_SESSION_GALLERY_ID);
+        Object rawExpiresAt = session.getAttribute(PUBLIC_SESSION_EXPIRES_AT);
+        if (!(rawGalleryId instanceof String galleryIdValue) || !(rawExpiresAt instanceof String expiresAtValue)) {
+            clearPublicSession(session);
+            return null;
+        }
+
+        try {
+            UUID galleryId = UUID.fromString(galleryIdValue);
+            Instant expiresAt = Instant.parse(expiresAtValue);
+            if (!Instant.now().isBefore(expiresAt)) {
+                clearPublicSession(session);
+                return null;
+            }
+            return galleryId;
+        } catch (IllegalArgumentException exception) {
+            clearPublicSession(session);
+            return null;
+        }
+    }
+
+    private void clearPublicSession(HttpSession session) {
+        session.removeAttribute(PUBLIC_SESSION_GALLERY_ID);
+        session.removeAttribute(PUBLIC_SESSION_EXPIRES_AT);
+    }
 
     public record PublicGalleryResponse(
             String slug,

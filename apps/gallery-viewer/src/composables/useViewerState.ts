@@ -1,176 +1,174 @@
-import { ref, computed, type Ref } from 'vue'
+import { computed, ref } from 'vue'
 import { PublicApiClient, PublicApiError } from '../api/client'
-import type { PublicGalleryResponse, PublicPhoto } from '../types/api'
+import type { PublicGalleryResponse, PublicPhoto, PhotoListResponse } from '../types/api'
 
-/**
- * Viewer 状态
- */
 export type ViewerState =
-  | 'loading'           // 加载中
-  | 'ready'             // 可以查看
-  | 'password_prompt'   // 需要输入密码
-  | 'share_required'    // 需要分享链接
-  | 'empty'             // 相册为空
-  | 'not_found'         // 相册不存在
-  | 'error'             // 其他错误
+  | 'loading'
+  | 'ready'
+  | 'password_prompt'
+  | 'share_required'
+  | 'empty'
+  | 'not_found'
+  | 'error'
 
-/**
- * Viewer 状态机
- */
+function userMessage(error: PublicApiError, fallback: string) {
+  if (error.isNotFound) return '找不到这个相册空间，可能已被移除或链接有误。'
+  if (error.isPasswordInvalid) return '密码不正确，请重新输入。'
+  if (error.isSessionExpired) return '访问会话已过期，请重新输入密码。'
+  if (error.isShareLinkRequired || error.status === 403) return '此空间需要有效的分享链接才能访问。'
+  if (error.isRateLimited) return '尝试次数过多，请稍后再试。'
+  if (error.isNetworkError) return '网络连接异常，请检查网络后重试。'
+  if (error.status >= 500) return '服务暂时不可用，请稍后重试。'
+  return error.message || fallback
+}
+
 export function useViewerState(slug: string) {
   const client = new PublicApiClient()
-
-  // 状态
   const state = ref<ViewerState>('loading')
   const gallery = ref<PublicGalleryResponse | null>(null)
   const photos = ref<PublicPhoto[]>([])
   const error = ref<string | null>(null)
   const unlocking = ref(false)
+  const currentPage = ref(0)
+  const pageSize = ref(50)
+  const total = ref(0)
+  const loadingMore = ref(false)
+  let requestVersion = 0
 
-  // 计算属性
   const isReady = computed(() => state.value === 'ready')
   const needsPassword = computed(() => state.value === 'password_prompt')
   const needsShareLink = computed(() => state.value === 'share_required')
   const isEmpty = computed(() => state.value === 'empty')
   const hasError = computed(() => state.value === 'error' || state.value === 'not_found')
+  const hasMore = computed(() => photos.value.length < total.value)
 
-  /**
-   * 初始化：获取相册状态
-   */
   async function initialize() {
+    const version = ++requestVersion
     state.value = 'loading'
     error.value = null
+    photos.value = []
+    currentPage.value = 0
+    total.value = 0
 
     try {
-      gallery.value = await client.getGallery(slug)
+      const nextGallery = await client.getGallery(slug)
+      if (version !== requestVersion) return
+      gallery.value = nextGallery
 
-      // 根据访问状态转换到对应的 viewer 状态
-      switch (gallery.value.accessState) {
+      switch (nextGallery.accessState) {
         case 'READY':
-          state.value = 'ready'
-          await loadPhotos()
+          await loadPhotos(0, pageSize.value, version)
           break
         case 'PASSWORD_REQUIRED':
           state.value = 'password_prompt'
           break
         case 'SHARE_LINK_REQUIRED':
           state.value = 'share_required'
-          error.value = 'This gallery requires a share link to access'
+          error.value = '此空间需要有效的分享链接才能访问。'
           break
         case 'EMPTY':
           state.value = 'empty'
           break
-      }
-    } catch (err) {
-      if (err instanceof PublicApiError) {
-        if (err.isNotFound) {
-          state.value = 'not_found'
-          error.value = 'Gallery not found'
-        } else if (err.isShareLinkRequired) {
-          state.value = 'share_required'
-          error.value = err.message
-        } else {
+        default:
           state.value = 'error'
-          error.value = err.message
-        }
-      } else {
-        state.value = 'error'
-        error.value = 'Failed to load gallery'
+          error.value = '空间返回了无法识别的访问状态，请稍后重试。'
       }
+    } catch (cause) {
+      if (version !== requestVersion) return
+      handleError(cause, '加载相册空间失败，请稍后重试。')
     }
   }
 
-  /**
-   * 解锁密码相册
-   */
   async function unlock(password: string): Promise<boolean> {
     if (unlocking.value) return false
-
     unlocking.value = true
     error.value = null
-
     try {
       await client.unlock(slug, password)
-      state.value = 'ready'
-      await loadPhotos()
-      return true
-    } catch (err) {
-      if (err instanceof PublicApiError) {
-        if (err.isPasswordInvalid) {
-          error.value = 'Invalid password'
-        } else if (err.isRateLimited) {
-          error.value = 'Too many attempts. Please try again later.'
-        } else {
-          error.value = err.message
-        }
-      } else {
-        error.value = 'Failed to unlock gallery'
-      }
+      await loadPhotos(0, pageSize.value)
+      return state.value === 'ready' || state.value === 'empty'
+    } catch (cause) {
+      handleError(cause, '解锁相册失败，请稍后重试。', true)
       return false
     } finally {
       unlocking.value = false
     }
   }
 
-  /**
-   * 加载照片
-   */
-  async function loadPhotos(page: number = 0, pageSize: number = 50) {
-    try {
-      const response = await client.getPhotos(slug, page, pageSize)
-      photos.value = response.items
+  async function loadPhotos(page = 0, requestedPageSize = pageSize.value, version = requestVersion) {
+    const response: PhotoListResponse = await client.getPhotos(slug, page, requestedPageSize)
+    if (version !== requestVersion) return
 
-      // 如果加载后发现为空，更新状态
-      if (photos.value.length === 0 && state.value === 'ready') {
-        state.value = 'empty'
-      }
-    } catch (err) {
-      if (err instanceof PublicApiError) {
-        // Session 过期，需要重新解锁
-        if (err.code === 'PUBLIC_SESSION_EXPIRED') {
-          state.value = 'password_prompt'
-          error.value = 'Session expired. Please unlock again.'
-        } else {
-          error.value = err.message
-        }
-      } else {
-        error.value = 'Failed to load photos'
-      }
-      throw err
+    if (page === 0) photos.value = response.items
+    else photos.value = [...photos.value, ...response.items]
+    currentPage.value = response.page
+    pageSize.value = response.pageSize
+    total.value = response.total
+    state.value = response.total === 0 ? 'empty' : 'ready'
+  }
+
+  async function loadMore() {
+    if (loadingMore.value || !hasMore.value || state.value !== 'ready') return
+    loadingMore.value = true
+    error.value = null
+    try {
+      await loadPhotos(currentPage.value + 1, pageSize.value)
+    } catch (cause) {
+      handleError(cause, '加载更多照片失败，请重试。')
+    } finally {
+      loadingMore.value = false
     }
   }
 
-  /**
-   * 重试
-   */
+  function handleError(cause: unknown, fallback: string, preservePasswordPrompt = false) {
+    if (cause instanceof PublicApiError) {
+      if (cause.isSessionExpired) {
+        state.value = 'password_prompt'
+        error.value = userMessage(cause, fallback)
+        return
+      }
+      if (preservePasswordPrompt && (cause.isPasswordInvalid || cause.status === 401 || cause.status === 403)) {
+        state.value = 'password_prompt'
+      } else if (cause.isNotFound) {
+        state.value = 'not_found'
+      } else if (cause.isShareLinkRequired || cause.status === 403) {
+        state.value = 'share_required'
+      } else {
+        state.value = 'error'
+      }
+      error.value = userMessage(cause, fallback)
+      return
+    }
+    state.value = 'error'
+    error.value = fallback
+  }
+
   async function retry() {
     await initialize()
   }
 
   return {
-    // 状态
     state,
     gallery,
     photos,
     error,
     unlocking,
-
-    // 计算属性
+    currentPage,
+    pageSize,
+    total,
+    loadingMore,
     isReady,
     needsPassword,
     needsShareLink,
     isEmpty,
     hasError,
-
-    // 方法
+    hasMore,
     initialize,
     unlock,
     loadPhotos,
+    loadMore,
     retry
   }
 }
 
-/**
- * Viewer 状态机类型
- */
 export type ViewerStateComposable = ReturnType<typeof useViewerState>

@@ -60,7 +60,7 @@ public class ShareLinkFacade {
         shareLinkRepository.save(shareLink);
 
         // 构建分享 URL
-        String shareUrl = String.format("%s/g/%s#s=%s", publicBaseUrl, gallery.slug(), rawToken);
+        String shareUrl = String.format("%s/g/%s?t=%s", publicBaseUrl, gallery.slug(), rawToken);
 
         return new CreateShareLinkResult(
                 shareLink.getId(),

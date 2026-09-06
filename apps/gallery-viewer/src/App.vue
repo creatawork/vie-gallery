@@ -408,6 +408,7 @@ async function selectPreset(presetName: string) {
     <PasswordPrompt
       v-else-if="viewer.needsPassword.value"
       :is-unlocking="viewer.unlocking.value"
+      :error="viewer.error.value"
       @unlock="handleUnlock"
     />
 
@@ -451,7 +452,7 @@ async function selectPreset(presetName: string) {
           </div>
           <div class="gallery-title-chip">
             <span class="chip-title">{{ viewer.gallery.value?.title || 'Moments in Light' }}</span>
-            <span class="chip-count">{{ viewer.photos.value.length }} 张照片</span>
+            <span class="chip-count">{{ viewer.total.value }} 张照片</span>
           </div>
         </div>
 
@@ -604,6 +605,15 @@ async function selectPreset(presetName: string) {
         <div class="spatial-tips">
           <p>单击照片聚焦飞入 · 按住左键旋转视角 · 滚轮缩放星云</p>
         </div>
+        <button
+          v-if="viewer.hasMore.value"
+          class="load-more-floating"
+          type="button"
+          :disabled="viewer.loadingMore.value"
+          @click="viewer.loadMore"
+        >
+          {{ viewer.loadingMore.value ? '正在加载…' : '加载更多照片' }}
+        </button>
       </div>
 
       <!-- Mode 2: 2D Editorial Curated Wall -->
@@ -611,7 +621,7 @@ async function selectPreset(presetName: string) {
         <div class="editorial-hero">
           <p class="hero-kicker">CURATED EXHIBITION</p>
           <h1 class="hero-title">{{ viewer.gallery.value?.title || 'Moments in Light' }}</h1>
-          <p class="hero-meta">{{ viewer.photos.value.length }} PHOTOGRAPHS · HIGH FIDELITY GALLERY</p>
+          <p class="hero-meta">{{ viewer.total.value }} PHOTOGRAPHS · HIGH FIDELITY GALLERY</p>
         </div>
 
         <section class="editorial-photo-grid" aria-label="照片墙">
@@ -629,6 +639,15 @@ async function selectPreset(presetName: string) {
             </div>
           </article>
         </section>
+        <button
+          v-if="viewer.hasMore.value"
+          class="load-more-btn"
+          type="button"
+          :disabled="viewer.loadingMore.value"
+          @click="viewer.loadMore"
+        >
+          {{ viewer.loadingMore.value ? '正在加载…' : '加载更多照片' }}
+        </button>
       </main>
 
       <!-- Lightbox High-Res Viewer Modal -->
@@ -1057,6 +1076,32 @@ async function selectPreset(presetName: string) {
   letter-spacing: 0.03em;
 }
 
+.load-more-floating {
+  position: absolute;
+  right: 50%;
+  bottom: 76px;
+  z-index: 2;
+  padding: 9px 16px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 10px;
+  color: #a7f3d0;
+  background: rgba(10, 20, 16, 0.82);
+  transform: translateX(50%);
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+}
+
+.load-more-floating:hover:not(:disabled),
+.load-more-floating:focus-visible {
+  outline: none;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.load-more-floating:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 /* ==========================================
    6. 2D Editorial Curated Viewport
    ========================================== */
@@ -1099,6 +1144,28 @@ async function selectPreset(presetName: string) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
+}
+
+.load-more-btn {
+  display: block;
+  margin: 28px auto 0;
+  padding: 10px 20px;
+  border: 1px solid rgba(16, 185, 129, 0.34);
+  border-radius: 10px;
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.1);
+  font-size: 13px;
+}
+
+.load-more-btn:hover:not(:disabled),
+.load-more-btn:focus-visible {
+  outline: none;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.load-more-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .editorial-photo-card {
