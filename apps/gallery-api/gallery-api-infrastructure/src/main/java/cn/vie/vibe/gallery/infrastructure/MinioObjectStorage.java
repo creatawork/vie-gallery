@@ -37,6 +37,7 @@ public class MinioObjectStorage implements ObjectStoragePort {
         this.client = MinioClient.builder()
                 .endpoint(endpoint)
                 .credentials(accessKey, secretKey)
+                .region("us-east-1")
                 .build();
         String signingEndpoint = publicEndpoint == null || publicEndpoint.isBlank()
                 ? endpoint
@@ -46,6 +47,7 @@ public class MinioObjectStorage implements ObjectStoragePort {
                 : MinioClient.builder()
                         .endpoint(signingEndpoint)
                         .credentials(accessKey, secretKey)
+                        .region("us-east-1")
                         .build();
         this.bucket = bucket;
         ensureBucket();

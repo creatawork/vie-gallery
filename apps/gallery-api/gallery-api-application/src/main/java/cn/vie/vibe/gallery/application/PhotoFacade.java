@@ -38,6 +38,10 @@ public class PhotoFacade {
         this.maxFileSize=maxFileSize;this.maxPixels=maxPixels;this.maxBytes=maxBytes;this.maxPhotos=maxPhotos;
     }
     @Transactional public UploadResult upload(UUID galleryId, PhotoUpload upload) {
+        return upload(galleryId, upload, null, null);
+    }
+
+    @Transactional public UploadResult upload(UUID galleryId, PhotoUpload upload, String clientBatchId, String idempotencyKey) {
         UUID tenant=authorization.requireEditor().tenantId();
         galleries.findById(tenant,galleryId).orElseThrow(()->new DomainException("GALLERY_NOT_FOUND","Gallery not found"));
         if (upload.size()<=0) throw new DomainException("FILE_INVALID","Empty file");
@@ -54,7 +58,10 @@ public class PhotoFacade {
             StoredObject stored=storage.put(key,new ByteArrayInputStream(bytes),normalize(upload.contentType()),bytes.length); Instant now=Instant.now();
             objects.save(new StorageObject(objectId,tenant,stored.bucket(),stored.objectKey(),null,normalize(upload.contentType()),bytes.length,image.getWidth(),image.getHeight(),stored.sha256(),StorageObjectStatus.UPLOADING,now));
             photos.save(new Photo(photoId,tenant,galleryId,objectId,upload.filename(),0,false,PhotoStatus.PROCESSING,now));
-            tasks.save(new PhotoProcessingTask(taskId,tenant,photoId,TaskStatus.PENDING,0,null,null,null)); return new UploadResult(photoId,taskId,PhotoStatus.PROCESSING);
+            tasks.save(new PhotoProcessingTask(taskId, tenant, galleryId, photoId, upload.filename(), TaskStatus.QUEUED,
+                    0, "UPLOAD", 0, 3, null, null, null, null, null, null, null, null, null, null,
+                    clientBatchId, idempotencyKey, now, now));
+            return new UploadResult(photoId,taskId,PhotoStatus.PROCESSING);
         } catch(RuntimeException ex){ quotas.release(tenant,bytes.length,1); try{storage.delete(key);}catch(RuntimeException ignored){} if(ex instanceof DomainException d) throw d; throw new DomainException("STORAGE_UNAVAILABLE","Object storage is unavailable"); }
     }
     private static String normalize(String type){return type==null?"":type.toLowerCase(Locale.ROOT).split(";")[0].trim();}

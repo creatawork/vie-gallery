@@ -37,7 +37,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
@@ -59,3 +59,4 @@ gallery:
   processing:
     poll-interval: ${PHOTO_PROCESSING_POLL_INTERVAL:5000}
     max-retries: ${PHOTO_PROCESSING_MAX_RETRIES:3}
+    stale-after: ${PHOTO_PROCESSING_STALE_AFTER:PT10M}

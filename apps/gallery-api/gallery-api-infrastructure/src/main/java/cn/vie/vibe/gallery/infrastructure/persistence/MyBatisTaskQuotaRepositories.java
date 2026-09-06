@@ -1,4 +1,123 @@
 package cn.vie.vibe.gallery.infrastructure.persistence;
-import cn.vie.vibe.gallery.application.*; import cn.vie.vibe.gallery.domain.*; import cn.vie.vibe.gallery.infrastructure.persistence.mapper.TaskQuotaMapper; import org.springframework.stereotype.Repository; import java.util.*; import java.time.Instant; import static cn.vie.vibe.gallery.infrastructure.persistence.MyBatisValueMapper.*;
-@Repository class MyBatisTaskRepository implements PhotoProcessingTaskRepository { final TaskQuotaMapper m; MyBatisTaskRepository(TaskQuotaMapper m){this.m=m;} PhotoProcessingTask d(Map<String,Object>r){return new PhotoProcessingTask(uuid(r,"id"),uuid(r,"tenantId"),uuid(r,"photoId"),TaskStatus.valueOf((String)r.get("status")),((Number)r.get("attempts")).intValue(),(String)r.get("errorMessage"),instant(r,"lockedAt"),instant(r,"completedAt"));} public PhotoProcessingTask save(PhotoProcessingTask t){m.task(t.id().toString(),t.tenantId().toString(),t.photoId().toString(),t.status().name(),localDateTime(Instant.now()));return t;} public Optional<PhotoProcessingTask> findById(UUID t,UUID i){return Optional.ofNullable(m.taskById(t.toString(),i.toString())).map(this::d);} public Optional<PhotoProcessingTask> claimNext(){Map<String,Object> row=m.nextTask();if(row==null)return Optional.empty();return m.claim((String)row.get("id"))==1?Optional.of(d(row)):Optional.empty();} public int succeed(UUID i){return m.succeed(i.toString());} public int fail(UUID i,String e,boolean terminal){return m.fail(i.toString(),terminal?"FAILED":"PENDING",e);} }
-@Repository class MyBatisQuotaRepository implements TenantQuotaRepository { final TaskQuotaMapper m; MyBatisQuotaRepository(TaskQuotaMapper m){this.m=m;} public TenantQuota findForUpdate(UUID t){Map<String,Object>r=m.quota(t.toString());return new TenantQuota(t,((Number)r.get("maxBytes")).longValue(),((Number)r.get("usedBytes")).longValue(),((Number)r.get("maxPhotos")).longValue(),((Number)r.get("photoCount")).longValue());} public void ensure(UUID t,long b,long p){m.ensure(t.toString(),b,p);} public void reserve(UUID t,long b,long p){if(m.reserve(t.toString(),b,p)==0)throw new DomainException("QUOTA_EXCEEDED","Quota exceeded");} public void release(UUID t,long b,long p){m.release(t.toString(),b,p);} }
+
+import cn.vie.vibe.gallery.application.*;
+import cn.vie.vibe.gallery.domain.*;
+import cn.vie.vibe.gallery.infrastructure.persistence.mapper.TaskQuotaMapper;
+import org.springframework.stereotype.Repository;
+
+import java.time.Instant;
+import java.util.*;
+
+import static cn.vie.vibe.gallery.infrastructure.persistence.MyBatisValueMapper.*;
+
+@Repository
+class MyBatisTaskRepository implements PhotoProcessingTaskRepository {
+    private final TaskQuotaMapper mapper;
+
+    MyBatisTaskRepository(TaskQuotaMapper mapper) {
+        this.mapper = mapper;
+    }
+
+    private PhotoProcessingTask map(Map<String, Object> row) {
+        if (row == null) return null;
+        return new PhotoProcessingTask(uuid(row, "id"), uuid(row, "tenantId"), uuid(row, "galleryId"), uuid(row, "photoId"),
+                (String) row.getOrDefault("filename", ""), TaskStatus.valueOf((String) row.get("status")),
+                number(row, "progress", 0), (String) row.getOrDefault("stage", "UPLOAD"), number(row, "attempts", 0),
+                number(row, "maxAttempts", 3), (String) row.get("errorCode"), (String) row.get("errorMessage"),
+                (String) row.get("requestId"), (String) row.get("workerId"), instant(row, "nextAttemptAt"),
+                instant(row, "lockedAt"), instant(row, "heartbeatAt"), instant(row, "startedAt"), instant(row, "finishedAt"),
+                instant(row, "cancelledAt"), (String) row.get("clientBatchId"), (String) row.get("idempotencyKey"),
+                instant(row, "createdAt"), instant(row, "updatedAt"));
+    }
+
+    private static int number(Map<String, Object> row, String key, int fallback) {
+        Object value = row.get(key);
+        return value instanceof Number number ? number.intValue() : fallback;
+    }
+
+    @Override
+    public PhotoProcessingTask save(PhotoProcessingTask task) {
+        mapper.task(task.id().toString(), task.tenantId().toString(), task.galleryId().toString(), task.photoId().toString(),
+                task.filename(), task.status().normalized().name(), task.progress(), task.stage(), task.attempts(), task.maxAttempts(),
+                localDateTime(task.nextAttemptAt()), task.errorCode(), task.errorMessage(), task.requestId(), task.workerId(),
+                localDateTime(task.heartbeatAt()), localDateTime(task.startedAt()), localDateTime(task.finishedAt()),
+                localDateTime(task.cancelledAt()), task.clientBatchId(), task.idempotencyKey(), localDateTime(task.createdAt()), localDateTime(task.updatedAt()));
+        return task;
+    }
+
+    @Override
+    public Optional<PhotoProcessingTask> findById(UUID tenantId, UUID taskId) {
+        return Optional.ofNullable(mapper.taskById(tenantId.toString(), taskId.toString())).map(this::map);
+    }
+
+    @Override
+    public List<PhotoProcessingTask> findByGallery(UUID tenantId, UUID galleryId, TaskFilter filter, int offset, int limit) {
+        List<String> statuses = filter.statuses().stream().filter(status -> status != TaskStatus.PENDING).map(TaskStatus::name).toList();
+        return mapper.tasksByGallery(tenantId.toString(), galleryId.toString(), statuses, offset, limit).stream().map(this::map).toList();
+    }
+
+    @Override
+    public long countByGallery(UUID tenantId, UUID galleryId, TaskFilter filter) {
+        List<String> statuses = filter.statuses().stream().filter(status -> status != TaskStatus.PENDING).map(TaskStatus::name).toList();
+        return mapper.countTasks(tenantId.toString(), galleryId.toString(), statuses);
+    }
+
+    @Override
+    public TaskSummary summaryByGallery(UUID tenantId, UUID galleryId) {
+        Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
+        for (Map<String, Object> row : mapper.summary(tenantId.toString(), galleryId.toString())) {
+            counts.put(TaskStatus.valueOf((String) row.get("status")), ((Number) row.get("count")).longValue());
+        }
+        return TaskSummary.of(counts);
+    }
+
+    @Override
+    public Optional<PhotoProcessingTask> claimNext() {
+        return claimNext(Instant.now(), "legacy-worker");
+    }
+
+    @Override
+    public Optional<PhotoProcessingTask> claimNext(Instant now, String workerId) {
+        Map<String, Object> row = mapper.nextTask(localDateTime(now));
+        if (row == null || mapper.claim((String) row.get("id"), workerId, localDateTime(now)) != 1) return Optional.empty();
+        return findById(uuid(row, "tenantId"), uuid(row, "id"));
+    }
+
+    @Override public int heartbeat(UUID tenantId, UUID taskId, String workerId, Instant now) {
+        return mapper.heartbeat(tenantId.toString(), taskId.toString(), workerId, localDateTime(now));
+    }
+    @Override public int progress(UUID tenantId, UUID taskId, String workerId, int progress, String stage, Instant now) {
+        return mapper.progress(tenantId.toString(), taskId.toString(), workerId, progress, stage, localDateTime(now));
+    }
+    @Override public int cancelProcessing(UUID tenantId, UUID taskId, String workerId, Instant now) {
+        return mapper.cancelProcessing(tenantId.toString(), taskId.toString(), workerId, localDateTime(now));
+    }
+    @Override public int complete(UUID tenantId, UUID taskId, String workerId, Instant now) {
+        return mapper.succeed(tenantId.toString(), taskId.toString(), workerId, localDateTime(now));
+    }
+    @Override public int fail(UUID tenantId, UUID taskId, String workerId, String code, String message, String requestId, boolean terminal, Instant nextAttemptAt, Instant now) {
+        return mapper.fail(tenantId.toString(), taskId.toString(), workerId, code, message, requestId, terminal, localDateTime(nextAttemptAt), localDateTime(now));
+    }
+    @Override public int retry(UUID tenantId, UUID taskId, Instant nextAttemptAt, Instant now) {
+        return mapper.retry(tenantId.toString(), taskId.toString(), localDateTime(nextAttemptAt), localDateTime(now));
+    }
+    @Override public int requestCancel(UUID tenantId, UUID taskId, Instant now) {
+        return mapper.requestCancel(tenantId.toString(), taskId.toString(), localDateTime(now));
+    }
+    @Override public int cancelQueued(UUID tenantId, UUID taskId, Instant now) {
+        return mapper.cancelQueued(tenantId.toString(), taskId.toString(), localDateTime(now));
+    }
+    @Override public int recoverStale(Instant threshold, Instant now) {
+        return mapper.recoverStale(localDateTime(threshold), localDateTime(now));
+    }
+}
+
+@Repository
+class MyBatisQuotaRepository implements TenantQuotaRepository {
+    private final TaskQuotaMapper mapper;
+    MyBatisQuotaRepository(TaskQuotaMapper mapper) { this.mapper = mapper; }
+    public TenantQuota findForUpdate(UUID tenantId) { Map<String,Object> row=mapper.quota(tenantId.toString()); return new TenantQuota(tenantId,((Number)row.get("maxBytes")).longValue(),((Number)row.get("usedBytes")).longValue(),((Number)row.get("maxPhotos")).longValue(),((Number)row.get("photoCount")).longValue()); }
+    public void ensure(UUID tenantId,long bytes,long photos){mapper.ensure(tenantId.toString(),bytes,photos);}
+    public void reserve(UUID tenantId,long bytes,long photos){if(mapper.reserve(tenantId.toString(),bytes,photos)==0)throw new DomainException("QUOTA_EXCEEDED","Quota exceeded");}
+    public void release(UUID tenantId,long bytes,long photos){mapper.release(tenantId.toString(),bytes,photos);}
+}

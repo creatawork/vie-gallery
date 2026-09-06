@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import { useGalleryWorkspace, type WorkspacePhoto } from '../composables/useGalleryWorkspace'
+import { useUploadTasks, type UploadTask } from '../composables/useUploadTasks'
 
 type LightboxPhoto = Omit<WorkspacePhoto, 'title'> & { title?: string }
 import { apiFetch } from '../api'
@@ -14,6 +15,7 @@ import LightboxModal from '../components/LightboxModal.vue'
 import GalleryWorkspaceHeader from '../components/gallery-workspace/GalleryWorkspaceHeader.vue'
 import GalleryUploadDropzone from '../components/gallery-workspace/GalleryUploadDropzone.vue'
 import GalleryPhotoGrid from '../components/gallery-workspace/GalleryPhotoGrid.vue'
+import UploadTaskCenter from '../components/gallery-workspace/UploadTaskCenter.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +26,7 @@ const canPublish = can('PUBLISH')
 const canShareManage = can('SHARE_MANAGE')
 const galleryId = computed(() => String(route.params.id || ''))
 const workspace = useGalleryWorkspace(galleryId, computed(() => !!currentUser.value && !authLoading.value))
+const taskCenter = useUploadTasks(galleryId, computed(() => !!currentUser.value && !authLoading.value && !!workspace.gallery.value))
 
 const showLightbox = ref(false)
 const lightboxIndex = ref(0)
@@ -121,6 +124,26 @@ async function handleUpload(files: FileList | File[]) {
     }
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '照片上传失败，请重试。')
+  }
+}
+
+async function handleRetryTask(task: UploadTask) {
+  if (!canPhotoWrite.value) return
+  try {
+    await taskCenter.retry(task)
+    toast.success('任务已重新排队。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '任务重试失败，请稍后重试。')
+  }
+}
+
+async function handleCancelTask(task: UploadTask) {
+  if (!canPhotoWrite.value) return
+  try {
+    await taskCenter.cancel(task)
+    toast.success(task.status === 'PROCESSING' ? '已请求取消任务。' : '任务已取消。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '取消任务失败，请稍后重试。')
   }
 }
 
@@ -342,6 +365,20 @@ function closeShareModal() {
             @delete="promptDeletePhoto"
           />
         </section>
+
+        <UploadTaskCenter
+          :tasks="taskCenter.filteredTasks.value"
+          :summary="taskCenter.summary.value"
+          :loading="taskCenter.loading.value"
+          :refreshing="taskCenter.refreshing.value"
+          :error="taskCenter.error.value"
+          :can-write="canPhotoWrite"
+          :filter="taskCenter.filter.value"
+          @update:filter="taskCenter.filter.value = $event"
+          @refresh="taskCenter.load(true)"
+          @retry="handleRetryTask"
+          @cancel="handleCancelTask"
+        />
       </template>
     </template>
 
