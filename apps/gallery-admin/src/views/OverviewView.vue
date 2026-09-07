@@ -14,9 +14,9 @@ const canCreateGallery = can('GALLERY_CREATE')
 
 const authMode = ref<'login' | 'register'>('login')
 const authForm = ref({
-  email: 'tester@example.com',
-  password: 'Password123456',
-  displayName: 'Creator Tester'
+  email: '',
+  password: '',
+  displayName: ''
 })
 const authLoading = ref(false)
 const authError = ref('')
@@ -302,7 +302,7 @@ async function handleCreateGallery() {
           <form @submit.prevent="handleCreateGallery">
             <div class="form-group"><label class="form-label" for="input-gallery-name">空间名称</label><input id="input-gallery-name" v-model="createForm.name" placeholder="例如：自然风光与星空探索" class="form-input" required @input="handleNameInput" /></div>
             <div class="form-group"><label class="form-label" for="input-gallery-slug">标识符（Slug URL）</label><input id="input-gallery-slug" v-model="createForm.slug" placeholder="例如：nature-cosmos" class="form-input" required /><span class="field-hint">公开访问路径：<code>/g/{{ createForm.slug || 'slug' }}</code></span></div>
-            <div class="form-group"><label class="form-label" for="select-gallery-visibility">访问权限</label><select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input"><option value="PUBLIC">公开展示（所有人可通过链接访问）</option><option value="PRIVATE">私密相册（需凭专用分享 Token 访问）</option></select></div>
+            <div class="form-group"><label class="form-label" for="select-gallery-visibility">访问权限</label><select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input"><option value="PUBLIC">公开展示（所有人可通过链接访问）</option><option value="PRIVATE">私密相册（仅持有有效分享链接的访客可访问）</option></select></div>
             <div class="modal-actions"><button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">取消</button><button id="btn-create-submit" type="submit" class="btn btn-primary" :disabled="creating"><Icon v-if="creating" name="refresh" :size="16" class="spin" /><span>{{ creating ? '创建中…' : '立即创建' }}</span></button></div>
           </form>
         </div>

@@ -39,6 +39,7 @@ const deletingPhoto = ref(false)
 const showShareModal = ref(false)
 const generatingShare = ref(false)
 const shareLinkData = ref<{ shareUrl: string; expiresAt?: string } | null>(null)
+const shareExpiryDays = ref(30)
 const shareLinks = ref<ShareLink[]>([])
 const shareLinksLoading = ref(false)
 const shareLinkToRevoke = ref<ShareLink | null>(null)
@@ -117,8 +118,8 @@ async function handleUpload(files: FileList | File[]) {
   if (!canPhotoWrite.value) return
   try {
     const summary = await workspace.uploadFiles(files)
-    if (summary.failed || summary.timedOut) {
-      toast.warning(`已上传 ${summary.succeeded} 张，${summary.failed + summary.timedOut} 张照片仍需检查。`)
+    if (summary.failed || summary.timedOut || summary.rejected) {
+      toast.warning(`已处理 ${summary.succeeded} 张，${summary.failed + summary.timedOut + summary.rejected} 张照片仍需检查。`)
     } else {
       toast.success(`成功上传并处理 ${summary.succeeded} 张照片！`)
     }
@@ -201,6 +202,7 @@ async function openShareModal() {
   generatingShare.value = false
   shareLinkData.value = null
   copied.value = false
+  shareExpiryDays.value = 30
   await loadShareLinks()
 }
 
@@ -210,10 +212,14 @@ async function createShareLink() {
   if (!gallery || gallery.status !== 'PUBLISHED' || generatingShare.value) return
   generatingShare.value = true
   try {
+    const requestBody: Record<string, string> = {}
+    if (shareExpiryDays.value > 0) {
+      requestBody.expiresAt = new Date(Date.now() + shareExpiryDays.value * 86_400_000).toISOString()
+    }
     const response = await apiFetch(`/api/galleries/${gallery.id}/share-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
+      body: JSON.stringify(requestBody)
     })
     if (!response.ok) throw new Error('生成分享链接失败，请稍后重试。')
     const data = await response.json() as { id?: string; shareUrl?: string; rawToken?: string; expiresAt?: string }
@@ -352,10 +358,10 @@ function closeShareModal() {
             <GalleryUploadDropzone
             v-if="canPhotoWrite"
             :uploading="workspace.uploading.value"
-
             :progress="workspace.uploadProgress.value"
             :status-text="workspace.uploadStatusText.value"
             @files="handleUpload"
+            @invalid="toast.warning($event)"
           />
           <GalleryPhotoGrid
             :photos="workspace.photos.value"
@@ -399,12 +405,22 @@ function closeShareModal() {
           </div>
 
           <div class="share-toolbar">
+            <div class="share-options-row">
+              <label class="share-expiry-field" for="share-expiry">
+                <span>链接有效期</span>
+                <select id="share-expiry" v-model="shareExpiryDays" class="select-input" :disabled="generatingShare">
+                  <option :value="7">7 天</option>
+                  <option :value="30">30 天</option>
+                  <option :value="0">永久有效</option>
+                </select>
+              </label>
+              <button class="btn btn-primary" type="button" :disabled="generatingShare" @click="createShareLink">
+                <Icon v-if="generatingShare" name="refresh" :size="16" class="spin" />
+                <Icon v-else name="plus" :size="16" />
+                <span>{{ generatingShare ? '创建中…' : '创建分享链接' }}</span>
+              </button>
+            </div>
             <p class="share-tips"><Icon name="lock" :size="14" />任何拥有有效链接的用户都可以打开访客预览。</p>
-            <button class="btn btn-primary" type="button" :disabled="generatingShare" @click="createShareLink">
-              <Icon v-if="generatingShare" name="refresh" :size="16" class="spin" />
-              <Icon v-else name="plus" :size="16" />
-              <span>{{ generatingShare ? '创建中…' : '创建分享链接' }}</span>
-            </button>
           </div>
           <div v-if="generatingShare" class="generating-box" role="status">
             <Icon name="refresh" :size="24" class="spin" />
@@ -428,6 +444,7 @@ function closeShareModal() {
                 <span class="share-status" :class="`share-status-${link.status.toLowerCase()}`">{{ shareStatusLabel(link.status) }}</span>
                 <span>创建于 {{ formatShareDate(link.createdAt) }}</span>
                 <span>到期 {{ formatShareDate(link.expiresAt) }}</span>
+                <span v-if="link.lastAccessedAt">最近访问 {{ formatShareDate(link.lastAccessedAt) }}</span>
               </div>
               <button v-if="link.status === 'ACTIVE'" class="icon-action-btn revoke-share-btn" type="button" aria-label="撤销分享链接" title="撤销分享链接" @click="promptRevokeShareLink(link)">
                 <Icon name="trash" :size="15" />
@@ -715,8 +732,30 @@ function closeShareModal() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 22px;
+}
+
+.share-options-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.share-expiry-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.share-expiry-field span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.share-expiry-field .select-input {
+  width: 130px;
 }
 .share-content { margin-top: 18px; }
 .link-display-group { align-items: stretch; gap: 8px; }
@@ -789,7 +828,9 @@ function closeShareModal() {
   .state-actions .btn { width: 100%; }
   .workspace-share-modal { padding: 24px 18px; }
   .share-toolbar { align-items: stretch; flex-direction: column; }
-  .share-toolbar .btn { width: 100%; }
+  .share-options-row { align-items: stretch; flex-direction: column; }
+  .share-options-row .btn { width: 100%; }
+  .share-expiry-field .select-input { width: 100%; }
   .link-display-group { flex-direction: column; }
   .copy-btn { width: 100%; }
 }

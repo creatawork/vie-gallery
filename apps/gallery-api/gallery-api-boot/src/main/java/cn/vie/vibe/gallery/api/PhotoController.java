@@ -6,6 +6,8 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.io.IOException;
 import java.net.URI;
 import java.time.Instant;
@@ -30,17 +32,22 @@ public class PhotoController {
     public ResponseEntity<UploadResponse> upload(@PathVariable UUID galleryId,
                                                   @RequestParam("files") List<MultipartFile> files,
                                                   @RequestHeader(value = "X-Client-Batch-Id", required = false) String clientBatchId,
-                                                  @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) throws IOException {
+                                                  @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                                  HttpServletRequest request) throws IOException {
         if (files == null || files.isEmpty() || files.size() > 50) {
             throw new DomainException("FILE_INVALID", "At least one and at most 50 files are required");
         }
         String batchId = clientBatchId == null || clientBatchId.isBlank() ? UUID.randomUUID().toString() : clientBatchId;
         List<UploadItem> items = new ArrayList<>();
-        for (MultipartFile file : files) {
+        for (int index = 0; index < files.size(); index++) {
+            MultipartFile file = files.get(index);
             try {
+                String itemKey = idempotencyKey == null || idempotencyKey.isBlank()
+                        ? null
+                        : idempotencyKey.trim() + ":" + index;
                 PhotoFacade.UploadResult result = facade.upload(galleryId,
                         new PhotoUpload(file.getOriginalFilename(), file.getContentType(), file.getSize(), file.getInputStream()),
-                        batchId, idempotencyKey == null ? null : idempotencyKey + ":" + file.getOriginalFilename());
+                        batchId, itemKey, (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE));
                 items.add(UploadItem.accepted(file.getOriginalFilename(), result));
             } catch (DomainException exception) {
                 items.add(UploadItem.rejected(file.getOriginalFilename(), exception.code(), exception.getMessage()));
@@ -74,7 +81,7 @@ public class PhotoController {
     public record UploadResponse(String batchId, List<UploadItem> items) {}
     public record UploadItem(String filename, boolean accepted, UUID photoId, UUID taskId, TaskStatus status, UploadError error) {
         static UploadItem accepted(String filename, PhotoFacade.UploadResult result) {
-            return new UploadItem(filename, true, result.photoId(), result.taskId(), TaskStatus.QUEUED, null);
+            return new UploadItem(filename, true, result.photoId(), result.taskId(), result.taskStatus(), null);
         }
         static UploadItem rejected(String filename, String code, String message) {
             return new UploadItem(filename, false, null, null, null, new UploadError(code, message));

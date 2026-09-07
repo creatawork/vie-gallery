@@ -12,7 +12,11 @@ public interface PhotoProcessingTaskRepository {
 
     Optional<PhotoProcessingTask> findById(UUID tenantId, UUID taskId);
 
-    default List<PhotoProcessingTask> findByGallery(UUID tenantId, UUID galleryId, TaskFilter filter, int offset, int limit) {
+    default Optional<PhotoProcessingTask> findByTenantAndIdempotencyKey(UUID tenantId, String idempotencyKey) {
+        return Optional.empty();
+    }
+
+    default List<PhotoProcessingTask> findByGallery(UUID tenantId, UUID galleryId, TaskFilter filter, long offset, int limit) {
         return List.of();
     }
 

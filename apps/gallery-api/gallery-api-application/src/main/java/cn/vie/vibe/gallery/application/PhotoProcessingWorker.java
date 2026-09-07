@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
@@ -17,9 +18,14 @@ import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
-public class PhotoProcessingWorker {
+public class PhotoProcessingWorker implements DisposableBean {
     private static final Logger log = LoggerFactory.getLogger(PhotoProcessingWorker.class);
     private final PhotoProcessingTaskRepository tasks;
     private final PhotoRepository photos;
@@ -30,6 +36,11 @@ public class PhotoProcessingWorker {
     private final String workerId = "gallery-worker-" + UUID.randomUUID();
     private final int maxAttempts;
     private final Duration staleAfter;
+    private final ScheduledExecutorService leaseScheduler = Executors.newScheduledThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "gallery-task-lease");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public PhotoProcessingWorker(PhotoProcessingTaskRepository tasks, PhotoRepository photos, StorageObjectRepository objects,
                                  ObjectStoragePort storage, ThumbnailProcessor thumbnails) {
@@ -48,7 +59,8 @@ public class PhotoProcessingWorker {
         this.thumbnails = thumbnails;
         this.quotas = quotas;
         this.maxAttempts = Math.max(1, maxRetries);
-        this.staleAfter = staleAfter;
+        this.staleAfter = staleAfter == null || staleAfter.isNegative() || staleAfter.isZero()
+                ? Duration.ofMinutes(10) : staleAfter;
     }
 
     @Scheduled(fixedDelayString = "${gallery.processing.poll-interval:5000}")
@@ -65,12 +77,24 @@ public class PhotoProcessingWorker {
     private void process(PhotoProcessingTask task) {
         Instant started = Instant.now();
         UUID objectId = null;
+        AtomicBoolean leaseLost = new AtomicBoolean(false);
+        long leaseIntervalMillis = Math.max(1000L, Math.min(30_000L, staleAfter.toMillis() / 3));
+        ScheduledFuture<?> lease = leaseScheduler.scheduleAtFixedRate(() -> {
+            try {
+                if (tasks.heartbeat(task.tenantId(), task.id(), workerId, Instant.now()) == 0) leaseLost.set(true);
+            } catch (RuntimeException exception) {
+                leaseLost.set(true);
+                log.warn("gallery_task_lease_failed taskId={} workerId={}", task.id(), workerId, exception);
+            }
+        }, leaseIntervalMillis, leaseIntervalMillis, TimeUnit.MILLISECONDS);
         try {
             if (isCancellationRequested(task)) {
                 cancel(task);
                 return;
             }
+            requireLease(task, leaseLost);
             tasks.progress(task.tenantId(), task.id(), workerId, 10, "VALIDATE", Instant.now());
+            requireLease(task, leaseLost);
             Photo photo = photos.findById(task.tenantId(), task.photoId()).orElseThrow(() -> new DomainException("PHOTO_NOT_FOUND", "Photo not found"));
             objectId = photo.storageObjectId();
             StorageObject object = objects.findById(task.tenantId(), objectId).orElseThrow(() -> new DomainException("STORAGE_UNAVAILABLE", "Source object not found"));
@@ -86,19 +110,47 @@ public class PhotoProcessingWorker {
                     cancel(task);
                     return;
                 }
+                requireLease(task, leaseLost);
                 String key = "tenant/" + task.tenantId() + "/photos/" + task.photoId() + "/thumbnail";
                 tasks.progress(task.tenantId(), task.id(), workerId, 80, "FINALIZE", Instant.now());
+                requireLease(task, leaseLost);
                 storage.put(key, new ByteArrayInputStream(result.content()), result.contentType(), result.content().length);
-                objects.markReady(task.tenantId(), object.id(), key, result.width(), result.height());
-                photos.updateStatus(task.tenantId(), task.photoId(), PhotoStatus.READY);
-                tasks.complete(task.tenantId(), task.id(), workerId, Instant.now());
+                requireLease(task, leaseLost);
+                if (objects.markReady(task.tenantId(), object.id(), key, result.width(), result.height()) == 0) {
+                    throw new DomainException("STORAGE_UNAVAILABLE", "Unable to finalize thumbnail metadata");
+                }
+                requireLease(task, leaseLost);
+                if (photos.updateStatus(task.tenantId(), task.photoId(), PhotoStatus.READY) == 0) {
+                    throw new DomainException("PHOTO_NOT_FOUND", "Photo is no longer available");
+                }
+                requireLease(task, leaseLost);
+                if (tasks.complete(task.tenantId(), task.id(), workerId, Instant.now()) == 0) {
+                    throw new LeaseLostException();
+                }
                 log.info("gallery_task_transition taskId={} photoId={} tenantId={} workerId={} attempt={} stage={} fromStatus={} toStatus={} durationMs={}",
                         task.id(), task.photoId(), task.tenantId(), workerId, task.attempts(), "FINALIZE", TaskStatus.PROCESSING, TaskStatus.SUCCEEDED,
                         Duration.between(started, Instant.now()).toMillis());
             }
         } catch (Exception exception) {
-            handleFailure(task, objectId, exception, started);
+            if (!(exception instanceof LeaseLostException)) handleFailure(task, objectId, exception, started);
+        } finally {
+            lease.cancel(true);
         }
+    }
+
+    private void requireLease(PhotoProcessingTask task, AtomicBoolean leaseLost) {
+        if (leaseLost.get() || tasks.heartbeat(task.tenantId(), task.id(), workerId, Instant.now()) == 0) {
+            leaseLost.set(true);
+            throw new LeaseLostException();
+        }
+    }
+
+    @Override
+    public void destroy() {
+        leaseScheduler.shutdownNow();
+    }
+
+    private static final class LeaseLostException extends RuntimeException {
     }
 
     private boolean isCancellationRequested(PhotoProcessingTask task) {
@@ -122,7 +174,7 @@ public class PhotoProcessingWorker {
     private void handleFailure(PhotoProcessingTask task, UUID objectId, Exception exception, Instant started) {
         String code = errorCode(exception);
         boolean retryable = isRetryable(code);
-        boolean terminal = !retryable || task.attempts() >= maxAttempts;
+        boolean terminal = !retryable || task.attempts() >= task.maxAttempts();
         Instant now = Instant.now();
         Instant nextAttempt = terminal ? null : now.plusSeconds(1L << Math.min(8, Math.max(0, task.attempts() - 1)));
         int changed = tasks.fail(task.tenantId(), task.id(), workerId, code, safeMessage(exception), null, terminal, nextAttempt, now);

@@ -241,6 +241,15 @@ class ShareLinkFacadeTest {
             values.put(shareLink.getId(), shareLink);
         }
 
+        public void touchLastAccessed(UUID id, Instant lastAccessedAt, Instant threshold) {
+            ShareLink link = values.get(id);
+            if (link == null) return;
+            if (link.getLastAccessedAt() == null || link.getLastAccessedAt().isBefore(threshold)) {
+                values.put(id, new ShareLink(link.getId(), link.getGalleryId(), link.getTokenHash(),
+                        link.getExpiresAt(), link.getRevokedAt(), lastAccessedAt, link.getCreatedAt(), lastAccessedAt));
+            }
+        }
+
         public void delete(UUID id) {
             values.remove(id);
         }

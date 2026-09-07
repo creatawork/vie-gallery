@@ -71,6 +71,16 @@ public interface ShareLinkMapper {
             @Param("updatedAt") LocalDateTime updatedAt
     );
 
+    @Update("UPDATE share_link SET last_accessed_at = #{lastAccessedAt}, updated_at = #{updatedAt} " +
+            "WHERE id = UUID_TO_BIN(#{id}) " +
+            "AND (last_accessed_at IS NULL OR last_accessed_at < #{thresholdAt})")
+    int touchLastAccessed(
+            @Param("id") String id,
+            @Param("lastAccessedAt") LocalDateTime lastAccessedAt,
+            @Param("thresholdAt") LocalDateTime thresholdAt,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
     @Update("UPDATE share_link SET deleted_at = #{deletedAt}, updated_at = #{updatedAt} " +
             "WHERE id = UUID_TO_BIN(#{id})")
     int softDelete(

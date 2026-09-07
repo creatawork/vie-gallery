@@ -6,9 +6,9 @@ import cn.vie.vibe.gallery.domain.TaskStatus;
 import java.util.EnumMap;
 import java.util.Map;
 
-public record TaskSummary(long queued, long processing, long succeeded, long failed, long cancelled) {
+public record TaskSummary(long queued, long processing, long succeeded, long failed, long cancelRequested, long cancelled) {
     public static TaskSummary empty() {
-        return new TaskSummary(0, 0, 0, 0, 0);
+        return new TaskSummary(0, 0, 0, 0, 0, 0);
     }
 
     public static TaskSummary from(Iterable<PhotoProcessingTask> tasks) {
@@ -26,6 +26,7 @@ public record TaskSummary(long queued, long processing, long succeeded, long fai
                 counts.getOrDefault(TaskStatus.PROCESSING, 0L),
                 counts.getOrDefault(TaskStatus.SUCCEEDED, 0L),
                 counts.getOrDefault(TaskStatus.FAILED, 0L),
+                counts.getOrDefault(TaskStatus.CANCEL_REQUESTED, 0L),
                 counts.getOrDefault(TaskStatus.CANCELLED, 0L));
     }
 }

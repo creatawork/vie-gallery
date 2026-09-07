@@ -28,12 +28,16 @@ export interface UploadSummary {
   succeeded: number
   failed: number
   timedOut: number
+  rejected: number
 }
 
 interface UploadItem {
-  photoId: string
-  taskId: string
+  filename?: string | null
+  accepted?: boolean
+  photoId?: string | null
+  taskId?: string | null
   status?: string
+  error?: { code?: string | null; message?: string | null } | null
 }
 
 interface TaskState {
@@ -149,18 +153,23 @@ export function useGalleryWorkspace(
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 800))
       if (version !== uploadVersion) return 'timedOut'
-      const response = await apiFetch(`/api/photos/tasks/${taskId}`)
-      if (!response.ok) return 'failed'
+      let response: Response
+      try {
+        response = await apiFetch(`/api/photos/tasks/${taskId}`)
+      } catch {
+        return 'timedOut'
+      }
+      if (!response.ok) return response.status >= 500 || response.status === 429 ? 'timedOut' : 'failed'
       const task = await response.json() as TaskState
       if (task.status === 'SUCCEEDED') return 'succeeded'
-      if (task.status === 'FAILED') return 'failed'
+      if (task.status === 'FAILED' || task.status === 'CANCELLED') return 'failed'
     }
     return 'timedOut'
   }
 
   async function uploadFiles(files: FileList | File[]): Promise<UploadSummary> {
     const galleryIdValue = id.value
-    if (!galleryIdValue || !files.length) return { succeeded: 0, failed: 0, timedOut: 0 }
+    if (!galleryIdValue || !files.length) return { succeeded: 0, failed: 0, timedOut: 0, rejected: 0 }
 
     const version = ++uploadVersion
     uploading.value = true
@@ -169,26 +178,34 @@ export function useGalleryWorkspace(
     try {
       const form = new FormData()
       Array.from(files).forEach(file => form.append('files', file))
+      const batchId = crypto.randomUUID()
+      const idempotencyKey = crypto.randomUUID()
       const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos`, {
         method: 'POST',
+        headers: {
+          'X-Client-Batch-Id': batchId,
+          'Idempotency-Key': idempotencyKey
+        },
         body: form
       })
       if (!response.ok) throw await responseError(response, '照片上传失败，请检查文件格式。')
 
       const result = await response.json() as { items?: UploadItem[] }
-      const items = result.items || []
-      uploadProgress.value = items.length ? 35 : 100
-      uploadStatusText.value = items.length ? '正在生成缩略图与 3D 纹理…' : '上传已完成'
+      const items = Array.isArray(result.items) ? result.items : []
+      const acceptedItems = items.filter(item => item.accepted !== false && typeof item.taskId === 'string' && item.taskId)
+      const rejected = Math.max(0, files.length - acceptedItems.length)
+      uploadProgress.value = acceptedItems.length ? 35 : 100
+      uploadStatusText.value = acceptedItems.length ? '正在生成缩略图与 3D 纹理…' : '没有照片进入处理队列'
 
-      const outcomes = await Promise.all(items.map(item => pollTask(item.taskId, version)))
+      const outcomes = await Promise.all(acceptedItems.map(item => pollTask(item.taskId as string, version)))
       const summary = outcomes.reduce<UploadSummary>((resultValue, outcome) => {
         resultValue[outcome === 'succeeded' ? 'succeeded' : outcome === 'failed' ? 'failed' : 'timedOut'] += 1
         return resultValue
-      }, { succeeded: 0, failed: 0, timedOut: 0 })
+      }, { succeeded: 0, failed: 0, timedOut: 0, rejected })
       uploadProgress.value = 100
-      uploadStatusText.value = summary.failed || summary.timedOut ? '部分照片需要检查处理状态' : '照片处理完成'
+      uploadStatusText.value = summary.failed || summary.timedOut || summary.rejected ? '部分照片需要检查处理状态' : '照片处理完成'
       await reload()
-      return { succeeded: summary.succeeded || (items.length === 0 ? files.length : 0), failed: summary.failed, timedOut: summary.timedOut }
+      return summary
     } finally {
       if (version === uploadVersion) {
         await new Promise(resolve => setTimeout(resolve, 450))

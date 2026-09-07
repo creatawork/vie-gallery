@@ -124,6 +124,9 @@ bash test-mcp-flow.sh
 - [`docs/open-gallery-product-roadmap.md`](docs/open-gallery-product-roadmap.md)：产品路线和阶段目标。
 - [`docs/implementation-plan.md`](docs/implementation-plan.md)：架构、API 和里程碑规范。
 - [`docs/next-slice-public-access-stabilization.md`](docs/next-slice-public-access-stabilization.md)：公开访问稳定化切片与验收标准。
+- [`docs/next-slice-upload-task-productionization.md`](docs/next-slice-upload-task-productionization.md)：上传任务生产化切片（M6）。
+- [`docs/next-slice-production-hardening.md`](docs/next-slice-production-hardening.md)：发布前硬化切片（M6.5）。
+- [`docs/next-slice-m7-viewer-config-and-performance.md`](docs/next-slice-m7-viewer-config-and-performance.md)：Viewer 配置版本化、CDN 与性能切片（M7）。
 - [`docs/testing-guide.md`](docs/testing-guide.md)：当前测试、启动和故障排查指南。
 - [`docs/archive/README.md`](docs/archive/README.md)：历史文档索引；归档资料不覆盖当前规范。
 
@@ -132,5 +135,6 @@ bash test-mcp-flow.sh
 1. M3.5 ✅：公开访问、测试、签名 URL 和部署配置生产化加固。
 2. [M4 ✅：发布状态、公开隔离、分享撤销与 SEO](docs/next-slice-publishing-and-seo.md)：核心代码、后端测试、Docker/API 和 Viewer SEO 已验证，保留少量运行态补验收。
 3. [M5 ✅：Workspace Membership 与 OWNER / EDITOR / VIEWER 授权](docs/next-slice-membership-and-authorization.md)：核心代码、44 项后端测试、前端构建、Docker 三角色 API 和 OWNER 成员页已验证，保留集成验收。
-4. [M6：上传任务生产化](docs/next-slice-upload-task-productionization.md)。
-5. M7：Viewer 配置版本化、CDN 和 3D 性能优化。
+4. [M6 ✅：上传任务生产化](docs/next-slice-upload-task-productionization.md)：任务中心、批量部分成功、retry/cancel、刷新恢复与 Worker 可观测性已实现并通过真实环境验收。
+5. [M6.5 ✅：发布前硬化](docs/next-slice-production-hardening.md)：限流、残留移除、413 语义、PRIVATE 语义统一与分享运营能力已验收；密码策略与重置推迟到上线前。
+6. [M7：Viewer 配置版本化、CDN 与 3D 性能优化](docs/next-slice-m7-viewer-config-and-performance.md)。

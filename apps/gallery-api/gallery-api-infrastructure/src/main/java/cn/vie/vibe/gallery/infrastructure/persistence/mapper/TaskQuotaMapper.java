@@ -34,11 +34,14 @@ public interface TaskQuotaMapper {
     @Select("SELECT " + TASK_COLUMNS + " FROM photo_processing_task t WHERE t.tenant_id=UUID_TO_BIN(#{tenant}) AND t.id=UUID_TO_BIN(#{id})")
     Map<String, Object> taskById(@Param("tenant") String tenant, @Param("id") String id);
 
+    @Select("SELECT " + TASK_COLUMNS + " FROM photo_processing_task t WHERE t.tenant_id=UUID_TO_BIN(#{tenant}) AND t.idempotency_key=#{key} LIMIT 1")
+    Map<String, Object> taskByIdempotencyKey(@Param("tenant") String tenant, @Param("key") String key);
+
     @Select("<script>SELECT " + TASK_COLUMNS + " FROM photo_processing_task t WHERE t.tenant_id=UUID_TO_BIN(#{tenant}) AND t.gallery_id=UUID_TO_BIN(#{gallery}) " +
             "<if test='statuses != null and statuses.size() > 0'>AND t.status IN <foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach></if> " +
             "ORDER BY t.created_at DESC,t.id DESC LIMIT #{limit} OFFSET #{offset}</script>")
     List<Map<String, Object>> tasksByGallery(@Param("tenant") String tenant, @Param("gallery") String gallery,
-                                              @Param("statuses") List<String> statuses, @Param("offset") int offset,
+                                              @Param("statuses") List<String> statuses, @Param("offset") long offset,
                                               @Param("limit") int limit);
 
     @Select("<script>SELECT COUNT(*) FROM photo_processing_task WHERE tenant_id=UUID_TO_BIN(#{tenant}) AND gallery_id=UUID_TO_BIN(#{gallery}) " +
@@ -51,7 +54,7 @@ public interface TaskQuotaMapper {
     @Select("SELECT " + TASK_COLUMNS + " FROM photo_processing_task t WHERE t.status='QUEUED' AND (t.next_attempt_at IS NULL OR t.next_attempt_at<=#{now}) ORDER BY t.created_at,t.id LIMIT 1")
     Map<String, Object> nextTask(@Param("now") LocalDateTime now);
 
-    @Update("UPDATE photo_processing_task SET status='PROCESSING',worker_id=#{worker},locked_at=#{now},heartbeat_at=#{now},started_at=COALESCE(started_at,#{now}),attempts=attempts+1,updated_at=#{now} WHERE id=UUID_TO_BIN(#{id}) AND status='QUEUED' AND (next_attempt_at IS NULL OR next_attempt_at<=#{now})")
+    @Update("UPDATE photo_processing_task SET status='PROCESSING',worker_id=#{worker},locked_at=#{now},heartbeat_at=#{now},started_at=COALESCE(started_at,#{now}),attempts=attempts+1,updated_at=#{now} WHERE id=UUID_TO_BIN(#{id}) AND status='QUEUED' AND attempts<max_attempts AND (next_attempt_at IS NULL OR next_attempt_at<=#{now})")
     int claim(@Param("id") String id, @Param("worker") String worker, @Param("now") LocalDateTime now);
 
     @Update("UPDATE photo_processing_task SET heartbeat_at=#{now},locked_at=#{now},updated_at=#{now} WHERE tenant_id=UUID_TO_BIN(#{tenant}) AND id=UUID_TO_BIN(#{id}) AND status='PROCESSING' AND worker_id=#{worker}")
@@ -66,7 +69,7 @@ public interface TaskQuotaMapper {
     @Update("UPDATE photo_processing_task SET status='SUCCEEDED',progress=100,stage='FINALIZE',finished_at=#{now},heartbeat_at=NULL,worker_id=NULL,updated_at=#{now} WHERE tenant_id=UUID_TO_BIN(#{tenant}) AND id=UUID_TO_BIN(#{id}) AND status='PROCESSING' AND worker_id=#{worker}")
     int succeed(@Param("tenant") String tenant, @Param("id") String id, @Param("worker") String worker, @Param("now") LocalDateTime now);
 
-    @Update("UPDATE photo_processing_task SET status=CASE WHEN #{terminal}=1 THEN 'FAILED' ELSE 'QUEUED' END,next_attempt_at=#{nextAttemptAt},last_error_code=#{errorCode},last_error_message=#{errorMessage},last_request_id=#{requestId},heartbeat_at=NULL,worker_id=NULL,finished_at=CASE WHEN #{terminal}=1 THEN #{now} ELSE NULL END,updated_at=#{now} WHERE tenant_id=UUID_TO_BIN(#{tenant}) AND id=UUID_TO_BIN(#{id}) AND status='PROCESSING' AND worker_id=#{worker}")
+    @Update("UPDATE photo_processing_task SET status=CASE WHEN #{terminal}=1 THEN 'FAILED' ELSE 'QUEUED' END,next_attempt_at=#{nextAttemptAt},last_error_code=#{errorCode},last_error_message=#{errorMessage},last_request_id=#{requestId},heartbeat_at=NULL,worker_id=NULL,finished_at=CASE WHEN #{terminal}=1 THEN #{now} ELSE NULL END,updated_at=#{now} WHERE tenant_id=UUID_TO_BIN(#{tenant}) AND id=UUID_TO_BIN(#{id}) AND status IN ('PROCESSING','CANCEL_REQUESTED') AND worker_id=#{worker}")
     int fail(@Param("tenant") String tenant, @Param("id") String id, @Param("worker") String worker,
              @Param("errorCode") String errorCode, @Param("errorMessage") String errorMessage, @Param("requestId") String requestId,
              @Param("terminal") boolean terminal, @Param("nextAttemptAt") LocalDateTime nextAttemptAt, @Param("now") LocalDateTime now);
@@ -80,7 +83,7 @@ public interface TaskQuotaMapper {
     @Update("UPDATE photo_processing_task SET status='CANCELLED',cancelled_at=#{now},finished_at=#{now},updated_at=#{now} WHERE tenant_id=UUID_TO_BIN(#{tenant}) AND id=UUID_TO_BIN(#{id}) AND status='QUEUED'")
     int cancelQueued(@Param("tenant") String tenant, @Param("id") String id, @Param("now") LocalDateTime now);
 
-    @Update("UPDATE photo_processing_task SET status='QUEUED',worker_id=NULL,locked_at=NULL,heartbeat_at=NULL,next_attempt_at=NULL,updated_at=#{now} WHERE status='PROCESSING' AND heartbeat_at<#{threshold}")
+    @Update("UPDATE photo_processing_task SET status=CASE WHEN attempts>=max_attempts THEN 'FAILED' ELSE 'QUEUED' END,worker_id=NULL,locked_at=NULL,heartbeat_at=NULL,next_attempt_at=CASE WHEN attempts>=max_attempts THEN NULL ELSE #{now} END,finished_at=CASE WHEN attempts>=max_attempts THEN #{now} ELSE NULL END,last_error_code=CASE WHEN attempts>=max_attempts THEN 'WORKER_LEASE_EXPIRED' ELSE last_error_code END,last_error_message=CASE WHEN attempts>=max_attempts THEN 'Worker lease expired' ELSE last_error_message END,updated_at=#{now} WHERE status='PROCESSING' AND (heartbeat_at IS NULL OR heartbeat_at<#{threshold})")
     int recoverStale(@Param("threshold") LocalDateTime threshold, @Param("now") LocalDateTime now);
 
     @Insert("INSERT INTO tenant_quota(tenant_id,max_bytes,max_photos) VALUES(UUID_TO_BIN(#{tenant}),#{maxBytes},#{maxPhotos}) ON DUPLICATE KEY UPDATE tenant_id=tenant_id")

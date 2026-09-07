@@ -44,6 +44,7 @@ export interface UploadTaskSummary {
   processing: number
   succeeded: number
   failed: number
+  cancelRequested: number
   cancelled: number
 }
 
@@ -52,7 +53,7 @@ export type TaskFilter = 'ALL' | 'ACTIVE' | 'FAILED' | 'COMPLETED'
 const ACTIVE_STATUSES: UploadTaskStatus[] = ['QUEUED', 'PROCESSING', 'CANCEL_REQUESTED']
 
 function emptySummary(): UploadTaskSummary {
-  return { queued: 0, processing: 0, succeeded: 0, failed: 0, cancelled: 0 }
+  return { queued: 0, processing: 0, succeeded: 0, failed: 0, cancelRequested: 0, cancelled: 0 }
 }
 
 function normalizeError(value: unknown, raw: Record<string, unknown>): UploadTaskError | null {
@@ -189,7 +190,8 @@ export function useUploadTasks(
         processing: Number(remoteSummary?.processing ?? tasks.value.filter(task => task.status === 'PROCESSING').length),
         succeeded: Number(remoteSummary?.succeeded ?? tasks.value.filter(task => task.status === 'SUCCEEDED').length),
         failed: Number(remoteSummary?.failed ?? tasks.value.filter(task => task.status === 'FAILED').length),
-        cancelled: Number(remoteSummary?.cancelled ?? tasks.value.filter(task => ['CANCELLED', 'CANCEL_REQUESTED'].includes(task.status)).length)
+        cancelRequested: Number(remoteSummary?.cancelRequested ?? tasks.value.filter(task => task.status === 'CANCEL_REQUESTED').length),
+        cancelled: Number(remoteSummary?.cancelled ?? tasks.value.filter(task => task.status === 'CANCELLED').length)
       }
     } catch (cause) {
       if (version === requestVersion) error.value = cause instanceof Error ? cause : new Error('任务列表加载失败，请稍后重试。')

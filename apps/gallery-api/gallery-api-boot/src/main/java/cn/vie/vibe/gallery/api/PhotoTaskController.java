@@ -48,9 +48,9 @@ public class PhotoTaskController {
                                  @RequestParam(defaultValue = "20") int pageSize) {
         if (page < 0) throw new DomainException("INVALID_PAGE", "Page must not be negative");
         if (pageSize < 1 || pageSize > 100) throw new DomainException("INVALID_PAGE_SIZE", "Page size must be between 1 and 100");
-        var tenant = authorization.requireEditor().tenantId();
+        var tenant = authorization.requireViewer().tenantId();
         TaskFilter filter = new TaskFilter(parseStatuses(status));
-        int offset = page * pageSize;
+        long offset = (long) page * pageSize;
         List<PhotoProcessingTask> items = tasks.findByGallery(tenant, galleryId, filter, offset, pageSize);
         return new TaskPageResponse(items.stream().map(TaskResponse::from).toList(), page, pageSize,
                 tasks.countByGallery(tenant, galleryId, filter), SummaryResponse.from(tasks.summaryByGallery(tenant, galleryId)));
@@ -58,7 +58,7 @@ public class PhotoTaskController {
 
     @GetMapping("/photos/tasks/{taskId}")
     public TaskResponse get(@PathVariable UUID taskId) {
-        var tenant = authorization.requireEditor().tenantId();
+        var tenant = authorization.requireViewer().tenantId();
         PhotoProcessingTask task = tasks.findById(tenant, taskId)
                 .orElseThrow(() -> new DomainException("TASK_NOT_FOUND", "Task not found"));
         return TaskResponse.from(task);
@@ -119,8 +119,10 @@ public class PhotoTaskController {
     }
 
     public record TaskPageResponse(List<TaskResponse> items, int page, int pageSize, long total, SummaryResponse summary) {}
-    public record SummaryResponse(long queued, long processing, long succeeded, long failed, long cancelled) {
-        static SummaryResponse from(TaskSummary summary) { return new SummaryResponse(summary.queued(), summary.processing(), summary.succeeded(), summary.failed(), summary.cancelled()); }
+    public record SummaryResponse(long queued, long processing, long succeeded, long failed, long cancelRequested, long cancelled) {
+        static SummaryResponse from(TaskSummary summary) {
+            return new SummaryResponse(summary.queued(), summary.processing(), summary.succeeded(), summary.failed(), summary.cancelRequested(), summary.cancelled());
+        }
     }
     public record TaskResponse(UUID id, UUID galleryId, UUID photoId, String filename, TaskStatus status, int progress,
                                String stage, int attempts, int maxAttempts, boolean retryable, TaskError error,

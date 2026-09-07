@@ -6,7 +6,7 @@ import type { UploadTask, TaskFilter } from '../../composables/useUploadTasks'
 
 const props = withDefaults(defineProps<{
   tasks: UploadTask[]
-  summary: { queued: number; processing: number; succeeded: number; failed: number; cancelled: number }
+  summary: { queued: number; processing: number; succeeded: number; failed: number; cancelRequested: number; cancelled: number }
   loading: boolean
   refreshing?: boolean
   error?: Error | null
@@ -21,10 +21,11 @@ const emit = defineEmits<{
   (event: 'cancel', task: UploadTask): void
 }>()
 
-const total = computed(() => props.summary.queued + props.summary.processing + props.summary.succeeded + props.summary.failed + props.summary.cancelled)
+const total = computed(() => props.summary.queued + props.summary.processing + props.summary.cancelRequested + props.summary.succeeded + props.summary.failed + props.summary.cancelled)
+const activeCount = computed(() => props.summary.queued + props.summary.processing + props.summary.cancelRequested)
 const filterOptions = computed<Array<{ value: TaskFilter; label: string; count?: number }>>(() => [
   { value: 'ALL', label: '全部', count: total.value },
-  { value: 'ACTIVE', label: '进行中', count: props.summary.queued + props.summary.processing },
+  { value: 'ACTIVE', label: '进行中', count: activeCount.value },
   { value: 'FAILED', label: '失败', count: props.summary.failed },
   { value: 'COMPLETED', label: '已完成', count: props.summary.succeeded + props.summary.cancelled }
 ])
@@ -37,7 +38,7 @@ const filterOptions = computed<Array<{ value: TaskFilter; label: string; count?:
         <span class="section-kicker">UPLOAD ACTIVITY</span>
         <div class="title-line">
           <h2 id="task-center-title">任务中心</h2>
-          <span v-if="summary.queued + summary.processing" class="activity-indicator"><i></i>{{ summary.queued + summary.processing }} 个活动任务</span>
+          <span v-if="activeCount" class="activity-indicator"><i></i>{{ activeCount }} 个活动任务</span>
         </div>
         <p>实时查看照片处理进度，失败任务可以安全重试。</p>
       </div>
@@ -48,7 +49,7 @@ const filterOptions = computed<Array<{ value: TaskFilter; label: string; count?:
     </div>
 
     <div class="task-summary" aria-label="任务摘要">
-      <div class="summary-item summary-active"><strong>{{ summary.queued + summary.processing }}</strong><span>处理中</span></div>
+      <div class="summary-item summary-active"><strong>{{ activeCount }}</strong><span>处理中</span></div>
       <div class="summary-item summary-failed"><strong>{{ summary.failed }}</strong><span>需处理</span></div>
       <div class="summary-item summary-done"><strong>{{ summary.succeeded }}</strong><span>已完成</span></div>
       <div class="summary-item summary-cancelled"><strong>{{ summary.cancelled }}</strong><span>已取消</span></div>

@@ -10,8 +10,8 @@ import ErrorState from './components/ErrorState.vue'
 import LightboxModal from './components/LightboxModal.vue'
 import Icon from './components/Icon.vue'
 
-// 从 URL 获取 slug
-const slug = location.pathname.split('/').filter(Boolean).pop() || 'demo'
+// 从 URL 获取 slug。生产环境没有 slug 时不回退 demo 内容。
+const slug = location.pathname.split('/').filter(Boolean).pop() || ''
 
 // 状态机
 const viewer = useViewerState(slug)
@@ -135,7 +135,7 @@ async function init3DEngine() {
   try {
     const rawPhotos = viewer.photos.value
     if (!rawPhotos || rawPhotos.length === 0) {
-      if (slug !== 'demo') return
+      if (!isDevDemo()) return
     }
 
     engine = new ViewerEngine(canvasRef.value)
@@ -144,7 +144,7 @@ async function init3DEngine() {
     const textureLoader = new THREE.TextureLoader()
     const meshes: any[] = []
 
-    const photoList = rawPhotos.length > 0 ? rawPhotos : (slug === 'demo' ? createDemoFallbackPhotos() : [])
+    const photoList = rawPhotos.length > 0 ? rawPhotos : (isDevDemo() ? createDemoFallbackPhotos() : [])
 
     photoList.forEach((p, i) => {
       const w = 80
@@ -349,6 +349,11 @@ function toggleGyro() {
   } else {
     gyroEnabled.value = !gyroEnabled.value
   }
+}
+
+// 演示内容只在本地开发构建可访问，生产环境不会显示 demo 相册。
+function isDevDemo() {
+  return import.meta.env.DEV && slug === 'demo'
 }
 
 function createDemoFallbackPhotos() {

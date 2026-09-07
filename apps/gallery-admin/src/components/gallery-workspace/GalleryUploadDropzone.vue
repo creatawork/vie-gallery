@@ -10,24 +10,53 @@ defineProps<{
 
 const emit = defineEmits<{
   (event: 'files', files: FileList | File[]): void
+  (event: 'invalid', message: string): void
 }>()
 
 const isDragOver = ref(false)
 const input = ref<HTMLInputElement | null>(null)
+const MAX_FILES = 50
+const MAX_FILE_SIZE = 100 * 1024 * 1024
+const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 function chooseFiles() {
   input.value?.click()
 }
 
+function validateFiles(files: FileList | File[]): File[] {
+  const selected = Array.from(files)
+  if (selected.length > MAX_FILES) {
+    emit('invalid', `单次最多选择 ${MAX_FILES} 张照片。`)
+    return []
+  }
+  const invalidType = selected.find(file => !ACCEPTED_TYPES.has(file.type))
+  if (invalidType) {
+    emit('invalid', `${invalidType.name} 不是支持的 JPG、PNG 或 WebP 图片。`)
+    return []
+  }
+  const oversized = selected.find(file => file.size > MAX_FILE_SIZE)
+  if (oversized) {
+    emit('invalid', `${oversized.name} 超过 100MB 大小限制。`)
+    return []
+  }
+  return selected
+}
+
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement
-  if (target.files?.length) emit('files', target.files)
+  if (target.files?.length) {
+    const files = validateFiles(target.files)
+    if (files.length) emit('files', files)
+  }
   target.value = ''
 }
 
 function handleDrop(event: DragEvent) {
   isDragOver.value = false
-  if (event.dataTransfer?.files?.length) emit('files', event.dataTransfer.files)
+  if (event.dataTransfer?.files?.length) {
+    const files = validateFiles(event.dataTransfer.files)
+    if (files.length) emit('files', files)
+  }
 }
 </script>
 

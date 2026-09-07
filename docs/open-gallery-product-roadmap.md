@@ -393,9 +393,11 @@ WorkspaceShell
 
 ```text
 PUBLIC   直接访问
-PRIVATE  仅登录用户或分享 Token
+PRIVATE  仅持有有效分享链接（Token）的访客可访问
 PASSWORD 访问时输入密码
 ```
+
+> PRIVATE 语义（M6.5 决策）：当前实现为"仅分享 Token 可访问"，与产品文案统一。登录用户/成员直接访问 PRIVATE 相册的能力（方案 B）列入 M8。参见 [next-slice-production-hardening.md](./next-slice-production-hardening.md) 2.5。
 
 必须由后端判定访问权限，前端不能通过隐藏元素实现安全控制。
 
@@ -528,34 +530,41 @@ slug 修改时需要明确策略：
 
 ## 11. 当前最推荐的下一步
 
-M3.5 公开访问、M4 发布核心和 M5 协作授权核心已经完成，当前优先补齐 M5 的集成验收证据，再进入 M6：
+M3.5–M6 核心已完成，M6 上传任务中心进入收尾。当前优先完成 M6 收尾验收，随后按以下顺序推进：
 
-### M5 验收收尾
+### 1. M6 收尾验收
 
-详细规范：[next-slice-membership-and-authorization.md](./next-slice-membership-and-authorization.md)
+详细计划：[next-slice-upload-task-productionization.md](./next-slice-upload-task-productionization.md)
 
-- 完成真实三角色 HTTP 全矩阵和被移除成员旧 Session 验证。
-- 完成 V7 从已有 V1–V6 数据升级的报告。
-- 补充最后 OWNER 并发保护验证和完整三角色浏览器证据。
-- 保持 M4/M3.5 的 PASSWORD、Token 撤销和重新发布缺口独立记录。
+- 完成任务列表、详情、retry、cancel、刷新恢复和批量部分成功的运行态验收。
+- 补齐 Worker 可观测性（结构化日志、队列/成功/失败/重试/取消指标）。
+- 保持 M5/M4/M3.5 保留的集成验收缺口独立记录。
 
-### 任务：上传任务生产化（M6）
+### 2. M6.5 发布前硬化（进入正式发布前必须先做）
 
-详细实施计划：[next-slice-upload-task-productionization.md](./next-slice-upload-task-productionization.md)
+详细计划：[next-slice-production-hardening.md](./next-slice-production-hardening.md)
 
-1. 建立持久化任务列表、详情和状态筛选。
-2. 支持失败分类、retry、backoff、max attempts 和 stale lease 恢复。
-3. 支持 queued/processing 取消和终态保护。
-4. Admin 刷新后从服务端恢复任务，展示单文件进度和失败原因。
-5. 解决批量部分成功、幂等和 Worker 可观测性。
+- 登录与密码解锁限流落地（`RATE_LIMITED` 从预留变为真实）。
+- 密码策略下调与忘记密码重置闭环。
+- 移除 Admin 测试账密预填与 Viewer demo 生产回退。
+- 413 错误语义修正。
+- PRIVATE 访问语义与产品文案统一。
+- 分享链接默认有效期与访问统计（`last_accessed_at`）。
 
-### M6 暂不做
+### 3. M7 Viewer 配置版本化、CDN 与 3D 性能优化
 
-- 不引入独立消息队列、SSR 或大型视觉改版。
-- 不把任务字段暴露给公开 Viewer。
+详细计划：[next-slice-m7-viewer-config-and-performance.md](./next-slice-m7-viewer-config-and-performance.md)
+
+- Viewer 配置草稿/发布/回滚与版本历史。
+- 媒体 CDN 与资源分级（M6 预留的 `TEXTURE` 阶段落地）。
+- 3D LOD、自动降级、WebGL 回退 2D 与移动端触控。
+- 社交分享静态 meta 兜底（不引入完整 SSR）。
+
+### 阶段边界（暂不做）
+
+- 不引入独立消息队列或大型视觉改版（沿用 M6 边界）。
 - 不提前实现完整任务历史、批量导入和复杂存储回收产品。
-
-这是下一条最直接的生产化路径：让上传失败可理解、可重试、可恢复，而不是要求用户重新上传整批照片。
+- 完整 SSR/SSG、登录访客、多工作区与邮箱邀请列入 M8。
 
 ---
 

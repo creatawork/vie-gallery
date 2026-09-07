@@ -6,7 +6,9 @@ import cn.vie.vibe.gallery.application.PublicGalleryView;
 import cn.vie.vibe.gallery.application.PublicPhotoPage;
 import cn.vie.vibe.gallery.application.PublicPhotoView;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
+import cn.vie.vibe.gallery.domain.PublicAccessException;
 import cn.vie.vibe.gallery.domain.PublicAccessState;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -30,13 +32,16 @@ public class PublicGalleryController {
 
     private final PublicAccessFacade publicAccessFacade;
     private final GalleryViewerConfigFacade configFacade;
+    private final RedisRateLimiter rateLimiter;
 
     public PublicGalleryController(
             PublicAccessFacade publicAccessFacade,
-            GalleryViewerConfigFacade configFacade
+            GalleryViewerConfigFacade configFacade,
+            RedisRateLimiter rateLimiter
     ) {
         this.publicAccessFacade = publicAccessFacade;
         this.configFacade = configFacade;
+        this.rateLimiter = rateLimiter;
     }
 
     /**
@@ -98,9 +103,21 @@ public class PublicGalleryController {
             @PathVariable("slug") String slug,
             @RequestHeader(value = "X-Share-Token", required = false) String shareToken,
             @Valid @RequestBody UnlockRequest request,
-            HttpSession session
+            HttpSession session,
+            HttpServletRequest httpRequest
     ) {
-        UUID galleryId = publicAccessFacade.unlockGallery(slug, shareToken, request.password());
+        String identity = slug + "|" + clientIp(httpRequest);
+        rateLimiter.assertUnlockAllowed(identity);
+        UUID galleryId;
+        try {
+            galleryId = publicAccessFacade.unlockGallery(slug, shareToken, request.password());
+        } catch (PublicAccessException exception) {
+            if (PublicAccessException.PASSWORD_INVALID.equals(exception.getCode())) {
+                rateLimiter.recordUnlockFailure(identity);
+            }
+            throw exception;
+        }
+        rateLimiter.resetUnlock(identity);
         Instant expiresAt = Instant.now().plusSeconds(PUBLIC_SESSION_TTL_SECONDS);
 
         // 只保存真实 gallery ID 和绝对过期时间，不保存密码或 raw token。
@@ -109,6 +126,15 @@ public class PublicGalleryController {
         session.setMaxInactiveInterval(PUBLIC_SESSION_TTL_SECONDS);
 
         return new UnlockResponse(true, expiresAt);
+    }
+
+    private static String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int comma = forwarded.indexOf(',');
+            return (comma >= 0 ? forwarded.substring(0, comma) : forwarded).trim();
+        }
+        return request.getRemoteAddr();
     }
 
     /**

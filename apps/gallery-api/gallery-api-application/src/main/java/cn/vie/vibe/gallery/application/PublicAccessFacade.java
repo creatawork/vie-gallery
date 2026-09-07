@@ -2,6 +2,7 @@ package cn.vie.vibe.gallery.application;
 
 import cn.vie.vibe.gallery.domain.*;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -12,6 +13,7 @@ import java.util.UUID;
  */
 public class PublicAccessFacade {
     private static final int MAX_PAGE_SIZE = 100;
+    private static final Duration SHARE_LINK_TOUCH_INTERVAL = Duration.ofMinutes(5);
 
     private final GalleryRepository galleryRepository;
     private final ShareLinkRepository shareLinkRepository;
@@ -229,6 +231,8 @@ public class PublicAccessFacade {
             throw PublicAccessException.shareLinkExpired();
         }
 
+        // 记录最近访问，只有上次访问早于节流阈值时才写库。
+        shareLinkRepository.touchLastAccessed(shareLink.getId(), now, now.minus(SHARE_LINK_TOUCH_INTERVAL));
         return shareLink;
     }
 

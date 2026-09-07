@@ -189,9 +189,17 @@ M4 当前 CLI 已验证：新 Gallery 为 DRAFT、上传并等待 READY、发布
 - 成员移除后旧 Session 失效验证。
 - EDITOR/VIEWER 完整浏览器交互验收。
 
-## M6 预验收入口
+## M6 / M6.5 当前验收状态
 
-M6 上传任务生产化尚未实现。任务列表、详情扩展、retry、cancel、刷新恢复、批量部分成功和 Worker 可观测性计划见 [`next-slice-upload-task-productionization.md`](next-slice-upload-task-productionization.md)。当前 `test-mcp-flow.sh` 不调用这些规划中的接口。
+M6 上传任务生产化与 M6.5 发布前硬化已实现并通过真实环境验收：
+
+- 后端 12 个测试类共 59 项全部通过；Admin/Viewer build 通过。
+- Docker Compose 真实环境验收：`test-mcp-flow.sh` 主流程 29 项全过。
+- M6 专项（真实 HTTP）：批量上传 3 有效 + 1 不可解码部分成功（rejected 带 `IMAGE_DECODE_FAILED`）、任务列表 `{items,page,pageSize,total,summary}`、任务详情扩展字段（progress/stage/attempts/maxAttempts/retryable/filename）、新会话刷新后从服务端恢复任务列表、SUCCEEDED 任务的 retry/cancel 均 409 `TASK_STATE_CONFLICT`、QUEUED 任务 cancel 后变 CANCELLED 且列表 summary 可见。
+- M6.5 专项（真实 HTTP）：登录 5 次错误密码 401 后第 6 次 429 `RATE_LIMITED`；PASSWORD 解锁 5 次 403 后第 6 次 429；超 100MB 上传返回 413 `FILE_TOO_LARGE`；分享链接访问后 `lastAccessedAt` 记录、短期链接过期后 404、撤销后 404。
+- M6.5 浏览器验证（Playwright/浏览器 MCP）：注册/登录表单无预填账密；创建空间自动跳转工作台；PRIVATE 创建文案为"仅持有有效分享链接的访客可访问"；上传 3 张照片 READY 后任务中心展示摘要、阶段、1/3 尝试与进度；分享弹窗提供"链接有效期"（7 天 / 30 天 / 永久，默认 30 天）；创建后有效期至恰为 30 天后；刷新页面后任务中心与分享列表从服务端恢复；Viewer `/g/`（无 slug）显示"相册空间未找到"而非 demo 内容。
+
+注：密码策略下调与忘记密码重置按决策推迟到上线前准备阶段（M6.5 文档 2.2）。系统仍未提供 Gallery 密码设置 API/UI，因此 PASSWORD 的成功解锁仍未覆盖。
 
 ## 故障排查
 

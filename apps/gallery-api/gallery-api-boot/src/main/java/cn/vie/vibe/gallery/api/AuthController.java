@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -37,10 +38,13 @@ import java.util.Map;
 public class AuthController {
     private final AuthFacade auth;
     private final SecurityContextRepository securityContextRepository;
+    private final RedisRateLimiter rateLimiter;
 
-    public AuthController(AuthFacade auth, SecurityContextRepository securityContextRepository) {
+    public AuthController(AuthFacade auth, SecurityContextRepository securityContextRepository,
+                          RedisRateLimiter rateLimiter) {
         this.auth = auth;
         this.securityContextRepository = securityContextRepository;
+        this.rateLimiter = rateLimiter;
     }
 
     @GetMapping("/csrf")
@@ -59,7 +63,18 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request,
                               HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        AuthenticatedUser result = auth.login(request.email(), request.password());
+        String identity = request.email().trim().toLowerCase(Locale.ROOT);
+        rateLimiter.assertLoginAllowed(identity);
+        AuthenticatedUser result;
+        try {
+            result = auth.login(request.email(), request.password());
+        } catch (DomainException exception) {
+            if ("AUTH_INVALID_CREDENTIALS".equals(exception.code())) {
+                rateLimiter.recordLoginFailure(identity);
+            }
+            throw exception;
+        }
+        rateLimiter.resetLogin(identity);
         authenticate(result, httpRequest, httpResponse);
         return AuthResponse.from(result);
     }

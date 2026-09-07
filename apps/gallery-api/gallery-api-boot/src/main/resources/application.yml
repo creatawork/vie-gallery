@@ -60,3 +60,10 @@ gallery:
     poll-interval: ${PHOTO_PROCESSING_POLL_INTERVAL:5000}
     max-retries: ${PHOTO_PROCESSING_MAX_RETRIES:3}
     stale-after: ${PHOTO_PROCESSING_STALE_AFTER:PT10M}
+  rate-limit:
+    login:
+      max-failures: ${LOGIN_RATE_LIMIT_MAX_FAILURES:5}
+      window: ${LOGIN_RATE_LIMIT_WINDOW:PT15M}
+    unlock:
+      max-failures: ${UNLOCK_RATE_LIMIT_MAX_FAILURES:5}
+      window: ${UNLOCK_RATE_LIMIT_WINDOW:PT15M}

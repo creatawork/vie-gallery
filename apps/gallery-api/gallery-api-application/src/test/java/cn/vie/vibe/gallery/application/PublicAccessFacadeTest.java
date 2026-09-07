@@ -27,6 +27,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -106,6 +108,21 @@ class PublicAccessFacadeTest {
                 fixture.facade.resolvePublicGallery(gallery.slug(), "expired-token").accessState());
         assertEquals(PublicAccessState.SHARE_LINK_REQUIRED,
                 fixture.facade.resolvePublicGallery(gallery.slug(), "revoked-token").accessState());
+    }
+
+    @Test
+    void validTokenTouchesLastAccessedButInvalidAndRevokedTokensDoNot() {
+        Fixture fixture = new Fixture();
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PRIVATE, null, "private-gallery");
+        fixture.addLink(gallery, "valid-token", null, null);
+        fixture.addLink(gallery, "revoked-token", null, Instant.now().minusSeconds(60));
+
+        fixture.facade.resolvePublicGallery(gallery.slug(), "missing-token");
+        fixture.facade.resolvePublicGallery(gallery.slug(), "revoked-token");
+        assertNull(fixture.shareLinks.findByTokenHash("hash:valid-token").orElseThrow().getLastAccessedAt());
+
+        fixture.facade.resolvePublicGallery(gallery.slug(), "valid-token");
+        assertNotNull(fixture.shareLinks.findByTokenHash("hash:valid-token").orElseThrow().getLastAccessedAt());
     }
 
     @Test
@@ -377,6 +394,15 @@ class PublicAccessFacadeTest {
 
         public void update(ShareLink shareLink) {
             values.put(shareLink.getId(), shareLink);
+        }
+
+        public void touchLastAccessed(UUID id, Instant lastAccessedAt, Instant threshold) {
+            ShareLink link = values.get(id);
+            if (link == null) return;
+            if (link.getLastAccessedAt() == null || link.getLastAccessedAt().isBefore(threshold)) {
+                values.put(id, new ShareLink(link.getId(), link.getGalleryId(), link.getTokenHash(),
+                        link.getExpiresAt(), link.getRevokedAt(), lastAccessedAt, link.getCreatedAt(), lastAccessedAt));
+            }
         }
 
         public void delete(UUID id) {

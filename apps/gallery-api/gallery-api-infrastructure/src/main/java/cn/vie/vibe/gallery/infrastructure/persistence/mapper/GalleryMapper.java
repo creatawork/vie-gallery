@@ -35,14 +35,14 @@ public interface GalleryMapper {
 
     @Insert("INSERT INTO gallery (id, tenant_id, slug, name, visibility, password_hash, cover_photo_id, deleted_at, created_at, updated_at, status, published_at) " +
             "VALUES (UUID_TO_BIN(#{id}), UUID_TO_BIN(#{tenantId}), #{slug}, #{name}, #{visibility}, #{passwordHash}, " +
-            "#{coverPhotoId}, NULL, #{createdAt}, #{updatedAt}, #{status}, #{publishedAt})")
+            "UUID_TO_BIN(#{coverPhotoId}), NULL, #{createdAt}, #{updatedAt}, #{status}, #{publishedAt})")
     int insert(@Param("id") String id, @Param("tenantId") String tenantId, @Param("slug") String slug,
                @Param("name") String name, @Param("visibility") String visibility, @Param("passwordHash") String passwordHash,
                @Param("coverPhotoId") String coverPhotoId, @Param("createdAt") LocalDateTime createdAt, @Param("updatedAt") LocalDateTime updatedAt,
                @Param("status") String status, @Param("publishedAt") LocalDateTime publishedAt);
 
     @Update("UPDATE gallery SET name = #{name}, visibility = #{visibility}, password_hash = #{passwordHash}, " +
-            "cover_photo_id = #{coverPhotoId}, status = #{status}, published_at = #{publishedAt}, updated_at = #{updatedAt} " +
+            "cover_photo_id = UUID_TO_BIN(#{coverPhotoId}), status = #{status}, published_at = #{publishedAt}, updated_at = #{updatedAt} " +
             "WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
     int update(@Param("tenantId") String tenantId, @Param("id") String id, @Param("name") String name, @Param("visibility") String visibility,
                @Param("passwordHash") String passwordHash, @Param("coverPhotoId") String coverPhotoId,

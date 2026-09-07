@@ -51,15 +51,30 @@ class MyBatisTaskRepository implements PhotoProcessingTaskRepository {
     }
 
     @Override
-    public List<PhotoProcessingTask> findByGallery(UUID tenantId, UUID galleryId, TaskFilter filter, int offset, int limit) {
-        List<String> statuses = filter.statuses().stream().filter(status -> status != TaskStatus.PENDING).map(TaskStatus::name).toList();
+    public Optional<PhotoProcessingTask> findByTenantAndIdempotencyKey(UUID tenantId, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) return Optional.empty();
+        return Optional.ofNullable(mapper.taskByIdempotencyKey(tenantId.toString(), idempotencyKey)).map(this::map);
+    }
+
+    @Override
+    public List<PhotoProcessingTask> findByGallery(UUID tenantId, UUID galleryId, TaskFilter filter, long offset, int limit) {
+        List<String> statuses = normalizedStatuses(filter);
         return mapper.tasksByGallery(tenantId.toString(), galleryId.toString(), statuses, offset, limit).stream().map(this::map).toList();
     }
 
     @Override
     public long countByGallery(UUID tenantId, UUID galleryId, TaskFilter filter) {
-        List<String> statuses = filter.statuses().stream().filter(status -> status != TaskStatus.PENDING).map(TaskStatus::name).toList();
+        List<String> statuses = normalizedStatuses(filter);
         return mapper.countTasks(tenantId.toString(), galleryId.toString(), statuses);
+    }
+
+    private static List<String> normalizedStatuses(TaskFilter filter) {
+        if (filter == null || filter.statuses().isEmpty()) return List.of();
+        return filter.statuses().stream()
+                .map(TaskStatus::normalized)
+                .distinct()
+                .map(TaskStatus::name)
+                .toList();
     }
 
     @Override
