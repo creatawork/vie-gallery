@@ -1,5 +1,7 @@
 # M7 真实环境验收报告
 
+> 本文件是 M7 的事实验收证据，不是当前路线规划；当前产品与工程范围见 [`personal-album-v1-plan.md`](personal-album-v1-plan.md)。
+>
 > 验收日期：2026-09-08
 > 环境：Docker Compose、本地 MySQL 8.4、Redis 7.4、MinIO、Gallery API `http://localhost:8088`、Viewer `http://localhost:5174`
 > 分支：`feat/gallery-workspace-slice`

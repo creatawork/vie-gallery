@@ -1,6 +1,6 @@
 # VIE Gallery M3 实施指导文档
 
-本文档是 `docs/reconstruction-plan.md` 与 `docs/implementation-plan.md` 中 M3 里程碑的执行规格。M3 在 M2 已完成相册/照片 CRUD、对象存储、缩略图和租户配额的基础上，交付“可安全分享、可密码访问、可在桌面和移动端浏览”的公开展示能力。
+本文档是历史 M3 里程碑的执行规格，记录公开展示能力的早期设计。当前个人相册 V1 的产品与工程规划见 [`../personal-album-v1-plan.md`](../personal-album-v1-plan.md)；本文件仅用于回溯，不作为当前开发依据。
 
 ## 1. 交付目标与边界
 

@@ -147,14 +147,15 @@ async function init3DEngine() {
     const photoList = rawPhotos.length > 0 ? rawPhotos : (isDevDemo() ? createDemoFallbackPhotos() : [])
 
     photoList.forEach((p, i) => {
+      const photoItem = p as any
       const w = 80
       const aspectRatio = (p.width && p.height) ? (p.width / p.height) : (4 / 3)
       const h = Math.round(w / aspectRatio)
       const geometry = new THREE.PlaneGeometry(w, h)
       let material: THREE.Material
 
-      if (p.thumbnailUrl) {
-        const texture = textureLoader.load(p.textureUrl || p.thumbnailUrl)
+      if (photoItem.thumbnailUrl) {
+        const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl)
         texture.colorSpace = THREE.SRGBColorSpace
         material = new THREE.MeshBasicMaterial({
           map: texture,
@@ -170,12 +171,12 @@ async function init3DEngine() {
       const mesh = new THREE.Mesh(geometry, material)
       mesh.userData = {
         index: i,
-        title: p.title || `Photo ${i + 1}`,
-        thumbnailUrl: p.thumbnailUrl,
-        mediumUrl: p.mediumUrl,
-        textureUrl: p.textureUrl,
-        width: p.width,
-        height: p.height
+        title: photoItem.title || `Photo ${i + 1}`,
+        thumbnailUrl: photoItem.thumbnailUrl,
+        mediumUrl: photoItem.mediumUrl,
+        textureUrl: photoItem.textureUrl,
+        width: photoItem.width,
+        height: photoItem.height
       }
       meshes.push(mesh)
     })
@@ -295,8 +296,8 @@ function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
     const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 
     camera.position.lerpVectors(startCamPos, targetCamPos, ease)
-    controls.target.lerpVectors(startTarget, targetWorldPos, ease)
-    controls.update()
+    controls!.target.lerpVectors(startTarget, targetWorldPos, ease)
+    controls!.update()
 
     if (t < 1) {
       requestAnimationFrame(step)
@@ -648,7 +649,7 @@ async function selectPreset(presetName: string) {
             @click="openLightbox(idx)"
           >
             <div class="photo-img-frame">
-              <img :src="photo.thumbnailUrl" :alt="photo.title || 'Photograph'" loading="lazy" />
+              <img :src="photo.thumbnailUrl || ''" :alt="photo.title || 'Photograph'" loading="lazy" />
               <div class="card-overlay">
                 <span class="photo-caption">{{ photo.title || `Photograph ${idx + 1}` }}</span>
               </div>

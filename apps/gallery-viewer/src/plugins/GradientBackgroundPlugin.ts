@@ -23,7 +23,7 @@ export class GradientBackgroundPlugin implements ViewerPlugin {
 
     this.createGradientMesh(bgConfig.gradient.colors, bgConfig.gradient.direction)
 
-    context.on('theme:update', (colors) => {
+    context.on('theme:update', (colors: any) => {
       this.updateColors([colors.background, colors.fog])
     })
 

@@ -30,5 +30,6 @@ cookies.txt
 *.timestamp*
 test_sample.jpg
 .playwright-mcp/
+current-*.png
 
 

@@ -71,6 +71,19 @@ public class GalleryController {
         return toResponse(facade.unpublish(galleryId), tenant);
     }
 
+    @PutMapping("/{galleryId}/password")
+    public GalleryResponse setPassword(@PathVariable UUID galleryId,
+                                       @Valid @RequestBody SetPasswordRequest request) {
+        UUID tenant = tenantContext.requireContext().tenantId();
+        return toResponse(facade.setPassword(galleryId, request.password()), tenant);
+    }
+
+    @DeleteMapping("/{galleryId}/password")
+    public GalleryResponse clearPassword(@PathVariable UUID galleryId) {
+        UUID tenant = tenantContext.requireContext().tenantId();
+        return toResponse(facade.clearPassword(galleryId), tenant);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public GalleryResponse create(@Valid @RequestBody CreateGalleryRequest request) {
@@ -81,6 +94,9 @@ public class GalleryController {
                                        @NotBlank @Size(max = 80) String slug,
                                        GalleryVisibility visibility) {
         public CreateGalleryRequest { if (visibility == null) visibility = GalleryVisibility.PRIVATE; }
+    }
+
+    public record SetPasswordRequest(@NotBlank @Size(min = 6, max = 128) String password) {
     }
 
     public record GalleryResponse(String id, String slug, String name, GalleryVisibility visibility,

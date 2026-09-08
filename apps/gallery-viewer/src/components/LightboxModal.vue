@@ -3,11 +3,13 @@ import { onMounted, onUnmounted } from 'vue'
 import Icon from './Icon.vue'
 
 interface PhotoItem {
-  title?: string
-  thumbnailUrl?: string
-  width?: number
-  height?: number
-  sortOrder?: number
+  title?: string | null
+  thumbnailUrl?: string | null
+  width?: number | null
+  height?: number | null
+  sortOrder?: number | null
+  mediumUrl?: string | null
+  textureUrl?: string | null
 }
 
 interface Props {
@@ -69,7 +71,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
         <!-- Image Display -->
         <div class="image-wrapper">
           <img
-            :src="photos[currentIndex].thumbnailUrl"
+            :src="photos[currentIndex].thumbnailUrl || ''"
             :alt="photos[currentIndex].title || 'Photograph'"
             class="main-image"
           />

@@ -1,5 +1,5 @@
 import type * as THREE from 'three'
-import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer'
+import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 
 /**
  * 照片网格对象
@@ -19,6 +19,7 @@ export interface PhotoMesh extends THREE.Mesh {
  * 相册配置
  */
 export interface ViewerConfig {
+  presetName?: string
   // 基础
   quality: 'low' | 'mid' | 'high' | 'auto'
 

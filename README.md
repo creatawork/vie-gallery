@@ -1,29 +1,61 @@
 # VIE Gallery
 
-VIE Gallery 是一个面向创作者的照片空间与分享平台。创作者可以创建 Gallery、上传照片、配置 3D 展示并通过稳定 URL 分享给访客；访客通过 Viewer 浏览公开内容。
+VIE Gallery 是一个面向个人用户和创作者的照片相册产品：保存原始照片，整理相册记录，创作 2D/3D 展示体验，通过受控链接分享给访客，并在工作台中持续管理和更新。
 
-当前分支已完成 Gallery 工作区、M3.5 公开访问稳定化、M4 发布状态核心实现和 M5 协作授权核心实现。M5 已支持 OWNER / EDITOR / VIEWER、成员 CRUD、统一 Facade 授权和 Admin 成员页；后端 44 项测试、Admin/Viewer build、Docker API 三角色和 OWNER 成员页已验证。M5 的真实 HTTP 全矩阵、V7 升级演练、最后 OWNER 并发、旧 Session 失效和部分浏览器证据仍待补。当前采用默认工作区协作模型；多工作区切换、邮件邀请和生产级上传任务队列属于后续阶段。
+## 当前阶段
+
+当前唯一有效的产品与工程路线是 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)，下一阶段具体任务见 [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)。本期目标是完成个人相册的 **备份、记录、创作、分享、管理** 闭环并上线；团队协作、多工作区、企业客户门户、复杂商业化等后期领域暂不纳入本期。
+
+代码基线：`feat/gallery-workspace-slice` / `3337049`（2026-09-08）。
+
+### 阶段状态
+
+- M3.5 公开访问稳定化：核心完成。
+- M4 发布与 SEO：核心完成。
+- M5 成员与授权：核心完成，少量历史集成证据待补。
+- M6 上传任务中心：完成并通过真实环境验收。
+- M6.5 发布前硬化：完成并通过真实环境验收；密码重置仍是上线前阻断项。
+- M7.1 配置版本化：已完成真实环境验收。
+- M7.2 TEXTURE 与资源变体：已完成真实环境验收。
+- M7.3 Viewer 性能与兼容：部分完成，LOD、低 FPS 阶梯降级和 WebGL 初始化失败回退尚未闭环。
+- M7.4 CDN 与社交预览：未完成。
+- M7.5 综合回归：待 M7.3/M7.4 和上线可靠性工作完成后执行。
+
+M7 的当前证据见 [`docs/m7-testing-results.md`](docs/m7-testing-results.md)。不要将 M7.1/M7.2 的已验收事实与 M7 整体完成混淆。
 
 ## 当前用户路径
 
 ```text
-登录 → /app/ → /app/galleries/:id
-                 ├─ 上传照片、设置封面、删除照片
-                 ├─ 配置 3D 展示 → /app/galleries/:id/config
-                 └─ 生成分享链接 → /g/:slug?t=<token>
+注册/登录 → /app/ → 创建或选择相册 → /app/galleries/:id
+                                      ├─ 上传、处理、整理照片
+                                      ├─ 配置 2D/3D 展示并保存草稿
+                                      ├─ 预览、发布和回滚配置
+                                      └─ 生成分享链接 → /g/:slug?t=<token>
 ```
 
-## URL 规划
+访客路径：
 
-| URL | 用途 |
-| --- | --- |
-| `/app/` | 登录后的 Gallery 总览 |
-| `/app/galleries/:id` | 单 Gallery 工作区 |
-| `/app/galleries/:id/config` | 当前 Gallery 的 Viewer 配置 |
-| `/g/:slug` | 访客公开 Viewer |
-| `/g/:slug?t=<token>` | 携带分享 Token 的访客 Viewer |
+```text
+/g/:slug                  PUBLIC 相册
+/g/:slug?t=<token>        PRIVATE 或受保护相册
+```
 
-## 当前 API
+当前 PRIVATE 语义是“仅持有有效分享 Token 的访客可访问”；登录用户直接访问 PRIVATE 属于上线后的后期能力。
+
+## 主要目录
+
+```text
+apps/
+├── gallery-api/       # Spring Boot 多模块 API
+├── gallery-admin/     # Vue 3 + TypeScript 创作者工作台
+└── gallery-viewer/    # Vue 3 + Three.js 公开展示端
+packages/
+└── gallery-contracts/ # 前后端共享 TypeScript 契约
+infra/                 # Docker Compose、Nginx 和本地依赖
+docs/                  # 当前规划、测试证据和历史归档
+```
+
+## 当前 API 概览
 
 管理端：
 
@@ -39,9 +71,17 @@ POST /api/galleries/{id}/photos
 GET  /api/galleries/{id}/photos
 PATCH /api/photos/{id}
 DELETE /api/photos/{id}
+POST /api/galleries/{id}/publish
+POST /api/galleries/{id}/unpublish
 POST /api/galleries/{id}/share-links
 GET  /api/galleries/{id}/share-links
 DELETE /api/share-links/{id}
+GET  /api/galleries/{id}/viewer-config
+PUT  /api/galleries/{id}/viewer-config
+POST /api/galleries/{id}/viewer-config/publish
+GET  /api/galleries/{id}/viewer-config/versions
+POST /api/galleries/{id}/viewer-config/rollback
+GET  /api/galleries/{id}/photo-tasks
 ```
 
 公开端：
@@ -54,19 +94,6 @@ GET  /api/public/g/{slug}/viewer-config
 ```
 
 公开照片和 `photoCount` 只包含 `READY` 且未软删除的照片。新分享链接统一使用 query Token；Viewer 暂时兼容旧的 `token` 参数和 `#s=` 格式。
-
-## 目录
-
-```text
-apps/
-├── gallery-api/       # Spring Boot 多模块 API
-├── gallery-admin/     # Vue 3 + TypeScript 创作者工作台
-└── gallery-viewer/    # Vue 3 + Three.js 公开展示端
-packages/
-└── gallery-contracts/ # 前后端共享 TypeScript 契约
-infra/                 # Docker Compose、Nginx 和本地依赖
- docs/                  # 当前规范、阶段计划和归档记录
-```
 
 ## 本地启动
 
@@ -98,56 +125,33 @@ bash start-frontend.sh
 | MinIO API | <http://localhost:9000> | 本地对象存储 |
 | MinIO Console | <http://localhost:9001> | 对象存储控制台 |
 
-如果修改 `infra/.env`，同时设置 `API_BASE`、`ADMIN_UI`、`VIEWER_UI` 或让脚本读取对应环境变量。
+如果修改 `infra/.env`，同步设置 `API_BASE`、`ADMIN_UI`、`VIEWER_UI` 或让脚本读取对应环境变量。
 
 ## 测试与验收
 
-唯一的测试说明入口是 [`docs/testing-guide.md`](docs/testing-guide.md)。常用命令：
+唯一的当前测试入口是 [`docs/testing-guide.md`](docs/testing-guide.md)。常用命令：
 
 ```bash
 # 后端测试
 cd apps/gallery-api && mvn test
 
 # 前端构建
-cd apps/gallery-admin && npm install && npm run build
+cd ../gallery-admin && npm install && npm run build
 cd ../gallery-viewer && npm install && npm run build
 
-# 服务启动后运行当前 Gallery API CLI 流程
+# 服务启动后运行当前 API CLI 流程
 cd ../..
 bash test-mcp-flow.sh
 ```
 
-当前自动化验收已覆盖注册、登录、Gallery 创建与详情、上传 READY 照片、发布、PRIVATE Token、PASSWORD 前置状态、分享链接和公开访问。M5 Docker/API 已验证 OWNER/EDITOR/VIEWER 的 `/api/me`、capabilities、成员列表和受限写操作 403；浏览器 MCP 已验证 OWNER 成员页和添加 EDITOR。仍未覆盖 M5 的真实 HTTP 全矩阵、V7 升级报告、最后 OWNER 并发和旧 Session 失效。M4/M3.5 的 PASSWORD 成功解锁、撤销 Token、重新发布恢复和 Admin IAB 发布交互也仍保留为补验收项。
+当前 M6/M6.5 和 M7.1/M7.2 的真实环境证据已记录；M7.3/M7.4/M7.5、完整集成测试、密码重置和备份恢复仍是个人相册 V1 上线前工作，详见 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)。
 
 ## 文档入口
 
-### 当前阶段：M7（Viewer 配置版本化与性能优化）
+- [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)：个人相册 V1 唯一产品与工程总规划
+- [`docs/testing-guide.md`](docs/testing-guide.md)：当前运行、测试和上线验收入口
+- [`docs/m7-testing-results.md`](docs/m7-testing-results.md)：M7 当前真实环境验收证据
+- [`docs/archive/README.md`](docs/archive/README.md)：历史资料边界和回溯说明
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)：提交与协作约定
 
-- [`docs/m7-document-index.md`](docs/m7-document-index.md)：M7 文档索引与导航
-- [`docs/m7-executive-summary.md`](docs/m7-executive-summary.md)：M7 执行摘要（管理层）
-- [`docs/m7-quickstart.md`](docs/m7-quickstart.md)：M7 开发快速启动（开发者）
-- [`docs/next-slice-m7-implementation-plan.md`](docs/next-slice-m7-implementation-plan.md)：M7 详细实施计划（技术设计）
-- [`docs/testing-guide.md`](docs/testing-guide.md)：M7 测试验收标准
-
-### 历史阶段
-
-- [`docs/open-gallery-product-roadmap.md`](docs/open-gallery-product-roadmap.md)：产品路线和阶段目标
-- [`docs/implementation-plan.md`](docs/implementation-plan.md)：架构、API 和里程碑规范
-- [`docs/next-slice-m6-upload-task-productionization.md`](docs/next-slice-upload-task-productionization.md)：M6 上传任务生产化
-- [`docs/next-slice-m65-production-hardening.md`](docs/next-slice-production-hardening.md)：M6.5 发布前硬化
-- [`docs/archive/README.md`](docs/archive/README.md)：历史文档索引；归档资料不覆盖当前规范
-
-## 后续路线
-
-1. M3.5 ✅：公开访问、测试、签名 URL 和部署配置生产化加固。
-2. [M4 ✅：发布状态、公开隔离、分享撤销与 SEO](docs/next-slice-publishing-and-seo.md)：核心代码、后端测试、Docker/API 和 Viewer SEO 已验证，保留少量运行态补验收。
-3. [M5 ✅：Workspace Membership 与 OWNER / EDITOR / VIEWER 授权](docs/next-slice-membership-and-authorization.md)：核心代码、44 项后端测试、前端构建、Docker 三角色 API 和 OWNER 成员页已验证，保留集成验收。
-4. [M6 ✅：上传任务生产化](docs/next-slice-upload-task-productionization.md)：任务中心、批量部分成功、retry/cancel、刷新恢复与 Worker 可观测性已实现并通过真实环境验收。
-5. [M6.5 ✅：发布前硬化](docs/next-slice-production-hardening.md)：限流、残留移除、413 语义、PRIVATE 语义统一与分享运营能力已验收；密码策略与重置推迟到上线前。
-6. [M7 🚧：Viewer 配置版本化、CDN 与 3D 性能优化](docs/next-slice-m7-implementation-plan.md)：
-   - M7.1：配置版本化（草稿/发布/回滚/schema 校验）- **进行中**
-   - M7.2：TEXTURE 阶段与资源分级（WebP 纹理/缩略图分级）
-   - M7.3：性能降级（LOD/自动降级/WebGL fallback/移动端）
-   - M7.4：CDN 与社交预览（媒体子域/边缘 Meta 壳）
-   - M7.5：综合验收与回归
-7. M8：创作者体验优化、协作增强、登录访客能力（待优先级排序）
+历史阶段的设计和故障记录位于 `docs/archive/`，不作为当前 API、端口、产品状态或开发步骤依据。

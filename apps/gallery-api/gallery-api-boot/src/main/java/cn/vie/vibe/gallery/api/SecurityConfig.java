@@ -54,7 +54,8 @@ public class SecurityConfig {
                         .sessionFixation(fixation -> fixation.changeSessionId()))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/api/auth/csrf", "/api/auth/register", "/api/auth/login",
-                                "/api/auth/logout", "/api/public/g/**").permitAll()
+                                "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password",
+                                "/api/public/g/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(authenticationEntryPoint)

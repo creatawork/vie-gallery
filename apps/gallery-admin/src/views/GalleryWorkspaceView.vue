@@ -31,6 +31,10 @@ const taskCenter = useUploadTasks(galleryId, computed(() => !!currentUser.value 
 const showLightbox = ref(false)
 const lightboxIndex = ref(0)
 const photoToDelete = ref<Pick<WorkspacePhoto, 'id'> | null>(null)
+const batchPhotosToDelete = ref<string[]>([])
+const showBatchDeleteModal = ref(false)
+const deletingBatch = ref(false)
+
 const lightboxPhotos = computed<LightboxPhoto[]>(() => workspace.photos.value.map(photo => ({
   ...photo,
   title: photo.title || undefined
@@ -178,6 +182,35 @@ async function confirmDeletePhoto() {
   }
 }
 
+function promptBatchDelete(photoIds: string[]) {
+  if (!canPhotoWrite.value || !photoIds.length) return
+  batchPhotosToDelete.value = photoIds
+  showBatchDeleteModal.value = true
+}
+
+async function confirmBatchDelete() {
+  if (!batchPhotosToDelete.value.length || deletingBatch.value) return
+  deletingBatch.value = true
+  try {
+    let successCount = 0
+    for (const id of batchPhotosToDelete.value) {
+      try {
+        await workspace.deletePhoto(id)
+        successCount++
+      } catch {
+        // continue deletion
+      }
+    }
+    toast.success(`已成功删除 ${successCount} 张照片。`)
+    showBatchDeleteModal.value = false
+    batchPhotosToDelete.value = []
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '批量删除发生异常。')
+  } finally {
+    deletingBatch.value = false
+  }
+}
+
 async function loadShareLinks() {
   if (!canShareManage.value) return
   const gallery = workspace.gallery.value
@@ -285,12 +318,14 @@ function closeShareModal() {
 
 <template>
   <div class="gallery-workspace-page">
+    <!-- Auth checking state -->
     <div v-if="authLoading" class="workspace-state loading-state" role="status">
       <div class="workspace-spinner"></div>
       <h1>正在验证登录状态…</h1>
       <p>请稍候，正在准备你的空间。</p>
     </div>
 
+    <!-- Unauthenticated state -->
     <div v-else-if="!currentUser" class="workspace-state error-state">
       <div class="workspace-state-icon"><Icon name="lock" :size="28" /></div>
       <h1>请先登录创作者工作区</h1>
@@ -299,21 +334,24 @@ function closeShareModal() {
     </div>
 
     <template v-else>
-      <nav class="workspace-breadcrumb" aria-label="面包屑导航">
-        <button type="button" class="back-link" @click="goToOverview">
-          <Icon name="arrow-left" :size="16" />
-          <span>我的空间</span>
+      <!-- Breadcrumb Navigation -->
+      <nav class="workspace-breadcrumb-bar" aria-label="面包屑导航">
+        <button type="button" class="back-link-btn" @click="goToOverview">
+          <Icon name="arrow-left" :size="15" />
+          <span>相册空间</span>
         </button>
-        <span aria-hidden="true">/</span>
-        <span>{{ workspace.gallery.value?.name || '空间工作台' }}</span>
+        <span class="breadcrumb-separator" aria-hidden="true">/</span>
+        <span class="current-crumb">{{ workspace.gallery.value?.name || '相册工作区' }}</span>
       </nav>
 
+      <!-- Workspace Loading State -->
       <div v-if="workspace.loading.value" class="workspace-state loading-state" role="status">
         <div class="workspace-spinner"></div>
-        <h1>正在加载空间…</h1>
-        <p>正在准备照片工作区。</p>
+        <h1>正在加载相册工作区…</h1>
+        <p>正在同步照片素材与 3D 切片状态。</p>
       </div>
 
+      <!-- Workspace Error State -->
       <div v-else-if="workspace.error.value" class="workspace-state error-state">
         <div class="workspace-state-icon">
           <Icon :name="workspace.error.value.kind === 'network' ? 'refresh' : 'alert-circle'" :size="28" />
@@ -321,20 +359,21 @@ function closeShareModal() {
         <h1>{{ workspace.error.value.kind === 'not-found' ? '空间不存在' : workspace.error.value.kind === 'forbidden' ? '暂时无法访问' : workspace.error.value.kind === 'unauthorized' ? '登录已失效' : workspace.error.value.kind === 'network' ? '网络连接异常' : '加载空间失败' }}</h1>
         <p>{{ workspace.error.value.message }}</p>
         <div class="state-actions">
-          <button class="btn btn-secondary" type="button" @click="goToOverview">返回我的空间</button>
+          <button class="btn btn-secondary" type="button" @click="goToOverview">返回空间列表</button>
           <button class="btn btn-primary" type="button" @click="workspace.reload">重新加载</button>
         </div>
       </div>
 
+      <!-- Loaded Workspace Main Content -->
       <template v-else-if="workspace.gallery.value">
-          <GalleryWorkspaceHeader
+        <!-- Workspace Header Banner -->
+        <GalleryWorkspaceHeader
           :gallery="workspace.gallery.value"
           :photo-count="workspace.photos.value.length"
           :publishing="workspace.publishing.value"
           :can-config="can('CONFIG_WRITE').value"
           :can-share="canShareManage"
           :can-publish="canPublish"
-
           @config="goToConfig"
           @share="openShareModal"
           @publish="handlePublish"
@@ -342,20 +381,29 @@ function closeShareModal() {
           @preview="openViewer"
         />
 
-        <section class="photo-workspace-panel" aria-labelledby="photos-title">
-          <div class="photo-toolbar">
+        <!-- Photos Section -->
+        <section class="photo-workspace-section" aria-labelledby="photos-title">
+          <div class="photo-section-header">
             <div>
-              <span class="section-kicker">PHOTO LIBRARY</span>
-              <h2 id="photos-title">照片素材</h2>
-              <p>管理空间中的照片，并选择一张作为访客看到的封面。</p>
+              <span class="section-kicker">PHOTO ASSETS</span>
+              <h2 id="photos-title" class="section-main-title">照片管理与 3D 映射</h2>
+              <p class="section-desc">上传高质量照片素材，系统自动优化切片并映射至 3D 展厅空间。</p>
             </div>
-            <div class="processing-summary" v-if="processingCount || failedCount" aria-live="polite">
-              <span v-if="processingCount"><i class="summary-dot is-processing"></i>{{ processingCount }} 张处理中</span>
-              <span v-if="failedCount"><i class="summary-dot is-failed"></i>{{ failedCount }} 张处理失败</span>
+
+            <div v-if="processingCount || failedCount" class="processing-status-capsule" aria-live="polite">
+              <span v-if="processingCount" class="status-capsule-item is-processing">
+                <span class="capsule-dot dot-amber"></span>
+                {{ processingCount }} 张处理中
+              </span>
+              <span v-if="failedCount" class="status-capsule-item is-failed">
+                <span class="capsule-dot dot-red"></span>
+                {{ failedCount }} 张处理失败
+              </span>
             </div>
           </div>
 
-            <GalleryUploadDropzone
+          <!-- Dropzone -->
+          <GalleryUploadDropzone
             v-if="canPhotoWrite"
             :uploading="workspace.uploading.value"
             :progress="workspace.uploadProgress.value"
@@ -363,15 +411,19 @@ function closeShareModal() {
             @files="handleUpload"
             @invalid="toast.warning($event)"
           />
+
+          <!-- Photos Grid with category filtering & batch tools -->
           <GalleryPhotoGrid
             :photos="workspace.photos.value"
             :can-write="canPhotoWrite"
             @open="openLightbox"
             @set-cover="handleSetCover"
             @delete="promptDeletePhoto"
+            @batch-delete="promptBatchDelete"
           />
         </section>
 
+        <!-- Upload Task Center -->
         <UploadTaskCenter
           :tasks="taskCenter.filteredTasks.value"
           :summary="taskCenter.summary.value"
@@ -388,6 +440,7 @@ function closeShareModal() {
       </template>
     </template>
 
+    <!-- Share Links Management Modal -->
     <Transition name="modal-fade">
       <div v-if="showShareModal" class="modal-backdrop" @click.self="closeShareModal">
         <div class="modal-card workspace-share-modal" role="dialog" aria-modal="true" aria-labelledby="share-title">
@@ -395,8 +448,8 @@ function closeShareModal() {
             <div class="modal-title-box">
               <div class="modal-icon-bubble share-bubble"><Icon name="share" :size="20" /></div>
               <div>
-                <h2 id="share-title">分享相册空间</h2>
-                <p>生成专属链接，与他人分享你的沉浸式相册。</p>
+                <h2 id="share-title">分享 3D 相册空间</h2>
+                <p>生成专属加密访问链接，与他人分享你的沉浸式展厅。</p>
               </div>
             </div>
             <button class="modal-close" type="button" aria-label="关闭分享窗口" @click="closeShareModal">
@@ -409,23 +462,24 @@ function closeShareModal() {
               <label class="share-expiry-field" for="share-expiry">
                 <span>链接有效期</span>
                 <select id="share-expiry" v-model="shareExpiryDays" class="select-input" :disabled="generatingShare">
-                  <option :value="7">7 天</option>
-                  <option :value="30">30 天</option>
+                  <option :value="7">7 天有效</option>
+                  <option :value="30">30 天有效</option>
                   <option :value="0">永久有效</option>
                 </select>
               </label>
               <button class="btn btn-primary" type="button" :disabled="generatingShare" @click="createShareLink">
                 <Icon v-if="generatingShare" name="refresh" :size="16" class="spin" />
                 <Icon v-else name="plus" :size="16" />
-                <span>{{ generatingShare ? '创建中…' : '创建分享链接' }}</span>
+                <span>{{ generatingShare ? '创建中…' : '生成新链接' }}</span>
               </button>
             </div>
-            <p class="share-tips"><Icon name="lock" :size="14" />任何拥有有效链接的用户都可以打开访客预览。</p>
           </div>
+
           <div v-if="generatingShare" class="generating-box" role="status">
-            <Icon name="refresh" :size="24" class="spin" />
+            <Icon name="refresh" :size="24" class="spin spin-emerald" />
             <p>正在生成加密分享凭证…</p>
           </div>
+
           <div v-if="shareLinkData" class="share-content">
             <div class="link-display-group">
               <input :value="shareLinkData.shareUrl" readonly aria-label="新创建的分享链接" class="form-input share-url-input" />
@@ -436,8 +490,9 @@ function closeShareModal() {
             </div>
             <span v-if="shareLinkData.expiresAt" class="share-expiry">有效期至 {{ formatShareDate(shareLinkData.expiresAt) }}</span>
           </div>
+
           <div v-if="shareLinksLoading" class="share-loading" role="status">正在加载分享链接…</div>
-          <div v-else-if="!shareLinks.length" class="share-empty">暂无分享链接，创建一个链接开始分享。</div>
+          <div v-else-if="!shareLinks.length" class="share-empty">暂无有效分享链接，点击上方按钮创建。</div>
           <ul v-else class="share-link-list" aria-label="分享链接列表">
             <li v-for="link in shareLinks" :key="link.id" class="share-link-row">
               <div class="share-link-info">
@@ -446,8 +501,8 @@ function closeShareModal() {
                 <span>到期 {{ formatShareDate(link.expiresAt) }}</span>
                 <span v-if="link.lastAccessedAt">最近访问 {{ formatShareDate(link.lastAccessedAt) }}</span>
               </div>
-              <button v-if="link.status === 'ACTIVE'" class="icon-action-btn revoke-share-btn" type="button" aria-label="撤销分享链接" title="撤销分享链接" @click="promptRevokeShareLink(link)">
-                <Icon name="trash" :size="15" />
+              <button v-if="link.status === 'ACTIVE'" class="icon-btn-tool-sm text-danger" type="button" aria-label="撤销分享链接" title="撤销分享链接" @click="promptRevokeShareLink(link)">
+                <Icon name="x" :size="14" />
               </button>
             </li>
           </ul>
@@ -455,387 +510,340 @@ function closeShareModal() {
       </div>
     </Transition>
 
-    <ConfirmModal
-      :show="!!shareLinkToRevoke"
-      title="撤销分享链接"
-      message="确定要撤销这个分享链接吗？撤销后，持有该链接的访客将无法继续访问。"
-      confirm-text="确认撤销"
-      :danger="true"
-      :loading="revokingShareLink"
-      @confirm="confirmRevokeShareLink"
-      @cancel="shareLinkToRevoke = null"
-    />
-
+    <!-- Confirm Modals -->
     <ConfirmModal
       :show="!!photoToDelete"
-      title="删除照片"
-      message="确定要删除这张照片吗？删除后将无法在空间中恢复。"
+      title="确认删除照片"
+      message="此操作将永久删除该照片及其切片纹理，是否继续？"
       confirm-text="确认删除"
-      :danger="true"
+      danger
       :loading="deletingPhoto"
       @confirm="confirmDeletePhoto"
       @cancel="photoToDelete = null"
     />
 
+    <ConfirmModal
+      :show="showBatchDeleteModal"
+      title="批量删除照片"
+      :message="`确认删除已选中的 ${batchPhotosToDelete.length} 张照片吗？此操作无法撤销。`"
+      confirm-text="确认批量删除"
+      danger
+      :loading="deletingBatch"
+      @confirm="confirmBatchDelete"
+      @cancel="showBatchDeleteModal = false; batchPhotosToDelete = []"
+    />
+
+    <ConfirmModal
+      :show="!!shareLinkToRevoke"
+      title="确认撤销分享链接"
+      message="撤销后，持有此链接的访客将无法再访问相册，确定撤销吗？"
+      confirm-text="确认撤销"
+      danger
+      :loading="revokingShareLink"
+      @confirm="confirmRevokeShareLink"
+      @cancel="shareLinkToRevoke = null"
+    />
+
+    <!-- Lightbox Modal -->
     <LightboxModal
       :show="showLightbox"
       :photos="lightboxPhotos"
       :current-index="lightboxIndex"
-      :can-write="canPhotoWrite"
       @close="showLightbox = false"
-      @select="index => lightboxIndex = index"
-      @set-cover="handleSetCover"
-      @delete="promptDeletePhoto"
     />
   </div>
 </template>
 
 <style scoped>
 .gallery-workspace-page {
-  width: min(100%, 1240px);
-  min-height: calc(100vh - 110px);
-  margin: 0 auto;
-  padding: 18px 0 56px;
-}
-
-.workspace-breadcrumb {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 22px;
-  color: var(--text-tertiary);
-  font-size: 12px;
-}
-
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 6px 10px 6px 0;
-  color: var(--text-secondary);
-  font-weight: 700;
-}
-
-.back-link:hover,
-.back-link:focus-visible {
-  color: var(--brand-deep, #087a5c);
-  outline: none;
-}
-
-.workspace-state {
-  display: flex;
-  min-height: 54vh;
   flex-direction: column;
+  gap: 24px;
+  width: min(100%, 1320px);
+  margin: 0 auto;
+  padding: 8px 4px 64px;
+}
+
+/* Breadcrumb Navigation */
+.workspace-breadcrumb-bar {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-  text-align: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: #64748b;
+  padding: 4px 0;
 }
 
-.workspace-state h1 {
-  margin-top: 18px;
-  color: var(--text-primary);
-  font-size: clamp(22px, 4vw, 30px);
-  letter-spacing: -0.035em;
-}
-
-.workspace-state p {
-  max-width: 470px;
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-.workspace-state-icon {
-  display: grid;
-  width: 66px;
-  height: 66px;
-  place-items: center;
-  border-radius: 21px;
-  color: #059669;
-  background: var(--brand-accent-subtle);
-}
-
-.error-state .workspace-state-icon {
-  color: #b45309;
-  background: #fff7ed;
-}
-
-.workspace-spinner {
-  width: 34px;
-  height: 34px;
-  border: 3px solid rgba(16, 185, 129, 0.18);
-  border-top-color: var(--brand-accent);
-  border-radius: 50%;
-  animation: workspace-spin 0.8s linear infinite;
-}
-
-.state-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 22px;
-}
-
-.photo-workspace-panel {
-  margin-top: 24px;
-  padding: 26px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: var(--shadow-md);
-}
-
-.photo-toolbar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 22px;
-}
-
-.section-kicker {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--brand-deep, #087a5c);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-}
-
-.photo-toolbar h2 {
-  color: var(--text-primary);
-  font-size: 21px;
-  letter-spacing: -0.03em;
-}
-
-.photo-toolbar p {
-  margin-top: 5px;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.processing-summary {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.processing-summary span {
+.back-link-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  white-space: nowrap;
-}
-
-.summary-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.summary-dot.is-processing { background: #f59e0b; }
-.summary-dot.is-failed { background: #ef4444; }
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  padding: 20px;
-  place-items: center;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(12px) saturate(120%);
-}
-
-.workspace-share-modal {
-  width: min(560px, 100%);
-  padding: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 24px;
-  background: #ffffff;
-  box-shadow: var(--shadow-xl);
-}
-
-.modal-header-row,
-.modal-title-box,
-.link-display-group,
-.share-tips {
-  display: flex;
-}
-
-.modal-header-row {
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.modal-title-box {
-  align-items: center;
-  gap: 14px;
-}
-
-.modal-title-box h2 {
-  color: var(--text-primary);
-  font-size: 18px;
-}
-
-.modal-title-box p {
-  margin-top: 3px;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.modal-icon-bubble {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  flex-shrink: 0;
-  place-items: center;
-  border-radius: 14px;
+  font-weight: 600;
   color: #059669;
-  background: var(--brand-accent-subtle);
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
 }
 
-.share-bubble { color: #2563eb; background: #eff6ff; }
-
-.modal-close {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 9px;
-  color: var(--text-tertiary);
+.back-link-btn:hover {
+  background: #ecfdf5;
+  color: #047857;
 }
 
-.modal-close:hover,
-.modal-close:focus-visible {
-  color: var(--text-primary);
-  background: var(--bg-surface-subtle);
-  outline: none;
+.breadcrumb-separator {
+  color: #cbd5e1;
 }
 
-.generating-box {
+.current-crumb {
+  font-weight: 650;
+  color: #0f172a;
+}
+
+/* Workspace States */
+.workspace-state {
   display: flex;
-  min-height: 150px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  color: var(--text-secondary);
+  text-align: center;
+  min-height: 360px;
+  padding: 48px 24px;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  gap: 14px;
+}
+
+.workspace-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(16, 185, 129, 0.2);
+  border-top-color: #10b981;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.workspace-state h1 {
+  font-size: 20px;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+.workspace-state p {
+  font-size: 14px;
+  color: #64748b;
+  max-width: 440px;
+}
+
+/* Photo Workspace Section */
+.photo-workspace-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+}
+
+.photo-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.section-kicker {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #059669;
+  margin-bottom: 4px;
+}
+
+.section-main-title {
+  font-size: 20px;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+.section-desc {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.processing-status-capsule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-capsule-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.status-capsule-item.is-processing {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status-capsule-item.is-failed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.capsule-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dot-amber { background: #f59e0b; }
+.dot-red { background: #ef4444; }
+
+/* Share Modal Layout */
+.workspace-share-modal {
+  width: min(560px, 100%);
+}
+
+.share-bubble {
+  background: #eff6ff;
+  color: #2563eb;
 }
 
 .share-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 22px;
+  margin-bottom: 16px;
 }
 
 .share-options-row {
   display: flex;
-  align-items: flex-end;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
 }
 
 .share-expiry-field {
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.share-expiry-field span {
-  color: var(--text-tertiary);
-  font-size: 12px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #475569;
 }
 
 .share-expiry-field .select-input {
-  width: 130px;
+  flex: 1;
 }
-.share-content { margin-top: 18px; }
-.link-display-group { align-items: stretch; gap: 8px; }
-.share-url-input { min-width: 0; font-family: var(--font-mono); font-size: 12px; }
-.copy-btn { flex-shrink: 0; }
-.share-expiry, .share-loading, .share-empty {
+
+.generating-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.share-content {
+  margin-bottom: 16px;
+}
+
+.link-display-group {
+  display: flex;
+  gap: 8px;
+}
+
+.share-url-input {
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+}
+
+.share-expiry {
   display: block;
-  margin-top: 9px;
-  color: var(--text-tertiary);
+  margin-top: 6px;
   font-size: 12px;
+  color: #64748b;
 }
+
+.share-loading,
+.share-empty {
+  text-align: center;
+  padding: 20px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
 .share-link-list {
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 220px;
-  margin: 18px 0 0;
-  padding: 0;
-  overflow: auto;
-  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
 }
+
 .share-link-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 11px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface-subtle);
-}
-.share-link-info {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-}
-.share-status {
-  padding: 3px 7px;
-  border-radius: var(--radius-full);
-  font-weight: 700;
-}
-.share-status-active { color: #047857; background: #ecfdf5; }
-.share-status-expired { color: #92400e; background: #fffbeb; }
-.share-status-revoked { color: #64748b; background: #f1f5f9; }
-.revoke-share-btn { flex-shrink: 0; color: #b91c1c; }
-.share-tips {
-  align-items: center;
-  gap: 8px;
-  margin-top: 14px;
   padding: 10px 12px;
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  background: var(--bg-surface-subtle);
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
   font-size: 12px;
 }
 
-@keyframes workspace-spin { to { transform: rotate(360deg); } }
-
-@media (max-width: 767px) {
-  .gallery-workspace-page { width: 100%; padding: 14px 0 42px; }
-  .workspace-breadcrumb { margin-bottom: 16px; }
-  .photo-workspace-panel { padding: 20px 16px; }
-  .photo-toolbar { display: block; }
-  .processing-summary { justify-content: flex-start; margin-top: 14px; }
-  .state-actions { width: 100%; flex-direction: column; }
-  .state-actions .btn { width: 100%; }
-  .workspace-share-modal { padding: 24px 18px; }
-  .share-toolbar { align-items: stretch; flex-direction: column; }
-  .share-options-row { align-items: stretch; flex-direction: column; }
-  .share-options-row .btn { width: 100%; }
-  .share-expiry-field .select-input { width: 100%; }
-  .link-display-group { flex-direction: column; }
-  .copy-btn { width: 100%; }
+.share-link-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #64748b;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .workspace-spinner { animation: none; }
+.share-status {
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.share-status-active { color: #047857; background: #ecfdf5; }
+.share-status-expired { color: #94a3b8; background: #f1f5f9; }
+.share-status-revoked { color: #dc2626; background: #fef2f2; }
+
+.icon-btn-tool-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+.icon-btn-tool-sm:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

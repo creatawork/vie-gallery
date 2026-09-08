@@ -62,37 +62,37 @@ function handleDrop(event: DragEvent) {
 
 <template>
   <section
-    class="upload-dropzone"
+    class="upload-dropzone-box"
     :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
     aria-label="上传照片"
     @dragover.prevent="isDragOver = true"
     @dragleave.prevent="isDragOver = false"
     @drop.prevent="handleDrop"
+    @click="!uploading && chooseFiles()"
   >
     <template v-if="!uploading">
-      <div class="upload-icon-circle">
-        <Icon name="upload" :size="24" />
-      </div>
-      <div class="dropzone-copy">
-        <h2>上传第一组照片</h2>
-        <p>拖拽照片至此处，或选择设备中的图片开始创作</p>
-        <button class="btn btn-secondary" type="button" @click="chooseFiles">
-          <Icon name="upload" :size="15" />
-          <span>选择照片</span>
-        </button>
-        <small>支持 JPG、PNG、WebP，单次最多 50 张</small>
+      <div class="dropzone-body">
+        <div class="upload-icon-circle">
+          <Icon name="upload" :size="22" />
+        </div>
+        <div class="dropzone-text-group">
+          <h3 class="dropzone-title">拖拽照片到此处上传，或 <span class="highlight-link">浏览文件</span></h3>
+          <p class="dropzone-hint">支持 JPG、PNG、WebP 高清大图，系统将自动切片并生成 WebGL 3D 纹理</p>
+        </div>
       </div>
     </template>
 
-    <div v-else class="upload-progress-box" role="status" aria-live="polite">
-      <div class="upload-progress-icon"><Icon name="refresh" :size="22" class="spin" /></div>
-      <div class="progress-copy">
-        <strong>{{ statusText || '正在处理照片…' }}</strong>
-        <div class="progress-bar-track" aria-hidden="true">
-          <div class="progress-bar-fill" :style="{ width: `${progress}%` }"></div>
+    <div v-else class="upload-progress-box" role="status" aria-live="polite" @click.stop>
+      <div class="progress-top-info">
+        <div class="progress-label-wrap">
+          <Icon name="refresh" :size="16" class="spin spin-emerald" />
+          <strong class="progress-status-title">{{ statusText || '正在分片上传并处理照片…' }}</strong>
         </div>
+        <span class="progress-percentage">{{ progress }}%</span>
       </div>
-      <span class="progress-percentage">{{ progress }}%</span>
+      <div class="progress-track" aria-hidden="true">
+        <div class="progress-fill" :style="{ width: `${progress}%` }"></div>
+      </div>
     </div>
 
     <input ref="input" type="file" multiple accept="image/jpeg,image/png,image/webp" hidden @change="handleInput" />
@@ -100,136 +100,138 @@ function handleDrop(event: DragEvent) {
 </template>
 
 <style scoped>
-.upload-dropzone {
+.upload-dropzone-box {
+  position: relative;
   display: flex;
-  min-height: 190px;
   align-items: center;
   justify-content: center;
-  gap: 22px;
-  margin-top: 22px;
-  padding: 28px;
-  border: 1px dashed rgba(16, 185, 129, 0.34);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, rgba(236, 253, 245, 0.75), rgba(255, 255, 255, 0.92));
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  padding: 24px 28px;
+  border-radius: 18px;
+  border: 1.5px dashed rgba(16, 185, 129, 0.4);
+  background: linear-gradient(145deg, rgba(236, 253, 245, 0.45) 0%, rgba(255, 255, 255, 0.9) 100%);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.upload-dropzone:focus-within,
-.upload-dropzone.drag-over {
-  border-color: var(--brand-accent);
-  background: var(--brand-accent-subtle);
+.upload-dropzone-box:hover,
+.upload-dropzone-box.drag-over {
+  border-color: #10b981;
+  background: rgba(236, 253, 245, 0.8);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.12);
   transform: translateY(-1px);
 }
 
-.upload-icon-circle,
-.upload-progress-icon {
-  display: grid;
-  width: 58px;
-  height: 58px;
-  flex-shrink: 0;
-  place-items: center;
-  border-radius: 18px;
-  color: #059669;
+.upload-dropzone-box.is-uploading {
+  cursor: default;
+  border-style: solid;
+  border-color: rgba(16, 185, 129, 0.35);
   background: #ffffff;
-  box-shadow: var(--shadow-md);
 }
 
-.dropzone-copy {
-  min-width: 0;
-}
-
-.dropzone-copy h2 {
-  color: var(--text-primary);
-  font-size: 18px;
-  letter-spacing: -0.025em;
-}
-
-.dropzone-copy p {
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.dropzone-copy .btn {
-  margin-top: 14px;
-}
-
-.dropzone-copy small {
-  display: block;
-  margin-top: 10px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-}
-
-.upload-progress-box {
+.dropzone-body {
   display: flex;
-  width: min(620px, 100%);
   align-items: center;
-  gap: 16px;
+  gap: 18px;
 }
 
-.progress-copy {
-  min-width: 0;
-  flex: 1;
+.upload-icon-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #059669;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  flex-shrink: 0;
 }
 
-.progress-copy strong {
-  display: block;
-  overflow: hidden;
-  color: var(--text-primary);
+.dropzone-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dropzone-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.highlight-link {
+  color: #059669;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dropzone-hint {
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* Uploading Progress */
+.upload-progress-box {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-top-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.progress-label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spin-emerald {
+  color: #059669;
+}
+
+.progress-status-title {
   font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.progress-bar-track {
-  height: 9px;
-  margin-top: 12px;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: rgba(203, 213, 225, 0.55);
-}
-
-.progress-bar-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #10b981, #059669);
-  transition: width 0.35s ease;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .progress-percentage {
-  color: var(--brand-deep, #087a5c);
-  font-size: 13px;
-  font-weight: 750;
+  font-size: 14px;
+  font-weight: 800;
+  color: #059669;
 }
 
-@media (max-width: 560px) {
-  .upload-dropzone {
-    min-height: 180px;
+.progress-track {
+  width: 100%;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #34d399, #059669);
+  border-radius: 9999px;
+  transition: width 0.25s ease;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 640px) {
+  .dropzone-body {
     flex-direction: column;
-    gap: 14px;
-    padding: 24px 18px;
     text-align: center;
-  }
-
-  .dropzone-copy .btn {
-    width: 100%;
-  }
-
-  .upload-progress-box {
-    flex-wrap: wrap;
-  }
-
-  .progress-copy {
-    width: calc(100% - 74px);
-    flex: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .upload-dropzone,
-  .progress-bar-fill {
-    transition: none;
   }
 }
 </style>

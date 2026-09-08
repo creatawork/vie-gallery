@@ -130,9 +130,27 @@ class MyBatisTaskRepository implements PhotoProcessingTaskRepository {
 @Repository
 class MyBatisQuotaRepository implements TenantQuotaRepository {
     private final TaskQuotaMapper mapper;
-    MyBatisQuotaRepository(TaskQuotaMapper mapper) { this.mapper = mapper; }
+    private final QuotaOperationRepository quotaOperations;
+
+    MyBatisQuotaRepository(TaskQuotaMapper mapper, QuotaOperationRepository quotaOperations) {
+        this.mapper = mapper;
+        this.quotaOperations = quotaOperations;
+    }
+
     public TenantQuota findForUpdate(UUID tenantId) { Map<String,Object> row=mapper.quota(tenantId.toString()); return new TenantQuota(tenantId,((Number)row.get("maxBytes")).longValue(),((Number)row.get("usedBytes")).longValue(),((Number)row.get("maxPhotos")).longValue(),((Number)row.get("photoCount")).longValue()); }
     public void ensure(UUID tenantId,long bytes,long photos){mapper.ensure(tenantId.toString(),bytes,photos);}
     public void reserve(UUID tenantId,long bytes,long photos){if(mapper.reserve(tenantId.toString(),bytes,photos)==0)throw new DomainException("QUOTA_EXCEEDED","Quota exceeded");}
     public void release(UUID tenantId,long bytes,long photos){mapper.release(tenantId.toString(),bytes,photos);}
+
+    @Override
+    public boolean releaseOnce(UUID tenantId, String entityType, UUID entityId, long bytes, long photos) {
+        if (entityType != null && entityId != null && quotaOperations != null) {
+            QuotaOperation op = QuotaOperation.release(tenantId, entityType, entityId, bytes, (int) photos, Instant.now());
+            if (!quotaOperations.recordOperation(op)) {
+                return false;
+            }
+        }
+        release(tenantId, bytes, photos);
+        return true;
+    }
 }

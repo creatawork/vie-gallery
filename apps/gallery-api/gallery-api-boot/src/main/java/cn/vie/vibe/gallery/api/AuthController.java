@@ -97,6 +97,18 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/forgot-password")
+    public Map<String, String> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        auth.requestPasswordReset(request.email());
+        return Map.of("message", "如果邮箱存在，您将收到密码重置邮件");
+    }
+
+    @PostMapping("/reset-password")
+    public Map<String, Boolean> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        auth.resetPassword(request.token(), request.newPassword());
+        return Map.of("success", true);
+    }
+
     private void authenticate(AuthenticatedUser result, HttpServletRequest request, HttpServletResponse response) {
         if (request.getSession(false) != null) {
             request.changeSessionId();
@@ -127,6 +139,13 @@ public class AuthController {
 
     public record LoginRequest(@NotBlank @Email @Size(max = 320) String email,
                                @NotBlank @Size(min = 12, max = 128) String password) {
+    }
+
+    public record ForgotPasswordRequest(@NotBlank @Email @Size(max = 320) String email) {
+    }
+
+    public record ResetPasswordRequest(@NotBlank @Size(min = 43, max = 128) String token,
+                                       @NotBlank @Size(min = 12, max = 128) String newPassword) {
     }
 
     public record AuthResponse(UserResponse user, TenantResponse tenant, String role, List<Capability> capabilities) {

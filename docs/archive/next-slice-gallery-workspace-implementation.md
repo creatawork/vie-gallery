@@ -1,7 +1,7 @@
 # 下一步详细实现指导：单相册空间工作台
 
-> 上位规范：[open-gallery-product-roadmap.md](./open-gallery-product-roadmap.md)  
-> 本阶段目标：让“进入空间”成为真正的 URL 导航，并建立独立的单相册空间工作台。  
+> 历史上位规划已由 [`../personal-album-v1-plan.md`](../personal-album-v1-plan.md) 取代；本文件仅保留单相册工作台切片的实现记录。
+> 本阶段目标：让“进入空间”成为真正的 URL 导航，并建立独立的单相册空间工作台。
 > 本阶段原则：先打通主流程，保持现有后端 API 和数据模型，不提前引入完整权限重构、发布状态机或新的状态管理库。
 
 ---

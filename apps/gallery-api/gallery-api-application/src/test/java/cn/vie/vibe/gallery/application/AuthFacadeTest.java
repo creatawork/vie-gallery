@@ -2,11 +2,13 @@ package cn.vie.vibe.gallery.application;
 
 import cn.vie.vibe.gallery.domain.Membership;
 import cn.vie.vibe.gallery.domain.MembershipRole;
+import cn.vie.vibe.gallery.domain.PasswordResetToken;
 import cn.vie.vibe.gallery.domain.Tenant;
 import cn.vie.vibe.gallery.domain.TenantStatus;
 import cn.vie.vibe.gallery.domain.User;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,10 +43,43 @@ class AuthFacadeTest {
         final Users users = new Users();
         final Tenants tenants = new Tenants();
         final Memberships memberships = new Memberships();
+        final ResetTokens resetTokens = new ResetTokens();
+        final FixedTokenGenerator tokenGenerator = new FixedTokenGenerator();
+        final RecordingEmailPort emailPort = new RecordingEmailPort();
         final AuthFacade auth = new AuthFacade(users, tenants, memberships, new PasswordHasher() {
             public String hash(String rawPassword) { return "hash:" + rawPassword; }
             public boolean matches(String rawPassword, String hash) { return hash.equals("hash:" + rawPassword); }
-        });
+        }, resetTokens, tokenGenerator, emailPort);
+    }
+
+    private static final class FixedTokenGenerator implements TokenGenerator {
+        public String generateToken() { return "fixed-token-43-characters-aaaaaaaaaaaaaa"; }
+        public String hashToken(String rawToken) { return "hash:" + rawToken; }
+        public boolean verifyToken(String rawToken, String tokenHash) { return tokenHash.equals("hash:" + rawToken); }
+    }
+
+    private static final class RecordingEmailPort implements EmailPort {
+        String lastEmail;
+        String lastToken;
+        public void sendPasswordReset(String toEmail, String resetToken, Duration validFor) {
+            lastEmail = toEmail;
+            lastToken = resetToken;
+        }
+    }
+
+    private static final class ResetTokens implements PasswordResetTokenRepository {
+        final List<PasswordResetToken> saved = new ArrayList<>();
+        public PasswordResetToken save(PasswordResetToken token) { saved.add(token); return token; }
+        public Optional<PasswordResetToken> findByTokenHash(String tokenHash) {
+            return saved.stream().filter(t -> t.tokenHash().equals(tokenHash)).findFirst();
+        }
+        public void markAsUsed(UUID tokenId, Instant usedAt) {
+            saved.removeIf(t -> t.id().equals(tokenId));
+            saved.stream().filter(t -> t.id().equals(tokenId)).findFirst()
+                    .ifPresent(old -> saved.add(new PasswordResetToken(old.id(), old.userId(), old.tokenHash(),
+                            old.expiresAt(), usedAt, old.createdAt())));
+        }
+        public void deleteByUserId(UUID userId) { saved.removeIf(t -> t.userId().equals(userId)); }
     }
 
     private static final class Users implements UserRepository {

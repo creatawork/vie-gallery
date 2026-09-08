@@ -157,238 +157,62 @@ const presets = [
 </template>
 
 <style scoped>
-.preset-selector {
-  width: 100%;
-}
-
+.preset-selector { width: 100%; }
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
 }
-
-/* ==========================================
-   Ultra-Modern Clean Card Architecture
-   ========================================== */
 .preset-card {
   position: relative;
-  background: #ffffff;
-  border: 1.5px solid rgba(226, 232, 240, 0.85);
+  padding: 14px;
   border-radius: 16px;
-  padding: 18px 20px 16px;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  text-align: left;
-  box-shadow: 
-    0 2px 8px rgba(15, 23, 42, 0.03),
-    0 0 0 1px rgba(255, 255, 255, 0.9) inset;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow: hidden;
-}
-
-.preset-card:hover {
-  transform: translateY(-3px) scale(1.008);
-  border-color: var(--accent-color);
-  box-shadow: 
-    0 12px 24px -4px rgba(15, 23, 42, 0.08),
-    0 4px 12px rgba(16, 185, 129, 0.06);
-}
-
-.preset-card.active {
-  border-color: #10b981;
-  background: linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%);
-  box-shadow: 
-    0 0 0 2px rgba(16, 185, 129, 0.35),
-    0 10px 24px rgba(16, 185, 129, 0.12);
-}
-
-/* ==========================================
-   Top Header Row: Icon + Swatch + Category
-   ========================================== */
-.card-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.preset-icon-badge {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: var(--accent-bg);
-  color: var(--accent-color);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: all 0.25s ease;
-}
-
-.preset-card:hover .preset-icon-badge {
-  transform: scale(1.08) rotate(4deg);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.preset-card.active .preset-icon-badge {
-  background: #10b981;
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
-}
-
-.header-right-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Swatch Dots */
-.palette-swatch {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(14, 41, 32, 0.04);
+  transition: all 0.22s ease;
 }
-
-.swatch-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-
-.category-pill {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #475569;
-  background: #f1f5f9;
-  padding: 3px 9px;
-  border-radius: 6px;
-  border: 1px solid rgba(203, 213, 225, 0.5);
-  text-transform: uppercase;
-}
-
-.preset-card.active .category-pill {
-  color: #047857;
-  background: #d1fae5;
+.preset-card:hover {
+  transform: translateY(-2px);
   border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.1);
 }
-
-/* ==========================================
-   Title & Subtitle
-   ========================================== */
-.card-title-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.preset-card.is-active,
+.preset-card.active {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(236, 253, 245, 0.85);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15), 0 10px 24px rgba(16, 185, 129, 0.12);
 }
-
-.main-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.card-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.preset-icon-badge {
+  width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+  color: #047857; background: linear-gradient(135deg, #ecfdf5, #d1fae5);
 }
-
-.card-title-group h4 {
-  font-size: 16px;
-  font-weight: 750;
-  color: #0f172a;
-  letter-spacing: -0.02em;
-  margin: 0;
-  transition: color 0.2s ease;
+.header-right-meta { display: flex; align-items: center; gap: 6px; }
+.palette-swatch, .swatch-dot { display: flex; gap: 4px; }
+.swatch-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.8); }
+.category-pill {
+  padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700;
+  color: #047857; background: rgba(16, 185, 129, 0.12);
 }
-
-.preset-card:hover h4 {
-  color: var(--accent-color);
-}
-
-.preset-card.active h4 {
-  color: #047857;
-}
-
-.en-subtitle {
-  font-size: 11.5px;
-  color: #94a3b8;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
+.card-title-group { margin-top: 10px; }
+.main-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.main-title-row strong { font-size: 14px; color: #0f172a; }
+.en-subtitle { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 .active-indicator-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  background: #10b981;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+  font-size: 11px; font-weight: 700; color: #047857;
+  padding: 2px 8px; border-radius: 999px; background: rgba(16, 185, 129, 0.14);
 }
-
-/* ==========================================
-   Feature Tags Container
-   ========================================== */
-.tags-container {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
+.tags-container { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
 .feature-tag {
-  font-size: 11.5px;
-  font-weight: 550;
-  color: #64748b;
-  background: #f8fafc;
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  padding: 3px 8px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  font-size: 10.5px; padding: 2px 7px; border-radius: 999px;
+  color: #475569; background: rgba(241, 245, 249, 0.9);
 }
-
-.preset-card:hover .feature-tag {
-  background: #ffffff;
-  border-color: rgba(203, 213, 225, 0.9);
-  color: #334155;
-}
-
-.preset-card.active .feature-tag {
-  background: rgba(255, 255, 255, 0.9);
-  color: #047857;
-  border-color: rgba(16, 185, 129, 0.25);
-}
-
-/* ==========================================
-   Bottom Spectrum Line
-   ========================================== */
 .spectrum-bar-track {
-  width: 100%;
-  height: 4px;
-  background: rgba(226, 232, 240, 0.4);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-top: 2px;
+  margin-top: 12px; height: 4px; border-radius: 999px; background: rgba(16, 185, 129, 0.12); overflow: hidden;
 }
-
 .spectrum-bar-fill {
-  width: 100%;
-  height: 100%;
-  border-radius: 2px;
-  opacity: 0.7;
-  transition: opacity 0.25s ease;
-}
-
-.preset-card:hover .spectrum-bar-fill {
-  opacity: 1;
-}
-
-.preset-card.active .spectrum-bar-fill {
-  opacity: 1;
+  height: 100%; border-radius: inherit; background: linear-gradient(90deg, #34d399, #059669);
 }
 </style>

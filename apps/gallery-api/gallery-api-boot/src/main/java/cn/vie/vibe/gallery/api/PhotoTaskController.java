@@ -100,7 +100,7 @@ public class PhotoTaskController {
         if (photos == null || objects == null || quotas == null) return;
         photos.findById(tenant, task.photoId()).ifPresent(photo -> objects.findById(tenant, photo.storageObjectId()).ifPresent(object -> {
             objects.softDelete(tenant, object.id());
-            quotas.release(tenant, object.byteSize(), 1);
+            quotas.releaseOnce(tenant, "PHOTO", photo.id(), object.byteSize(), 1);
             photos.updateStatus(tenant, photo.id(), PhotoStatus.CANCELLED);
         }));
     }

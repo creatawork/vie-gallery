@@ -19,22 +19,24 @@ public class GalleryFacade {
     private final TenantContextResolver tenantContext;
     private final PhotoRepository photos;
     private final WorkspaceAuthorizationPolicy authorization;
+    private final PasswordHasher passwordHasher;
 
     public GalleryFacade(GalleryRepository galleries, TenantContextResolver tenantContext) {
-        this(galleries, tenantContext, null, new WorkspaceAuthorizationPolicy(tenantContext));
+        this(galleries, tenantContext, null, new WorkspaceAuthorizationPolicy(tenantContext), null);
     }
 
     public GalleryFacade(GalleryRepository galleries, TenantContextResolver tenantContext, PhotoRepository photos) {
-        this(galleries, tenantContext, photos, new WorkspaceAuthorizationPolicy(tenantContext));
+        this(galleries, tenantContext, photos, new WorkspaceAuthorizationPolicy(tenantContext), null);
     }
 
     @Autowired
     public GalleryFacade(GalleryRepository galleries, TenantContextResolver tenantContext, PhotoRepository photos,
-                         WorkspaceAuthorizationPolicy authorization) {
+                         WorkspaceAuthorizationPolicy authorization, PasswordHasher passwordHasher) {
         this.galleries = galleries;
         this.tenantContext = tenantContext;
         this.photos = photos;
         this.authorization = authorization;
+        this.passwordHasher = passwordHasher;
     }
 
     public List<Gallery> list() {
@@ -97,6 +99,41 @@ public class GalleryFacade {
         Gallery updated = new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
                 gallery.visibility(), gallery.passwordHash(), gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
                 GalleryStatus.DRAFT, null);
+        galleries.update(updated);
+        return updated;
+    }
+
+    @Transactional
+    public Gallery setPassword(java.util.UUID galleryId, String rawPassword) {
+        TenantContext context = authorization.requireOwner();
+        Gallery gallery = galleries.findById(context.tenantId(), galleryId)
+                .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+        
+        if (gallery.visibility() != GalleryVisibility.PASSWORD) {
+            throw new DomainException("INVALID_OPERATION", "Gallery must have PASSWORD visibility to set password");
+        }
+        
+        if (passwordHasher == null) {
+            throw new IllegalStateException("PasswordHasher not available");
+        }
+        
+        String passwordHash = passwordHasher.hash(rawPassword);
+        Gallery updated = new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                gallery.visibility(), passwordHash, gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
+                gallery.status(), gallery.publishedAt());
+        galleries.update(updated);
+        return updated;
+    }
+
+    @Transactional
+    public Gallery clearPassword(java.util.UUID galleryId) {
+        TenantContext context = authorization.requireOwner();
+        Gallery gallery = galleries.findById(context.tenantId(), galleryId)
+                .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+        
+        Gallery updated = new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                gallery.visibility(), null, gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
+                gallery.status(), gallery.publishedAt());
         galleries.update(updated);
         return updated;
     }

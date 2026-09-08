@@ -1,6 +1,33 @@
 # VIE Gallery 测试与验收指南
 
-本文档是当前测试入口。所有示例以 Gallery API、UUID 和 `infra/.env` 的端口为准；旧的 spaces/albums API 资料已移入 [`docs/archive/`](archive/)。
+本文档是个人相册 V1 当前唯一的运行、测试和上线验收入口。产品与工程范围见 [`personal-album-v1-plan.md`](personal-album-v1-plan.md)，M7 事实证据见 [`m7-testing-results.md`](m7-testing-results.md)。历史资料位于 [`archive/README.md`](archive/README.md)，不作为当前测试依据。
+
+## 当前验收快照
+
+> 快照日期：2026-09-08。以下状态以真实环境报告和近期提交为准，不以旧计划中的未勾选清单为准。
+
+### 已完成并有验收证据
+
+- M3.5 公开访问稳定化核心链路。
+- M4 发布状态、公开隔离、分享撤销和 SEO 基础。
+- M5 OWNER/EDITOR/VIEWER 核心授权和成员管理。
+- M6 上传任务列表、详情、部分成功、重试、取消和刷新恢复。
+- M6.5 登录/密码解锁限流、413 语义、PRIVATE 语义和分享访问记录。
+- M7.1 Viewer 配置草稿、发布、版本历史、schema 校验和回滚。
+- M7.2 3D Gallery 生成 WebP TEXTURE，2D Gallery 跳过 TEXTURE。
+- **P0-01 基础质量门禁**：文档链接检查、前端类型检查、前端构建和后端单元测试已纳入 GitHub Actions CI。
+- **P0-03 账户密码恢复与 Gallery 密码设置**：忘记密码/重置密码和 Gallery PASSWORD 设置/清除已完成。
+
+### 部分完成或待验收
+
+- M7.3：设备能力基础判断存在；LOD、持续低 FPS 阶梯降级、WebGL 初始化失败自动回退 2D 和完整移动端证据未完成。
+- M7.4：媒体 CDN、缓存策略、社交爬虫 Meta 静态壳和真实社交平台验收未完成。
+- M7.5：需要在本期可靠性、Viewer 和分发能力完成后执行综合回归。
+- 真实 MySQL/Redis/MinIO 集成测试和备份恢复演练仍是 P0-01 后续工作。
+- CI 已覆盖文档链接、类型检查、前端构建和后端单元测试；真实依赖集成测试待补齐。
+- P0-02 上传/对象/任务/配额一致性修复待开始。
+- P0-04 生产安全配置和部署基线锁定待开始。
+- P0-05 可观测性、告警和恢复手册待建立。
 
 ## 环境要求
 
@@ -48,7 +75,27 @@ docker compose -f infra/docker-compose.yml down
 
 ## 自动化检查
 
-### 后端
+### CI 质量门禁
+
+GitHub Actions 在每次 push/PR 时自动执行：
+
+```bash
+# 文档链接检查
+npm run check:docs
+
+# 前端类型检查
+npm run typecheck
+
+# 前端构建
+npm run build
+
+# 后端单元测试
+mvn -B -ntp -f apps/gallery-api/pom.xml test
+```
+
+CI 当前覆盖单元测试、类型安全、构建和文档链接；真实 MySQL/Redis/MinIO 集成测试属于 P0-01 后续工作。
+
+### 本地后端测试
 
 ```bash
 cd apps/gallery-api
@@ -56,25 +103,34 @@ mvn test
 mvn -DskipTests verify
 ```
 
-重点测试公开访问、分享 Token、密码 Session、READY 过滤和分页：
+重点测试公开访问、分享 Token、密码 Session、READY 过滤、任务状态和配置版本：
 
 - `PublicAccessFacadeTest`
 - `PublicGalleryControllerTest`
 - `ShareLinkFacadeTest`
+- `PhotoProcessingTaskStateMachineTest`
+- `GalleryViewerConfigVersioningTest`
+- `RedisRateLimiterTest`
 
-### 前端
+当前后端测试是单元测试为主；真实 MySQL、Redis、MinIO 集成测试属于本期上线前交付物。
+
+### 本地前端检查
 
 ```bash
-cd apps/gallery-admin
-npm install
+# 安装依赖（首次或依赖更新后）
+npm ci
+
+# 类型检查
+npm run typecheck
+
+# 构建
 npm run build
 
-cd ../gallery-viewer
-npm install
-npm run build
+# 统一验证（文档链接 + 类型检查 + 构建）
+npm run verify
 ```
 
-Viewer build 应包含 TypeScript 检查；前端单测配置完成后，使用各应用 package.json 中声明的 test 命令运行。
+前端构建包含 TypeScript 类型检查；单元测试和浏览器 E2E 在本期上线前纳入 CI。
 
 ### CLI 主流程
 
@@ -93,234 +149,103 @@ VIEWER_UI=http://localhost:5174 \
 bash test-mcp-flow.sh
 ```
 
-脚本应只调用当前接口：
+脚本应只调用当前 Gallery 接口，不使用旧的 spaces/albums API、数字 ID 或只通过 grep 响应字符串判断成功。失败时应输出 HTTP status、endpoint、业务 code 和 requestId。
 
-```text
-POST /api/auth/register
-POST /api/auth/login
-GET  /api/me
-POST /api/galleries
-GET  /api/galleries
-GET  /api/galleries/{id}
-POST /api/galleries/{id}/photos
-POST /api/galleries/{id}/publish
-POST /api/galleries/{id}/unpublish
-GET  /api/galleries/{id}/photos
-POST /api/galleries/{id}/share-links
-GET  /api/public/g/{slug}
-POST /api/public/g/{slug}/unlock
-GET  /api/public/g/{slug}/photos
-POST /api/auth/logout
-```
+当前 CLI 已验证注册、登录、Gallery 创建、上传 READY、发布、PRIVATE Token、PASSWORD 前置状态、分享列表和登出。撤回后重新发布、撤销 Token、PASSWORD 成功解锁等场景在补齐能力后执行。
 
-M4 当前 CLI 已验证：新 Gallery 为 DRAFT、上传并等待 READY、发布后公开访问、PRIVATE Token、PASSWORD 前置状态和分享列表。尚未覆盖：撤回后重新发布、撤销链接后旧 Token 失效、PASSWORD 成功解锁及 Session 过期。
+## 个人相册 V1 验收矩阵
 
-脚本失败时应输出 HTTP status、endpoint、业务 code 和 requestId。不要用旧的数字 Space ID、Album ID 或只通过 grep 响应字符串判断成功。
+### 备份与任务恢复
 
-## 发布验收矩阵
+- 原始照片成功进入私有对象存储，数据库对象记录和任务记录可追踪。
+- 3D 相册生成 HIGH/TEXTURE 变体，2D 相册不生成 TEXTURE。
+- 单批次部分成功不会阻断有效照片；失败文件有明确错误和重试入口。
+- QUEUED/PROCESSING 任务可取消；失败任务按策略可重试。
+- Worker 租约丢失、服务重启后任务可恢复或进入可修复状态。
+- 删除、对象清理和配额释放具备幂等语义；取消与完成竞态不重复释放。
+- 备份、恢复、孤儿对象扫描和配额对账有可执行记录。
 
-- 新 Gallery 默认 `DRAFT`，匿名公开端返回 404。
-- 至少一张 READY 照片后才可 publish。
-- PUBLISHED PUBLIC 页面可访问；Viewer 页面为 `index,follow` 且 canonical 不含 Token。
-- unpublish 后公开端立即返回 404；Viewer 设置 `noindex,nofollow` 并清理 canonical。
-- DRAFT/ARCHIVED 无法创建新分享链接，已有 Token/Session 不得绕过发布状态。
-- Docker Compose 本地默认以 `host.docker.internal:9000` 作为签名 URL 公开端点；生产必须通过 `STORAGE_PUBLIC_ENDPOINT` 设置真实外部地址。
+### 记录与管理
 
-## 公开访问验收矩阵
+- 新相册默认为 DRAFT，创建成功后进入 `/app/galleries/{id}`。
+- 相册名称、slug、封面、状态、照片数、失败数和更新时间来自服务端事实。
+- 照片可设置标题、顺序、封面并软删除；空状态、长名称、无封面和失败状态可读。
+- 总览支持基础搜索、筛选和排序；刷新/深链可恢复工作区上下文。
+- 存储用量、处理中任务、失败任务和待发布变更对用户可见。
+- 注册、登录、退出、忘记密码/重置密码行为可完成且错误可恢复。
 
-### PUBLIC
+### 创作与发布
 
-- 无登录、无 Token 打开 `/g/:slug` 成功。
-- 只返回 READY 且未软删除的照片。
-- `photoCount`、分页 `total` 与实际照片数量一致。
-- 空相册返回空列表，不返回 404。
+- 2D 和 3D Viewer 均可用；配置草稿不会直接改变访客公开版本。
+- 保存草稿、发布、版本历史和回滚行为有真实 API 与浏览器证据。
+- 创作者可以预览草稿，发布前可看到内容/视觉变更状态。
+- 发布前至少有一张 READY 照片；DRAFT/ARCHIVED 不对外展示。
+- 配置 JSON 有 schema、大小和数值范围校验。
 
-### PRIVATE
+### 分享与安全访问
 
-- 无 Token 显示需要分享链接。
-- 当前 Gallery 的有效 Token 可访问。
-- 其他 Gallery、无效、过期和撤销 Token 均被拒绝。
-- 新链接格式为 `/g/:slug?t=<rawToken>`。
+- PUBLIC 无凭证可访问已发布内容。
+- PRIVATE 仅有效分享 Token 可访问；无效、过期、撤销 Token 均被拒绝。
+- PASSWORD 错误尝试限流；补齐密码设置 API/UI 后验证正确密码创建短期 Session。
+- 分享链接有有效期、撤销和最近访问状态；Token 不进入日志、Meta、canonical 或错误详情。
+- 公开端只返回已发布、READY 且未软删除的照片。
+- PUBLIC 社交预览可读；PRIVATE/PASSWORD noindex 且不泄露封面或 Token。
+- 可配置下载策略，二维码和移动端打开链路可用。
 
-### PASSWORD
+### Viewer 兼容与性能
 
-- 未解锁显示密码输入。
-- 正确密码创建当前 Gallery 绑定的短期 Session。
-- 错误密码不会创建授权 Session。
-- Session 过期或跨 slug 使用时回到密码输入/明确拒绝。
+- WebGL 初始化失败自动切换 2D 并显示可理解提示。
+- 远景使用 medium，近景使用 texture；资源按视野加载，切换无明显闪烁。
+- 低 FPS 持续后按阶梯关闭粒子、Bloom、Fog 和高 DPR，并具备防抖。
+- 3D/2D 多次切换后无监听器、动画帧、纹理和旧 Mesh 泄漏。
+- 390px 移动端无横向溢出，单指旋转、双指缩放和触屏标签可用。
+- 采集首屏、首张照片、100 张照片、FPS、峰值内存和 2D fallback 指标。
 
-### 分页和错误
+## 发布验收门槛
 
-- `page >= 0`、`1 <= pageSize <= 100`。
-- 非法参数返回 400/422，不产生负 offset。
-- 401、403、404、409、429、5xx、HTML body、空 body 和网络断开都显示可恢复状态。
-- Viewer 不展示 stack trace、tenantId、tokenHash、对象 key 或内部异常。
+个人相册 V1 只有在以下条件全部满足后才可上线：
 
-## 浏览器 E2E 手工流程
+1. 注册→创建→上传→处理→整理→配置→预览→发布→分享→访客访问全链路通过。
+2. PUBLIC/PRIVATE/PASSWORD 访问矩阵通过，且私密资源无泄露证据。
+3. OWNER/EDITOR/VIEWER 不越权；历史权限补证不影响当前上线结论。
+4. 任务失败、重试、取消、租约丢失和服务重启有可恢复路径。
+5. 任意设备至少可以使用 2D 浏览；3D 失败不会白屏。
+6. CI、集成测试、迁移、备份恢复、监控、告警和回滚说明齐备。
+7. 生产环境没有默认账号、弱口令、非 Secure Session Cookie 或 demo 内容。
+8. 上传失败、队列积压、存储异常和公开访问异常可被发现和定位。
+
+## 浏览器手工流程
 
 1. 打开 <http://localhost:5173>，注册并登录。
-2. 创建 Gallery，确认跳转到 `/app/galleries/{id}`。
-3. 上传一张图片，等待状态变为 READY。
-4. 设置封面并打开配置页，刷新后确认上下文仍存在。
-5. 发布 Gallery，确认工作区显示已发布状态，Viewer 可访问。
-6. 创建分享链接，确认链接使用 `/g/{slug}?t=`；检查列表与撤销确认。
-7. 撤回发布，确认公开端 404、Viewer noindex；重新发布后按 visibility 恢复访问。
-8. 分别验证 PRIVATE Token、PASSWORD 解锁、错误密码、过期 Session、空相册和不存在 slug。
-9. 在 390px 移动端宽度检查无横向溢出和错误恢复入口。
+2. 创建相册，确认跳转到 `/app/galleries/{id}`。
+3. 上传多张图片，确认任务中心显示批次、阶段、进度和部分成功结果。
+4. 设置封面、标题和顺序，刷新后确认工作区上下文仍存在。
+5. 打开配置页，保存草稿、预览、发布，再确认公开端只显示已发布配置。
+6. 发布相册，创建 7 天/30 天/永久分享链接，复制链接并验证访问。
+7. 撤回发布，确认公开端 404/noindex；重新发布后按 visibility 恢复访问。
+8. 验证 PRIVATE Token、PASSWORD 错误限流、过期 Session、空相册和不存在 slug。
+9. 禁用/模拟不可用 WebGL，确认自动切换 2D；在 390px 宽度检查交互和错误恢复入口。
 
-已知限制：当前尚无 Gallery 密码设置 API/UI，因此 PASSWORD 的成功解锁只能在补齐该能力后验收。
+## M7 当前证据
 
-## M5 当前验收状态
+详细证据见 [`m7-testing-results.md`](m7-testing-results.md)：
 
-已完成：
-
-- 后端 44 项测试全部通过。
-- Admin/Viewer/shared contracts 构建通过。
-- Docker V7 migration 和健康检查通过。
-- OWNER/EDITOR/VIEWER 的 `/api/me` role/capabilities 已验证。
-- OWNER 成员列表、添加 EDITOR、EDITOR/VIEWER 受限写操作 403 已验证。
-- OWNER Admin 成员页和添加成员交互已通过浏览器 MCP 验证。
-
-待补：
-
-- 三角色完整 HTTP API 矩阵。
-- V7 从已有 V1–V6 数据升级报告。
-- 最后 OWNER 并发保护集成测试。
-- 成员移除后旧 Session 失效验证。
-- EDITOR/VIEWER 完整浏览器交互验收。
-
-## M6 / M6.5 当前验收状态
-
-M6 上传任务生产化与 M6.5 发布前硬化已实现并通过真实环境验收：
-
-- 后端 12 个测试类共 59 项全部通过；Admin/Viewer build 通过。
-- Docker Compose 真实环境验收：`test-mcp-flow.sh` 主流程 29 项全过。
-- M6 专项（真实 HTTP）：批量上传 3 有效 + 1 不可解码部分成功（rejected 带 `IMAGE_DECODE_FAILED`）、任务列表 `{items,page,pageSize,total,summary}`、任务详情扩展字段（progress/stage/attempts/maxAttempts/retryable/filename）、新会话刷新后从服务端恢复任务列表、SUCCEEDED 任务的 retry/cancel 均 409 `TASK_STATE_CONFLICT`、QUEUED 任务 cancel 后变 CANCELLED 且列表 summary 可见。
-- M6.5 专项（真实 HTTP）：登录 5 次错误密码 401 后第 6 次 429 `RATE_LIMITED`；PASSWORD 解锁 5 次 403 后第 6 次 429；超 100MB 上传返回 413 `FILE_TOO_LARGE`；分享链接访问后 `lastAccessedAt` 记录、短期链接过期后 404、撤销后 404。
-- M6.5 浏览器验证（Playwright/浏览器 MCP）：注册/登录表单无预填账密；创建空间自动跳转工作台；PRIVATE 创建文案为"仅持有有效分享链接的访客可访问"；上传 3 张照片 READY 后任务中心展示摘要、阶段、1/3 尝试与进度；分享弹窗提供"链接有效期"（7 天 / 30 天 / 永久，默认 30 天）；创建后有效期至恰为 30 天后；刷新页面后任务中心与分享列表从服务端恢复；Viewer `/g/`（无 slug）显示"相册空间未找到"而非 demo 内容。
-
-注：密码策略下调与忘记密码重置按决策推迟到上线前准备阶段（M6.5 文档 2.2）。系统仍未提供 Gallery 密码设置 API/UI，因此 PASSWORD 的成功解锁仍未覆盖。
+- M7.1 配置版本化真实 API、数据库迁移、发布和回滚已通过。
+- M7.2 3D TEXTURE WebP 和 2D 跳过 TEXTURE 已通过真实 MinIO/HTTP 验收。
+- M7.3 LOD、低 FPS 阶梯降级、WebGL 初始化失败回退尚未形成闭环。
+- M7.4 CDN、Meta 社交预览和真实性能基准尚未验收。
 
 ## 故障排查
 
 ```bash
-# 服务状态和日志
 docker compose -f infra/docker-compose.yml ps
 docker compose -f infra/docker-compose.yml logs -f gallery-api
-
-# API 和 MinIO 健康检查
 curl -i http://localhost:8088/actuator/health
 curl -i http://localhost:9000/minio/health/live
-
-# 前端日志
-# Admin: /tmp/vie-admin.log
-# Viewer: /tmp/vie-viewer.log
 ```
 
-如果 API 无法访问，先检查 `infra/.env` 的宿主映射，再检查容器内 8080 监听；不要直接把脚本改回 8080。若图片地址在浏览器不可达，检查 `STORAGE_PUBLIC_ENDPOINT`、反向代理和对象存储签名策略。
+如果 API 无法访问，先检查 `infra/.env` 的宿主映射，再检查容器内 8080 监听；如果图片地址不可达，检查 `STORAGE_PUBLIC_ENDPOINT`、反向代理和对象存储签名策略。
 
-## M7.2 测试验收记录
+## 历史补证与当前阻断项
 
-M7.2 代码和核心运行态验收已完成，详细证据见 [`docs/m7-testing-results.md`](m7-testing-results.md)：
-
-- [x] 后端 Maven 编译、测试和 package 通过（`mvn test`：48 项通过）。
-- [x] Admin `npm run build` 通过。
-- [x] Viewer `npm run build` 通过。
-- [x] Docker/MySQL 已执行 V1–V10，V9/V10 成功，历史配置版本已迁移。
-- [x] 真实 MinIO 已验证 WebP texture 对象、MIME、文件头和尺寸。
-- [x] 3D Gallery 真实 HTTP 链路生成 TEXTURE，2D Gallery 真实 HTTP 链路跳过 TEXTURE。
-- [x] 公开照片响应已增加可选 `mediumUrl` 和 `textureUrl`，旧 `thumbnailUrl` 字段保持兼容。
-- [x] Viewer 浏览器页面已加载真实 Gallery，显示 3D/2D 控件；texture URL 已通过公开 API 和 MinIO 响应独立核验。
-
-尚未完成的运行态专项：
-
-- [ ] texture 编码失败、重试、取消和租约丢失场景。
-- [ ] Viewer 端完整 LOD 距离切换、持续低 FPS 阶梯降级和 WebGL 失败回退。
-- [ ] CDN、Meta 社交预览和性能基准。
-
-
-
-- 当前文档、脚本不再使用旧 spaces/albums API（archive 除外）。
-- 后端测试、Admin/Viewer build 和 Compose 健康检查通过。
-- PUBLIC、PRIVATE、PASSWORD 的访问、错误、分页和恢复链路有自动化或等价运行态证据。
-- 公开照片 URL 使用短期签名策略，不依赖永久公开对象地址。
-
-## M7 测试验收标准
-
-M7（Viewer 配置版本化、CDN 与 3D 性能优化）验收矩阵：
-
-### 配置版本化
-
-- [x] **草稿保存**: 真实 API 保存草稿成功，版本历史不新增，公开快照不改变
-- [x] **发布创建版本**: 真实 API 连续发布创建新版本，数据库 `published_version_id` 指向生效版本
-- [x] **回滚功能**: 真实 API 回滚创建第三个版本并恢复首个版本内容
-- [x] **schema 校验**: 单测覆盖旧 schema_version 返回 `BAD_SCHEMA_VERSION`
-- [ ] **权限控制**: VIEWER 角色真实 HTTP 403 尚未在本轮执行
-- [x] **版本历史**: 真实 API 返回版本列表；Admin UI 构建通过
-
-### TEXTURE 阶段
-
-- [x] **3D Gallery 纹理生成**: 真实上传任务生成 `/{photoId}/texture` WebP 对象
-- [x] **2D Gallery 跳过纹理**: 真实 2D Gallery 只生成 HIGH，不生成 TEXTURE
-- [x] **进度阶段**: Worker 真实执行 TEXTURE 阶段并最终完成
-- [x] **纹理质量**: 实际 WebP 为 1042×654，最长边小于 2048px，MIME 与文件头正确
-
-### 性能降级
-
-- [ ] **设备探测**: 代码存在 `deviceMemory`/CPU/移动端基础判断，但本轮未完成真实低端设备浏览器证据
-- [ ] **LOD 切换**: 当前未发现按相机距离在 medium/texture 之间切换的完整实现
-- [ ] **FPS 降级**: 当前未发现持续低 FPS 后关闭 particles → bloom → fog → DPR 的完整阶梯逻辑
-- [ ] **WebGL fallback**: 当前仅有 context lost/restored 监听，未完成初始化失败切换 2D 和 Toast 的运行态闭环
-- [ ] **移动端触控**: 代码存在 OrbitControls 和陀螺仪入口，真实移动端流畅性尚未验收
-
-### CDN 与社交预览
-
-- [ ] **媒体子域**: `media.vie-vibe.cn` 代理 MinIO，Nginx 配置 `Cache-Control: public, max-age=31536000, immutable`
-- [ ] **版本化 key**: 对象 key 包含 hash 或时间戳（`/{photoId}-{hash}.webp`）
-- [ ] **爬虫 Meta**: 微信/Telegram UA 请求返回静态 HTML，带完整 og/twitter meta
-- [ ] **noindex 私有**: PRIVATE/PASSWORD 相册返回 noindex/nofollow，无 token 泄漏
-- [ ] **社交分享**: 微信公众平台/Telegram Debugger 拿到正确卡片（标题/描述/封面）
-
-### 回归测试
-
-- [ ] **M4 发布**: DRAFT/PUBLISHED/ARCHIVED 状态流转正常
-- [ ] **M5 授权**: OWNER/EDITOR/VIEWER 权限控制正确
-- [ ] **M6 任务**: 上传任务队列/重试/取消功能正常
-- [ ] **M6.5 限流**: 登录/解锁 429 RATE_LIMITED 正常触发
-
-### 性能基准
-
-- [ ] **3D 加载时间**: 100 张照片加载时间 < 3s
-- [ ] **低端设备 FPS**: 降级后 FPS > 40
-- [ ] **内存使用**: 峰值内存 < 500MB
-- [ ] **首屏渲染**: < 1s
-- [ ] **CDN 命中率**: > 80%（本地模拟）
-- [ ] **社交预览成功率**: > 95%（3 种以上爬虫 UA）
-
-### 测试工具与脚本
-
-```bash
-# 后端测试（M7 新增测试类）
-cd apps/gallery-api
-mvn test -Dtest=ViewerConfigVersionTest
-mvn test -Dtest=TextureProcessorTest
-mvn test -Dtest=PhotoProcessingWorkerTextureTest
-
-# E2E 测试（Playwright）
-cd apps/gallery-viewer
-npm run test:e2e -- --grep "M7"
-
-# CLI 流程扩展
-bash test-mcp-flow.sh --features m7
-
-# 性能测试
-curl -w "@perf-curl-format.txt" -o /dev/null http://localhost:5174/g/{slug}
-```
-
-### 已知限制与TODO
-
-- [ ] TEXTURE 阶段依赖 Gallery 配置判断 3D 模式（当前简化为 preset 名称包含"3d"）
-- [ ] LOD 切换阈值可配置化（当前硬编码 10m）
-- [ ] Meta 服务器无状态设计，生产需水平扩展
-- [ ] CDN 回源 purge 接口未实现（当前依赖版本化 key 自然失效）
-- [ ] 密码设置 API/UI 未实现，PASSWORD 解锁验收部分未完成
+M3.5、M4、M5 的少量历史浏览器、并发和升级报告可以在上线后补充，不得替代本期核心安全、数据一致性、2D 保底、密码恢复和集成测试门槛。所有未完成项以 [`docs/personal-album-v1-plan.md`](personal-album-v1-plan.md) 的里程碑为准。

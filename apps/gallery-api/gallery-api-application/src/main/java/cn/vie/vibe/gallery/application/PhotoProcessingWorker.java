@@ -195,7 +195,7 @@ public class PhotoProcessingWorker implements DisposableBean {
         photos.findById(task.tenantId(), task.photoId()).ifPresent(photo -> {
             objects.findById(task.tenantId(), photo.storageObjectId()).ifPresent(object -> {
                 objects.softDelete(task.tenantId(), object.id());
-                if (quotas != null) quotas.release(task.tenantId(), object.byteSize(), 1);
+                if (quotas != null) quotas.releaseOnce(task.tenantId(), "PHOTO", photo.id(), object.byteSize(), 1);
             });
         });
         log.info("gallery_task_transition taskId={} photoId={} tenantId={} workerId={} fromStatus={} toStatus={}",

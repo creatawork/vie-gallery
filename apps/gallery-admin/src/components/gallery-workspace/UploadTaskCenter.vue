@@ -24,86 +24,317 @@ const emit = defineEmits<{
 const total = computed(() => props.summary.queued + props.summary.processing + props.summary.cancelRequested + props.summary.succeeded + props.summary.failed + props.summary.cancelled)
 const activeCount = computed(() => props.summary.queued + props.summary.processing + props.summary.cancelRequested)
 const filterOptions = computed<Array<{ value: TaskFilter; label: string; count?: number }>>(() => [
-  { value: 'ALL', label: '全部', count: total.value },
+  { value: 'ALL', label: '全部任务', count: total.value },
   { value: 'ACTIVE', label: '进行中', count: activeCount.value },
-  { value: 'FAILED', label: '失败', count: props.summary.failed },
+  { value: 'FAILED', label: '失败需处理', count: props.summary.failed },
   { value: 'COMPLETED', label: '已完成', count: props.summary.succeeded + props.summary.cancelled }
 ])
 </script>
 
 <template>
-  <section class="task-center" aria-labelledby="task-center-title">
+  <section class="task-center-container" aria-labelledby="task-center-title">
     <div class="task-center-header">
-      <div class="task-center-heading">
-        <span class="section-kicker">UPLOAD ACTIVITY</span>
-        <div class="title-line">
-          <h2 id="task-center-title">任务中心</h2>
-          <span v-if="activeCount" class="activity-indicator"><i></i>{{ activeCount }} 个活动任务</span>
+      <div class="task-center-title-group">
+        <div class="title-with-badge">
+          <Icon name="upload" :size="18" class="header-icon" />
+          <h2 id="task-center-title">上传与切片任务中心</h2>
+          <span v-if="activeCount" class="live-pulse-badge">
+            <span class="live-dot"></span>
+            {{ activeCount }} 个任务进行中
+          </span>
         </div>
-        <p>实时查看照片处理进度，失败任务可以安全重试。</p>
+        <p class="task-center-subtitle">实时查看大图切片与 WebGL 纹理转换队列，失败任务可快速重试</p>
       </div>
-      <button class="refresh-button" type="button" :disabled="loading || refreshing" aria-label="刷新任务列表" title="刷新任务列表" @click="emit('refresh')">
-        <Icon name="refresh" :size="16" :class="{ spin: loading || refreshing }" />
-        <span>{{ refreshing ? '刷新中…' : '刷新' }}</span>
+
+      <div class="task-center-actions">
+        <button
+          class="btn btn-secondary btn-sm refresh-btn"
+          type="button"
+          :disabled="loading || refreshing"
+          title="刷新任务状态"
+          @click="emit('refresh')"
+        >
+          <Icon name="refresh" :size="14" :class="{ spin: loading || refreshing }" />
+          <span>{{ refreshing ? '刷新中…' : '刷新' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Summary Stats Chips -->
+    <div class="task-summary-chips" aria-label="任务概览">
+      <div class="summary-chip" :class="{ 'has-active': activeCount > 0 }">
+        <span class="chip-dot dot-active"></span>
+        <span class="chip-label">处理中</span>
+        <strong class="chip-val">{{ activeCount }}</strong>
+      </div>
+      <div class="summary-chip" :class="{ 'has-failed': summary.failed > 0 }">
+        <span class="chip-dot dot-failed"></span>
+        <span class="chip-label">失败</span>
+        <strong class="chip-val">{{ summary.failed }}</strong>
+      </div>
+      <div class="summary-chip">
+        <span class="chip-dot dot-success"></span>
+        <span class="chip-label">已完成</span>
+        <strong class="chip-val">{{ summary.succeeded }}</strong>
+      </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="task-filter-pills" role="tablist">
+      <button
+        v-for="option in filterOptions"
+        :key="option.value"
+        class="task-filter-btn"
+        :class="{ active: filter === option.value }"
+        type="button"
+        role="tab"
+        :aria-selected="filter === option.value"
+        @click="emit('update:filter', option.value)"
+      >
+        <span>{{ option.label }}</span>
+        <span class="filter-count-bubble">{{ option.count }}</span>
       </button>
     </div>
 
-    <div class="task-summary" aria-label="任务摘要">
-      <div class="summary-item summary-active"><strong>{{ activeCount }}</strong><span>处理中</span></div>
-      <div class="summary-item summary-failed"><strong>{{ summary.failed }}</strong><span>需处理</span></div>
-      <div class="summary-item summary-done"><strong>{{ summary.succeeded }}</strong><span>已完成</span></div>
-      <div class="summary-item summary-cancelled"><strong>{{ summary.cancelled }}</strong><span>已取消</span></div>
+    <!-- States: Loading / Error / Empty / List -->
+    <div v-if="loading" class="task-center-state" role="status">
+      <Icon name="refresh" :size="20" class="spin spin-emerald" />
+      <span>正在同步任务队列…</span>
     </div>
 
-    <div class="task-filters" role="tablist" aria-label="任务筛选">
-      <button v-for="option in filterOptions" :key="option.value" class="filter-button" :class="{ active: filter === option.value }" type="button" role="tab" :aria-selected="filter === option.value" @click="emit('update:filter', option.value)">
-        {{ option.label }}<span>{{ option.count }}</span>
-      </button>
-    </div>
-
-    <div v-if="loading" class="task-state" role="status">
-      <Icon name="refresh" :size="20" class="spin" />
-      <span>正在加载任务…</span>
-    </div>
-    <div v-else-if="error" class="task-state task-state-error" role="alert">
+    <div v-else-if="error" class="task-center-state state-error" role="alert">
       <Icon name="alert-circle" :size="20" />
       <span>{{ error.message }}</span>
-      <button class="btn btn-secondary" type="button" @click="emit('refresh')">重试</button>
+      <button class="btn btn-secondary btn-sm" type="button" @click="emit('refresh')">重新加载</button>
     </div>
-    <div v-else-if="!tasks.length" class="task-state task-state-empty">
-      <div class="empty-icon"><Icon name="check" :size="20" /></div>
-      <strong>还没有上传任务</strong>
-      <span>上传照片后，处理进度会显示在这里。</span>
+
+    <div v-else-if="!tasks.length" class="task-center-state state-empty">
+      <div class="empty-icon-wrap">
+        <Icon name="check" :size="18" />
+      </div>
+      <strong>暂无上传任务</strong>
+      <p>上传新的照片素材后，切片与处理进度将在此处实时更新。</p>
     </div>
-    <div v-else class="task-list">
-      <UploadTaskRow v-for="task in tasks" :key="task.id" :task="task" :can-write="canWrite" @retry="emit('retry', $event)" @cancel="emit('cancel', $event)" />
+
+    <div v-else class="task-items-list">
+      <UploadTaskRow
+        v-for="task in tasks"
+        :key="task.id"
+        :task="task"
+        :can-write="canWrite"
+        @retry="emit('retry', $event)"
+        @cancel="emit('cancel', $event)"
+      />
     </div>
   </section>
 </template>
 
 <style scoped>
-.task-center { margin-top: 24px; padding: 25px 26px 26px; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-xl); background: rgba(255,255,255,.86); box-shadow: var(--shadow-md); }
-.task-center-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.section-kicker { display: block; margin-bottom: 7px; color: var(--brand-deep, #087a5c); font-size: 10px; font-weight: 800; letter-spacing: .14em; }
-.title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.task-center h2 { color: var(--text-primary); font-size: 21px; letter-spacing: -.03em; }
-.task-center-heading p { margin-top: 5px; color: var(--text-secondary); font-size: 13px; }
-.activity-indicator { display: inline-flex; align-items: center; gap: 5px; color: #b45309; font-size: 11px; font-weight: 700; }
-.activity-indicator i { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 0 4px rgba(245,158,11,.12); }
-.refresh-button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; color: var(--text-secondary); border-radius: 9px; font-size: 12px; font-weight: 650; }
-.refresh-button:hover:not(:disabled), .refresh-button:focus-visible { color: var(--brand-deep, #087a5c); background: var(--brand-accent-subtle); outline: none; }
-.refresh-button:disabled { cursor: wait; opacity: .65; }
-.task-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 22px; }
-.summary-item { display: flex; align-items: baseline; gap: 7px; padding: 12px; border-radius: var(--radius-md); background: var(--bg-surface-subtle); }
-.summary-item strong { font-size: 20px; line-height: 1; letter-spacing: -.04em; }
-.summary-item span { color: var(--text-tertiary); font-size: 11px; }
-.summary-active strong { color: #b45309; }.summary-failed strong { color: #b91c1c; }.summary-done strong { color: #047857; }.summary-cancelled strong { color: #64748b; }
-.task-filters { display: flex; gap: 4px; margin: 22px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-subtle); overflow-x: auto; scrollbar-width: thin; }
-.filter-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 7px; color: var(--text-tertiary); font-size: 11px; font-weight: 650; }
-.filter-button span { min-width: 16px; padding: 1px 4px; border-radius: var(--radius-full); color: inherit; background: var(--bg-surface-subtle); font-size: 10px; text-align: center; }
-.filter-button:hover { color: var(--text-secondary); background: var(--bg-surface-subtle); }.filter-button.active { color: #047857; background: var(--brand-accent-subtle); }.filter-button.active span { color: #047857; background: #d1fae5; }
-.task-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }.task-state { display: flex; min-height: 150px; align-items: center; justify-content: center; gap: 9px; color: var(--text-tertiary); font-size: 13px; }.task-state-error { flex-wrap: wrap; color: #b91c1c; text-align: center; }.task-state-error .btn { margin-left: 4px; padding: 7px 11px; font-size: 11px; }.task-state-empty { flex-direction: column; gap: 5px; }.task-state-empty strong { color: var(--text-secondary); font-size: 13px; }.empty-icon { display: grid; width: 40px; height: 40px; margin-bottom: 5px; place-items: center; border-radius: 12px; color: #059669; background: var(--brand-accent-subtle); }.task-state-empty span { color: var(--text-tertiary); font-size: 11px; }
-.spin { animation: task-spin .9s linear infinite; } @keyframes task-spin { to { transform: rotate(360deg); } }
-@media (max-width: 560px) { .task-center { margin-top: 18px; padding: 20px 16px; }.task-center-header { gap: 8px; }.refresh-button span { display: none; }.task-summary { gap: 5px; }.summary-item { display: block; padding: 10px 7px; text-align: center; }.summary-item strong, .summary-item span { display: block; }.summary-item span { margin-top: 4px; }.task-filters { margin-top: 18px; } }
-@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.task-center-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 28px;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+}
+
+.task-center-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.title-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header-icon {
+  color: #059669;
+}
+
+.title-with-badge h2 {
+  font-size: 18px;
+  font-weight: 750;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.live-pulse-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #047857;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.task-center-subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.refresh-btn {
+  border-radius: 9px;
+}
+
+/* Summary Chips */
+.task-summary-chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.summary-chip.has-active {
+  background: #ecfdf5;
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #047857;
+}
+
+.summary-chip.has-failed {
+  background: #fef2f2;
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #dc2626;
+}
+
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dot-active { background: #10b981; }
+.dot-failed { background: #ef4444; }
+.dot-success { background: #059669; }
+
+.chip-val {
+  font-weight: 800;
+}
+
+/* Filter Tabs */
+.task-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 12px;
+  align-self: flex-start;
+}
+
+.task-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.task-filter-btn.active {
+  background: #ffffff;
+  color: #047857;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.filter-count-bubble {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.task-filter-btn.active .filter-count-bubble {
+  background: rgba(16, 185, 129, 0.15);
+  color: #047857;
+}
+
+/* States */
+.task-center-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 20px;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #64748b;
+  text-align: center;
+}
+
+.spin-emerald {
+  color: #059669;
+}
+
+.empty-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  color: #059669;
+  display: grid;
+  place-items: center;
+}
+
+.state-empty strong {
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.state-empty p {
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.task-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 </style>

@@ -236,4 +236,4 @@ export class PublicApiError extends Error implements ApiError {
   get isRateLimited() { return this.code === 'RATE_LIMITED' || this.status === 429 }
 }
 
-export type { ApiError, ViewerConfigResponse }
+export type { ApiError }

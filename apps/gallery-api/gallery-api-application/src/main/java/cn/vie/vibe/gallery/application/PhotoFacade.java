@@ -100,7 +100,7 @@ public class PhotoFacade {
                     clientBatchId, idempotencyKey, now, now));
             return new UploadResult(photoId, taskId, PhotoStatus.PROCESSING, TaskStatus.QUEUED);
         } catch (RuntimeException exception) {
-            quotas.release(tenant, bytes.length, 1);
+            quotas.releaseOnce(tenant, "UPLOAD_FAIL", photoId, bytes.length, 1);
             try {
                 storage.delete(key);
             } catch (RuntimeException ignored) {
@@ -149,7 +149,7 @@ public class PhotoFacade {
                 galleries.updateCoverPhoto(t, p.galleryId(), null);
             }
         });
-        objects.findById(t,p.storageObjectId()).ifPresent(o -> quotas.release(t,o.byteSize(),1)); 
+        objects.findById(t,p.storageObjectId()).ifPresent(o -> quotas.releaseOnce(t, "PHOTO", p.id(), o.byteSize(), 1)); 
         objects.softDelete(t,p.storageObjectId());
     }
     @Transactional public Photo update(UUID photoId,String title,Integer sortOrder,Boolean cover){

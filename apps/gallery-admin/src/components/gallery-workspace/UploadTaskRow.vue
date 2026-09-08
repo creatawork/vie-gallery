@@ -53,7 +53,6 @@ function invoke(action: 'retry' | 'cancel') {
   busyAction.value = action
   if (action === 'retry') emit('retry', props.task)
   else emit('cancel', props.task)
-  // Parent owns the request; keeping the short busy state prevents double clicks.
   window.setTimeout(() => { busyAction.value = null }, 700)
 }
 
@@ -64,115 +63,313 @@ async function copyRequestId() {
 </script>
 
 <template>
-  <article class="task-row" :class="`task-row-${statusMeta.className}`">
-    <div class="task-main">
-      <div class="task-thumb" :class="{ 'has-image': task.thumbnailUrl || task.photoThumbnailUrl }">
-        <img v-if="task.thumbnailUrl || task.photoThumbnailUrl" :src="task.thumbnailUrl || task.photoThumbnailUrl || undefined" :alt="task.filename || '照片缩略图'" />
-        <Icon v-else name="photo" :size="19" />
-      </div>
-      <div class="task-copy">
-        <strong class="task-filename" :title="task.filename || '未命名文件'">{{ task.filename || '未命名文件' }}</strong>
-        <div class="task-meta">
-          <span>{{ task.stage || '上传处理' }}</span>
-          <span aria-hidden="true">·</span>
-          <span>{{ task.attempts }}/{{ task.maxAttempts }} 次尝试</span>
+  <article class="task-row-card" :class="`task-state-${statusMeta.className}`">
+    <div class="task-row-primary">
+      <div class="task-thumbnail-wrap">
+        <img
+          v-if="task.thumbnailUrl || task.photoThumbnailUrl"
+          :src="task.thumbnailUrl || task.photoThumbnailUrl || undefined"
+          :alt="task.filename || '缩略图'"
+          class="task-img"
+        />
+        <div v-else class="task-thumb-fallback">
+          <Icon name="photo" :size="18" />
         </div>
       </div>
-      <div class="task-status" :class="`status-${statusMeta.className}`">
-        <Icon :name="statusMeta.icon" :size="14" :class="{ spin: ['queued', 'processing', 'cancel-requested'].includes(statusMeta.className) }" />
-        <span>{{ statusMeta.label }}</span>
-      </div>
-    </div>
 
-    <div class="task-progress">
-      <div class="progress-line">
-        <div class="progress-track" role="progressbar" :aria-valuenow="displayProgress" aria-valuemin="0" aria-valuemax="100" :aria-label="`${task.filename || '任务'}进度`">
-          <span :style="{ width: `${displayProgress}%` }"></span>
+      <div class="task-main-details">
+        <div class="task-title-line">
+          <span class="task-filename" :title="task.filename || '未命名文件'">
+            {{ task.filename || '未命名文件' }}
+          </span>
+          <span class="task-status-pill" :class="`status-${statusMeta.className}`">
+            <Icon :name="statusMeta.icon" :size="12" :class="{ spin: ['queued', 'processing', 'cancel-requested'].includes(statusMeta.className) }" />
+            <span>{{ statusMeta.label }}</span>
+          </span>
         </div>
-        <span>{{ displayProgress }}%</span>
+
+        <!-- Progress bar in row -->
+        <div class="task-progress-section">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" :style="{ width: `${displayProgress}%` }"></div>
+          </div>
+          <span class="progress-text">{{ displayProgress }}%</span>
+        </div>
+
+        <p v-if="task.status === 'FAILED'" class="task-error-text">{{ displayError }}</p>
       </div>
-      <p v-if="task.status === 'PROCESSING' || task.status === 'QUEUED'" class="progress-caption">{{ task.stage || '等待处理' }}</p>
-      <p v-if="task.status === 'FAILED'" class="task-error">{{ displayError }}</p>
+
+      <div class="task-actions-col">
+        <button
+          v-if="canWrite && task.status === 'FAILED' && task.retryable"
+          class="btn btn-secondary btn-xs task-btn"
+          type="button"
+          :disabled="!!busyAction"
+          @click="invoke('retry')"
+        >
+          <Icon name="refresh" :size="13" :class="{ spin: busyAction === 'retry' }" />
+          <span>重试</span>
+        </button>
+
+        <button
+          v-if="canWrite && ['QUEUED', 'PROCESSING'].includes(task.status)"
+          class="btn btn-ghost btn-xs task-btn text-danger"
+          type="button"
+          :disabled="!!busyAction"
+          @click="invoke('cancel')"
+        >
+          <Icon name="x" :size="13" />
+          <span>取消</span>
+        </button>
+
+        <button
+          class="expand-detail-btn"
+          type="button"
+          :aria-expanded="expanded"
+          title="任务详情"
+          @click="expanded = !expanded"
+        >
+          <Icon :name="expanded ? 'chevron-down' : 'chevron-right'" :size="14" />
+        </button>
+      </div>
     </div>
 
-    <div class="task-actions">
-      <button v-if="canWrite && task.status === 'FAILED' && task.retryable" class="btn btn-secondary task-action" type="button" :disabled="!!busyAction" @click="invoke('retry')">
-        <Icon name="refresh" :size="14" :class="{ spin: busyAction === 'retry' }" />
-        <span>重试</span>
-      </button>
-      <button v-if="canWrite && ['QUEUED', 'PROCESSING'].includes(task.status)" class="btn btn-quiet task-action" type="button" :disabled="!!busyAction" @click="invoke('cancel')">
-        <Icon name="x" :size="14" />
-        <span>取消</span>
-      </button>
-      <button class="details-button" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
-        <span>{{ expanded ? '收起' : '详情' }}</span>
-        <Icon name="arrow-right" :size="13" :class="{ rotated: expanded }" />
-      </button>
-    </div>
-
-    <div v-if="expanded" class="task-details">
-      <dl>
-        <div><dt>创建时间</dt><dd>{{ formatDate(task.createdAt) }}</dd></div>
-        <div><dt>开始时间</dt><dd>{{ formatDate(task.startedAt) }}</dd></div>
-        <div><dt>完成时间</dt><dd>{{ formatDate(task.finishedAt) }}</dd></div>
-        <div><dt>处理耗时</dt><dd>{{ formatDuration() }}</dd></div>
-        <div v-if="task.errorCode || task.error?.code"><dt>错误代码</dt><dd>{{ task.errorCode || task.error?.code }}</dd></div>
-        <div v-if="requestId" class="request-id"><dt>请求 ID</dt><dd><code>{{ requestId }}</code><button type="button" aria-label="复制请求 ID" title="复制请求 ID" @click="copyRequestId"><Icon name="copy" :size="13" /></button></dd></div>
-      </dl>
+    <!-- Collapsible Detail Info -->
+    <div v-if="expanded" class="task-expanded-detail">
+      <div class="detail-grid">
+        <div class="detail-item"><span class="detail-label">创建时间</span><span class="detail-val">{{ formatDate(task.createdAt) }}</span></div>
+        <div class="detail-item"><span class="detail-label">处理耗时</span><span class="detail-val">{{ formatDuration() }}</span></div>
+        <div class="detail-item"><span class="detail-label">尝试次数</span><span class="detail-val">{{ task.attempts }}/{{ task.maxAttempts }}</span></div>
+        <div v-if="task.errorCode || task.error?.code" class="detail-item">
+          <span class="detail-label">错误代码</span><span class="detail-val text-danger">{{ task.errorCode || task.error?.code }}</span>
+        </div>
+      </div>
+      <div v-if="requestId" class="request-id-box">
+        <span class="detail-label">Trace ID:</span>
+        <code>{{ requestId }}</code>
+        <button type="button" class="copy-id-btn" title="复制 ID" @click="copyRequestId">
+          <Icon name="copy" :size="12" />
+        </button>
+      </div>
     </div>
   </article>
 </template>
 
 <style scoped>
-.task-row {
-  display: grid;
-  grid-template-columns: minmax(210px, 1.35fr) minmax(170px, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-xs);
+.task-row-card {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  transition: all 0.2s ease;
 }
-.task-main, .task-actions, .progress-line { display: flex; align-items: center; }
-.task-main { min-width: 0; gap: 11px; }
-.task-thumb { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border-radius: 11px; color: var(--text-tertiary); background: var(--bg-surface-subtle); }
-.task-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.task-copy { min-width: 0; }
-.task-filename { display: block; overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.task-meta { display: flex; gap: 6px; margin-top: 4px; color: var(--text-tertiary); font-size: 11px; }
-.task-status { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: max-content; padding: 5px 9px; border-radius: var(--radius-full); font-size: 11px; font-weight: 700; white-space: nowrap; }
-.status-queued, .status-processing, .status-cancel-requested { color: #92400e; background: #fffbeb; }
+
+.task-row-card:hover {
+  background: #ffffff;
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+}
+
+.task-row-primary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.task-thumbnail-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ecfdf5;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.task-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.task-thumb-fallback {
+  color: #059669;
+}
+
+.task-main-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-title-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-filename {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.status-queued { color: #047857; background: #ecfdf5; }
+.status-processing { color: #b45309; background: #fef3c7; }
 .status-succeeded { color: #047857; background: #ecfdf5; }
-.status-failed { color: #b91c1c; background: #fef2f2; }
-.status-cancelled, .status-unknown { color: #64748b; background: #f1f5f9; }
-.progress-line { gap: 9px; color: var(--text-tertiary); font-size: 11px; }
-.progress-track { height: 7px; flex: 1; overflow: hidden; border-radius: var(--radius-full); background: #e8eeeb; }
-.progress-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand-accent), #059669); transition: width .3s ease; }
-.progress-caption, .task-error { margin-top: 5px; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.progress-caption { color: var(--text-tertiary); }
-.task-error { color: #b91c1c; }
-.task-actions { justify-content: flex-end; gap: 5px; }
-.task-action { padding: 7px 10px; font-size: 11px; }
-.btn-quiet { color: var(--text-secondary); }
-.btn-quiet:hover:not(:disabled) { color: #b91c1c; background: #fef2f2; }
-.details-button { display: inline-flex; align-items: center; gap: 3px; padding: 7px 4px; color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
-.details-button:hover, .details-button:focus-visible { color: var(--brand-deep, #087a5c); outline: none; }
-.details-button svg { transition: transform .2s ease; }
-.details-button svg.rotated { transform: rotate(90deg); }
-.task-details { grid-column: 1 / -1; padding: 13px 0 0 53px; border-top: 1px solid var(--border-subtle); }
-.task-details dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 18px; }
-.task-details dl > div { min-width: 0; }
-.task-details dt { color: var(--text-tertiary); font-size: 10px; }
-.task-details dd { display: flex; align-items: center; gap: 4px; min-width: 0; margin-top: 3px; overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.task-details code { overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; }
-.request-id dd button { display: inline-grid; flex: 0 0 auto; place-items: center; padding: 2px; color: var(--text-tertiary); }
-.request-id dd button:hover { color: var(--brand-accent); }
-.spin { animation: task-spin .9s linear infinite; }
-@keyframes task-spin { to { transform: rotate(360deg); } }
-@media (max-width: 840px) { .task-row { grid-template-columns: minmax(0, 1fr) auto; } .task-progress { grid-column: 1 / -1; } }
-@media (max-width: 560px) { .task-row { grid-template-columns: 1fr; gap: 11px; padding: 13px; } .task-status { grid-column: 1 / -1; justify-self: start; } .task-actions { justify-content: flex-start; flex-wrap: wrap; } .task-details { padding-left: 0; } .task-details dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } .task-action { flex: 1; } .details-button { margin-left: auto; } }
-@media (prefers-reduced-motion: reduce) { .spin, .progress-track span, .details-button svg { animation: none; transition: none; } }
+.status-failed { color: #dc2626; background: #fee2e2; }
+.status-cancelled { color: #64748b; background: #f1f5f9; }
+
+.task-progress-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress-bar-track {
+  flex: 1;
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #34d399, #059669);
+  border-radius: 9999px;
+  transition: width 0.25s ease;
+}
+
+.progress-text {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748b;
+  min-width: 34px;
+  text-align: right;
+}
+
+.task-error-text {
+  font-size: 12px;
+  color: #dc2626;
+  margin-top: 2px;
+}
+
+.task-actions-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-xs {
+  padding: 4px 8px;
+  font-size: 11.5px;
+  border-radius: 6px;
+}
+
+.text-danger {
+  color: #dc2626;
+}
+
+.expand-detail-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: #94a3b8;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.expand-detail-btn:hover {
+  color: #0f172a;
+  background: #e2e8f0;
+}
+
+/* Expanded details */
+.task-expanded-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.detail-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.request-id-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  background: #ffffff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.request-id-box code {
+  font-family: var(--font-mono, monospace);
+  color: #475569;
+}
+
+.copy-id-btn {
+  color: #94a3b8;
+  padding: 2px;
+}
+
+.copy-id-btn:hover {
+  color: #0f172a;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 </style>

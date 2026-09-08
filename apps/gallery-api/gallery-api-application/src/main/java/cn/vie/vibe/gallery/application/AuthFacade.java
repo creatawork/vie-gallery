@@ -3,6 +3,7 @@ package cn.vie.vibe.gallery.application;
 import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.Membership;
 import cn.vie.vibe.gallery.domain.MembershipRole;
+import cn.vie.vibe.gallery.domain.PasswordResetToken;
 import cn.vie.vibe.gallery.domain.Tenant;
 import cn.vie.vibe.gallery.domain.TenantContext;
 import cn.vie.vibe.gallery.domain.TenantStatus;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
@@ -20,17 +22,27 @@ import java.util.UUID;
 public class AuthFacade {
     private static final String DUMMY_PASSWORD_HASH =
             "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+    private static final Duration RESET_TOKEN_TTL = Duration.ofMinutes(15);
+
     private final UserRepository users;
     private final TenantRepository tenants;
     private final MembershipRepository memberships;
     private final PasswordHasher passwords;
+    private final PasswordResetTokenRepository resetTokens;
+    private final TokenGenerator tokenGenerator;
+    private final EmailPort emailPort;
 
     public AuthFacade(UserRepository users, TenantRepository tenants,
-                      MembershipRepository memberships, PasswordHasher passwords) {
+                      MembershipRepository memberships, PasswordHasher passwords,
+                      PasswordResetTokenRepository resetTokens, TokenGenerator tokenGenerator,
+                      EmailPort emailPort) {
         this.users = users;
         this.tenants = tenants;
         this.memberships = memberships;
         this.passwords = passwords;
+        this.resetTokens = resetTokens;
+        this.tokenGenerator = tokenGenerator;
+        this.emailPort = emailPort;
     }
 
     @Transactional
@@ -91,6 +103,54 @@ public class AuthFacade {
 
     public java.util.List<cn.vie.vibe.gallery.domain.Capability> capabilities(MembershipRole role) {
         return WorkspaceCapabilities.forRole(role);
+    }
+
+    @Transactional
+    public void requestPasswordReset(String email) {
+        String normalizedEmail = normalizeEmail(email);
+        User user = users.findByEmail(normalizedEmail).orElse(null);
+        if (user == null || user.status() != UserStatus.ACTIVE) {
+            return;
+        }
+        
+        resetTokens.deleteByUserId(user.id());
+        
+        String rawToken = tokenGenerator.generateToken();
+        String tokenHash = tokenGenerator.hashToken(rawToken);
+        Instant now = Instant.now();
+        PasswordResetToken token = new PasswordResetToken(
+                UUID.randomUUID(),
+                user.id(),
+                tokenHash,
+                now.plus(RESET_TOKEN_TTL),
+                null,
+                now
+        );
+        resetTokens.save(token);
+        
+        emailPort.sendPasswordReset(user.email(), rawToken, RESET_TOKEN_TTL);
+    }
+
+    @Transactional
+    public void resetPassword(String rawToken, String newPassword) {
+        String tokenHash = tokenGenerator.hashToken(rawToken);
+        PasswordResetToken token = resetTokens.findByTokenHash(tokenHash)
+                .orElseThrow(() -> new DomainException("INVALID_RESET_TOKEN", "Reset token is invalid"));
+        
+        Instant now = Instant.now();
+        if (!token.isValid(now)) {
+            throw new DomainException("INVALID_RESET_TOKEN", "Reset token is expired or already used");
+        }
+        
+        User user = users.findById(token.userId())
+                .orElseThrow(() -> new DomainException("USER_NOT_FOUND", "User not found"));
+        
+        resetTokens.markAsUsed(token.id(), now);
+        
+        String newPasswordHash = passwords.hash(newPassword);
+        User updated = new User(user.id(), user.email(), user.displayName(),
+                newPasswordHash, user.status(), user.lastLoginAt());
+        users.save(updated);
     }
 
     private Membership resolveMembership(UUID userId) {

@@ -1,0 +1,16 @@
+﻿const fs = require('fs');
+const app = fs.readFileSync('E:/workspace/vie-gallery/apps/gallery-admin/src/App.vue', 'utf8');
+const tpl = app.slice(app.indexOf('<template>'), app.indexOf('</template>'));
+console.log('authGate', tpl.includes('v-if="isAuthenticated"'));
+console.log('navbar-container', tpl.includes('navbar-container'));
+console.log('user-profile-capsule', tpl.includes('user-profile-capsule'));
+console.log('brand-mark', tpl.includes('brand-mark'));
+const mem = fs.readFileSync('E:/workspace/vie-gallery/apps/gallery-admin/src/views/MembersView.vue', 'utf8');
+const mt = mem.slice(mem.indexOf('<template>'), mem.indexOf('</template>'));
+console.log('member-add-card', mt.includes('member-add-card'));
+console.log('members-card', mt.includes('members-card'));
+console.log('role-badge', mt.includes('role-badge'));
+console.log('chinese members', mem.includes('\u6210\u5458'));
+const ov = fs.readFileSync('E:/workspace/vie-gallery/apps/gallery-admin/src/views/OverviewView.vue', 'utf8');
+console.log('auth-immersive', ov.includes('auth-immersive'));
+console.log('login-bg-c', ov.includes('login-bg-c'));

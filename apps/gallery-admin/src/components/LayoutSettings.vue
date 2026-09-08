@@ -84,109 +84,48 @@ const layouts = [
 </template>
 
 <style scoped>
-.layout-settings {
-  width: 100%;
-}
-
+.layout-settings { width: 100%; }
 .layout-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
 }
-
 .layout-option {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 18px 16px;
-  background: #ffffff;
-  border: 1.5px solid rgba(226, 232, 240, 0.85);
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 12px;
   border-radius: 16px;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  text-align: left;
-  box-shadow: 
-    0 2px 8px rgba(15, 23, 42, 0.03),
-    0 0 0 1px rgba(255, 255, 255, 0.8) inset;
-  position: relative;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  transition: all 0.22s ease;
 }
-
 .layout-option:hover {
   border-color: rgba(16, 185, 129, 0.3);
-  transform: translateY(-3px) scale(1.01);
-  box-shadow: 
-    0 12px 24px -4px rgba(15, 23, 42, 0.06),
-    0 4px 12px rgba(16, 185, 129, 0.08);
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.1);
 }
-
+.layout-option.is-active,
 .layout-option.active {
   border-color: rgba(16, 185, 129, 0.45);
-  background: linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%);
-  box-shadow: 
-    0 0 0 2.5px rgba(16, 185, 129, 0.2),
-    0 8px 20px rgba(16, 185, 129, 0.12);
+  background: rgba(236, 253, 245, 0.9);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
 }
-
 .layout-icon-circle {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: rgba(241, 245, 249, 0.8);
-  color: var(--layout-color, #334155);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
+  color: #047857; background: linear-gradient(135deg, #ecfdf5, #d1fae5);
 }
-
-.layout-option:hover .layout-icon-circle {
-  transform: scale(1.1) rotate(6deg);
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
+.layout-option.is-active .layout-icon-circle,
 .layout-option.active .layout-icon-circle {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+  color: #fff; background: linear-gradient(135deg, #34d399, #059669);
 }
-
-.layout-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.layout-label {
-  display: block;
-  font-size: 14.5px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 4px;
-  letter-spacing: -0.01em;
-  transition: color 0.2s ease;
-}
-
-.layout-option:hover .layout-label {
-  color: #059669;
-}
-
-.layout-option.active .layout-label {
-  color: #047857;
-}
-
-.layout-desc {
-  display: block;
-  font-size: 12px;
-  color: #64748b;
-  line-height: 1.45;
-}
-
+.layout-content { display: flex; flex-direction: column; gap: 4px; }
+.layout-label { font-size: 13px; font-weight: 700; color: #0f172a; }
+.layout-desc { font-size: 11.5px; color: var(--text-tertiary); }
 .check-mark {
-  color: #059669;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  padding-top: 2px;
+  position: absolute; top: 8px; right: 8px; color: #059669; font-size: 12px; font-weight: 800;
 }
 </style>
