@@ -75,21 +75,22 @@ public class PublicGalleryController {
      * 获取相册 3D 视觉展示配置。
      */
     @GetMapping("/{slug}/viewer-config")
-    public ResponseEntity<GalleryViewerConfigController.GalleryViewerConfigResponse> getViewerConfig(
+    public ResponseEntity<PublicViewerConfigResponse> getViewerConfig(
             @PathVariable("slug") String slug,
             @RequestHeader(value = "X-Share-Token", required = false) String shareToken,
             HttpSession session
     ) {
         publicAccessFacade.validateViewerConfigAccess(slug, shareToken, readSessionGalleryId(session));
         return configFacade.getPublicConfig(slug)
-                .map(config -> new GalleryViewerConfigController.GalleryViewerConfigResponse(
+                .map(config -> new PublicViewerConfigResponse(
                         config.id().toString(),
                         config.galleryId().toString(),
                         config.configJson(),
                         config.enabled(),
                         config.presetName(),
                         config.createdAt(),
-                        config.updatedAt()
+                        config.updatedAt(),
+                        config.schemaVersion()
                 ))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
@@ -163,7 +164,9 @@ public class PublicGalleryController {
                         p.thumbnailUrl(),
                         p.width(),
                         p.height(),
-                        p.sortOrder()
+                        p.sortOrder(),
+                        p.mediumUrl(),
+                        p.textureUrl()
                 ))
                 .toList();
 
@@ -221,7 +224,9 @@ public class PublicGalleryController {
             String thumbnailUrl,
             int width,
             int height,
-            int sortOrder
+            int sortOrder,
+            String mediumUrl,
+            String textureUrl
     ) {}
 
     public record PhotoListResponse(
@@ -229,5 +234,16 @@ public class PublicGalleryController {
             int page,
             int pageSize,
             int total
+    ) {}
+
+    public record PublicViewerConfigResponse(
+            String id,
+            String galleryId,
+            String configJson,
+            boolean enabled,
+            String presetName,
+            Instant createdAt,
+            Instant updatedAt,
+            int schemaVersion
     ) {}
 }

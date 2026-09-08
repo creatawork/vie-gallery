@@ -154,7 +154,7 @@ async function init3DEngine() {
       let material: THREE.Material
 
       if (p.thumbnailUrl) {
-        const texture = textureLoader.load(p.thumbnailUrl)
+        const texture = textureLoader.load(p.textureUrl || p.thumbnailUrl)
         texture.colorSpace = THREE.SRGBColorSpace
         material = new THREE.MeshBasicMaterial({
           map: texture,
@@ -172,6 +172,8 @@ async function init3DEngine() {
         index: i,
         title: p.title || `Photo ${i + 1}`,
         thumbnailUrl: p.thumbnailUrl,
+        mediumUrl: p.mediumUrl,
+        textureUrl: p.textureUrl,
         width: p.width,
         height: p.height
       }

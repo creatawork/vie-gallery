@@ -21,6 +21,7 @@ public class PublicAccessFacade {
     private final StorageObjectRepository storageObjectRepository;
     private final ObjectStoragePort objectStoragePort;
     private final PasswordHasher passwordHasher;
+    private final PhotoAssetVariantRepository assetVariants;
     private final TokenGenerator tokenGenerator;
 
     public PublicAccessFacade(
@@ -32,6 +33,20 @@ public class PublicAccessFacade {
             PasswordHasher passwordHasher,
             TokenGenerator tokenGenerator
     ) {
+        this(galleryRepository, shareLinkRepository, photoRepository, storageObjectRepository,
+                objectStoragePort, passwordHasher, tokenGenerator, null);
+    }
+
+    public PublicAccessFacade(
+            GalleryRepository galleryRepository,
+            ShareLinkRepository shareLinkRepository,
+            PhotoRepository photoRepository,
+            StorageObjectRepository storageObjectRepository,
+            ObjectStoragePort objectStoragePort,
+            PasswordHasher passwordHasher,
+            TokenGenerator tokenGenerator,
+            PhotoAssetVariantRepository assetVariants
+    ) {
         this.galleryRepository = galleryRepository;
         this.shareLinkRepository = shareLinkRepository;
         this.photoRepository = photoRepository;
@@ -39,6 +54,7 @@ public class PublicAccessFacade {
         this.objectStoragePort = objectStoragePort;
         this.passwordHasher = passwordHasher;
         this.tokenGenerator = tokenGenerator;
+        this.assetVariants = assetVariants;
     }
 
     /**
@@ -170,12 +186,20 @@ public class PublicAccessFacade {
                 .filter(object -> object.status() == StorageObjectStatus.READY)
                 .map(object -> {
                     String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
+                    String mediumUrl = assetVariants == null ? null : assetVariants.findReadyByPhotoAndKind(
+                            gallery.tenantId(), photo.id(), VariantKind.MEDIUM)
+                            .map(variant -> objectStoragePort.createReadUrl(variant.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())
+                            .orElse(null);
+                    String textureUrl = assetVariants == null ? null : assetVariants.findReadyByPhotoAndKind(
+                            gallery.tenantId(), photo.id(), VariantKind.TEXTURE)
+                            .map(variant -> objectStoragePort.createReadUrl(variant.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())
+                            .orElse(null);
                     return new PublicPhotoView(
                             photo.title(),
                             objectStoragePort.createReadUrl(key, ObjectStoragePort.DEFAULT_READ_URL_TTL).toString(),
                             object.width() == null ? 0 : object.width(),
                             object.height() == null ? 0 : object.height(),
-                            photo.sortOrder()
+                            photo.sortOrder(), mediumUrl, textureUrl
                     );
                 });
     }

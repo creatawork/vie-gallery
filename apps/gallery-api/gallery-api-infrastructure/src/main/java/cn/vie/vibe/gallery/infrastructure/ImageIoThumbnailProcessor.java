@@ -1,5 +1,6 @@
 package cn.vie.vibe.gallery.infrastructure;
 
+import cn.vie.vibe.gallery.application.ImageVariantProcessor;
 import cn.vie.vibe.gallery.application.ThumbnailProcessor;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Component;

@@ -5,7 +5,7 @@ import type {
   UnlockResponse
 } from '../types/api'
 
-interface ViewerConfigResponse {
+export interface ViewerConfigResponse {
   id: string
   galleryId: string
   configJson: string
@@ -13,6 +13,7 @@ interface ViewerConfigResponse {
   presetName?: string | null
   createdAt: string
   updatedAt: string
+  schemaVersion?: number
 }
 
 type ErrorPayload = Partial<ApiError>

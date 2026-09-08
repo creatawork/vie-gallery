@@ -84,6 +84,8 @@ export interface PublicPhoto {
   width: number
   height: number
   sortOrder: number
+  mediumUrl?: string | null
+  textureUrl?: string | null
 }
 
 export interface PublicPhotoPage {
@@ -94,6 +96,37 @@ export interface PublicPhotoPage {
 }
 
 export type PhotoListResponse = PublicPhotoPage
+
+export interface ViewerConfigVersion {
+  id: string
+  galleryId: string
+  configJson: string
+  presetName?: string | null
+  schemaVersion: number
+  createdAt: string
+  createdByUserId?: string | null
+}
+
+export interface ViewerConfigResponse {
+  id: string
+  galleryId: string
+  configJson: string
+  enabled: boolean
+  presetName?: string | null
+  createdAt: string
+  updatedAt: string
+  schemaVersion: number
+  updatedByUserId?: string | null
+  lastPublishedAt?: string | null
+  publishedVersionId?: string | null
+}
+
+export interface ViewerConfigVersionPage {
+  items: ViewerConfigVersion[]
+  page: number
+  pageSize: number
+  total: number
+}
 
 export interface ApiError {
   code: string

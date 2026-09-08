@@ -219,11 +219,108 @@ curl -i http://localhost:9000/minio/health/live
 
 如果 API 无法访问，先检查 `infra/.env` 的宿主映射，再检查容器内 8080 监听；不要直接把脚本改回 8080。若图片地址在浏览器不可达，检查 `STORAGE_PUBLIC_ENDPOINT`、反向代理和对象存储签名策略。
 
-## 当前质量门槛
+## M7.2 测试验收记录
 
-进入下一阶段发布能力前，必须满足：
+M7.2 代码和核心运行态验收已完成，详细证据见 [`docs/m7-testing-results.md`](m7-testing-results.md)：
+
+- [x] 后端 Maven 编译、测试和 package 通过（`mvn test`：48 项通过）。
+- [x] Admin `npm run build` 通过。
+- [x] Viewer `npm run build` 通过。
+- [x] Docker/MySQL 已执行 V1–V10，V9/V10 成功，历史配置版本已迁移。
+- [x] 真实 MinIO 已验证 WebP texture 对象、MIME、文件头和尺寸。
+- [x] 3D Gallery 真实 HTTP 链路生成 TEXTURE，2D Gallery 真实 HTTP 链路跳过 TEXTURE。
+- [x] 公开照片响应已增加可选 `mediumUrl` 和 `textureUrl`，旧 `thumbnailUrl` 字段保持兼容。
+- [x] Viewer 浏览器页面已加载真实 Gallery，显示 3D/2D 控件；texture URL 已通过公开 API 和 MinIO 响应独立核验。
+
+尚未完成的运行态专项：
+
+- [ ] texture 编码失败、重试、取消和租约丢失场景。
+- [ ] Viewer 端完整 LOD 距离切换、持续低 FPS 阶梯降级和 WebGL 失败回退。
+- [ ] CDN、Meta 社交预览和性能基准。
+
+
 
 - 当前文档、脚本不再使用旧 spaces/albums API（archive 除外）。
 - 后端测试、Admin/Viewer build 和 Compose 健康检查通过。
 - PUBLIC、PRIVATE、PASSWORD 的访问、错误、分页和恢复链路有自动化或等价运行态证据。
 - 公开照片 URL 使用短期签名策略，不依赖永久公开对象地址。
+
+## M7 测试验收标准
+
+M7（Viewer 配置版本化、CDN 与 3D 性能优化）验收矩阵：
+
+### 配置版本化
+
+- [x] **草稿保存**: 真实 API 保存草稿成功，版本历史不新增，公开快照不改变
+- [x] **发布创建版本**: 真实 API 连续发布创建新版本，数据库 `published_version_id` 指向生效版本
+- [x] **回滚功能**: 真实 API 回滚创建第三个版本并恢复首个版本内容
+- [x] **schema 校验**: 单测覆盖旧 schema_version 返回 `BAD_SCHEMA_VERSION`
+- [ ] **权限控制**: VIEWER 角色真实 HTTP 403 尚未在本轮执行
+- [x] **版本历史**: 真实 API 返回版本列表；Admin UI 构建通过
+
+### TEXTURE 阶段
+
+- [x] **3D Gallery 纹理生成**: 真实上传任务生成 `/{photoId}/texture` WebP 对象
+- [x] **2D Gallery 跳过纹理**: 真实 2D Gallery 只生成 HIGH，不生成 TEXTURE
+- [x] **进度阶段**: Worker 真实执行 TEXTURE 阶段并最终完成
+- [x] **纹理质量**: 实际 WebP 为 1042×654，最长边小于 2048px，MIME 与文件头正确
+
+### 性能降级
+
+- [ ] **设备探测**: 代码存在 `deviceMemory`/CPU/移动端基础判断，但本轮未完成真实低端设备浏览器证据
+- [ ] **LOD 切换**: 当前未发现按相机距离在 medium/texture 之间切换的完整实现
+- [ ] **FPS 降级**: 当前未发现持续低 FPS 后关闭 particles → bloom → fog → DPR 的完整阶梯逻辑
+- [ ] **WebGL fallback**: 当前仅有 context lost/restored 监听，未完成初始化失败切换 2D 和 Toast 的运行态闭环
+- [ ] **移动端触控**: 代码存在 OrbitControls 和陀螺仪入口，真实移动端流畅性尚未验收
+
+### CDN 与社交预览
+
+- [ ] **媒体子域**: `media.vie-vibe.cn` 代理 MinIO，Nginx 配置 `Cache-Control: public, max-age=31536000, immutable`
+- [ ] **版本化 key**: 对象 key 包含 hash 或时间戳（`/{photoId}-{hash}.webp`）
+- [ ] **爬虫 Meta**: 微信/Telegram UA 请求返回静态 HTML，带完整 og/twitter meta
+- [ ] **noindex 私有**: PRIVATE/PASSWORD 相册返回 noindex/nofollow，无 token 泄漏
+- [ ] **社交分享**: 微信公众平台/Telegram Debugger 拿到正确卡片（标题/描述/封面）
+
+### 回归测试
+
+- [ ] **M4 发布**: DRAFT/PUBLISHED/ARCHIVED 状态流转正常
+- [ ] **M5 授权**: OWNER/EDITOR/VIEWER 权限控制正确
+- [ ] **M6 任务**: 上传任务队列/重试/取消功能正常
+- [ ] **M6.5 限流**: 登录/解锁 429 RATE_LIMITED 正常触发
+
+### 性能基准
+
+- [ ] **3D 加载时间**: 100 张照片加载时间 < 3s
+- [ ] **低端设备 FPS**: 降级后 FPS > 40
+- [ ] **内存使用**: 峰值内存 < 500MB
+- [ ] **首屏渲染**: < 1s
+- [ ] **CDN 命中率**: > 80%（本地模拟）
+- [ ] **社交预览成功率**: > 95%（3 种以上爬虫 UA）
+
+### 测试工具与脚本
+
+```bash
+# 后端测试（M7 新增测试类）
+cd apps/gallery-api
+mvn test -Dtest=ViewerConfigVersionTest
+mvn test -Dtest=TextureProcessorTest
+mvn test -Dtest=PhotoProcessingWorkerTextureTest
+
+# E2E 测试（Playwright）
+cd apps/gallery-viewer
+npm run test:e2e -- --grep "M7"
+
+# CLI 流程扩展
+bash test-mcp-flow.sh --features m7
+
+# 性能测试
+curl -w "@perf-curl-format.txt" -o /dev/null http://localhost:5174/g/{slug}
+```
+
+### 已知限制与TODO
+
+- [ ] TEXTURE 阶段依赖 Gallery 配置判断 3D 模式（当前简化为 preset 名称包含"3d"）
+- [ ] LOD 切换阈值可配置化（当前硬编码 10m）
+- [ ] Meta 服务器无状态设计，生产需水平扩展
+- [ ] CDN 回源 purge 接口未实现（当前依赖版本化 key 自然失效）
+- [ ] 密码设置 API/UI 未实现，PASSWORD 解锁验收部分未完成

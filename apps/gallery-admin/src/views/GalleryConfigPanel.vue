@@ -21,6 +21,16 @@ const saving = ref(false)
 const galleryInfo = ref<any>(null)
 const showResetConfirm = ref(false)
 const resetting = ref(false)
+const showPublishConfirm = ref(false)
+const showRollbackConfirm = ref(false)
+const publishing = ref(false)
+const rollingBack = ref(false)
+const rollbackVersionId = ref<string | null>(null)
+const versions = ref<any[]>([])
+const publishedVersionId = ref<string | null>(null)
+const lastPublishedAt = ref<string | null>(null)
+const savedDraftJson = ref('')
+const publishedConfigJson = ref<string | null>(null)
 const previewKey = ref(0)
 const previewIframeRef = ref<HTMLIFrameElement | null>(null)
 
@@ -153,6 +163,10 @@ const config = reactive({
   }
 })
 
+const hasDraftChanges = computed(() => savedDraftJson.value !== JSON.stringify(getCleanConfig()))
+const hasUnpublishedDraft = computed(() => !publishedVersionId.value || publishedConfigJson.value !== savedDraftJson.value)
+const hasPublishedConfig = computed(() => !!publishedVersionId.value)
+
 const previewUrl = computed(() => {
   const slug = galleryInfo.value?.slug || 'demo'
   const base = `${window.location.protocol}//${window.location.hostname}:5174`
@@ -195,6 +209,15 @@ function onBackgroundTypeChange() {
   refreshLivePreview()
 }
 
+async function loadVersions() {
+  const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions?page=0&pageSize=20`)
+  if (!response.ok) return
+  const data = await response.json()
+  versions.value = Array.isArray(data.items) ? data.items : []
+  const published = versions.value.find(version => version.id === publishedVersionId.value)
+  publishedConfigJson.value = published?.configJson || null
+}
+
 async function loadGalleryAndConfig() {
   loading.value = true
   try {
@@ -208,13 +231,20 @@ async function loadGalleryAndConfig() {
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`)
     if (response.ok) {
       const data = await response.json()
-      if (data && data.configJson) {
-        const parsed = JSON.parse(data.configJson)
-        deepMerge(config, parsed)
-        if (data.presetName) config.presetName = data.presetName
+      if (data) {
+        if (data.configJson) {
+          const parsed = JSON.parse(data.configJson)
+          deepMerge(config, parsed)
+          if (data.presetName) config.presetName = data.presetName
+        }
+        publishedVersionId.value = data.publishedVersionId || null
+        lastPublishedAt.value = data.lastPublishedAt || null
+        publishedConfigJson.value = data.publishedVersionId ? null : JSON.stringify(getCleanConfig())
       }
     }
     ensureConfigDefaults()
+    savedDraftJson.value = JSON.stringify(getCleanConfig())
+    await loadVersions()
   } catch (err: any) {
     toast.error('加载相册配置失败')
   } finally {
@@ -318,7 +348,8 @@ async function save() {
       },
       body: JSON.stringify({
         configJson: JSON.stringify(cleanConfig),
-        presetName: cleanConfig.presetName
+        presetName: cleanConfig.presetName,
+        schemaVersion: 1
       })
     })
 
@@ -333,12 +364,73 @@ async function save() {
       throw new Error(msg)
     }
 
-    toast.success('3D 视觉配置已成功持久化并同步！')
+    savedDraftJson.value = JSON.stringify(cleanConfig)
+    toast.success('3D 视觉配置草稿已保存，发布后对访客生效。')
     refreshLivePreview()
   } catch (err: any) {
     toast.error(err.message || '保存失败，请检查网络或登录状态')
   } finally {
     saving.value = false
+  }
+}
+
+async function publishDraft() {
+  if (!canConfigWrite.value) return
+  publishing.value = true
+  try {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schemaVersion: 1 })
+    })
+    if (!response.ok) throw new Error(`发布失败 (${response.status})`)
+    const version = await response.json()
+    publishedVersionId.value = version.id || null
+    publishedConfigJson.value = savedDraftJson.value
+    lastPublishedAt.value = version.createdAt || new Date().toISOString()
+    await loadVersions()
+    showPublishConfirm.value = false
+    toast.success('配置已发布到访客端。')
+  } catch (err: any) {
+    toast.error(err.message || '发布失败，请稍后重试')
+  } finally {
+    publishing.value = false
+  }
+}
+
+function requestRollback(versionId: string) {
+  rollbackVersionId.value = versionId
+  showRollbackConfirm.value = true
+}
+
+async function rollbackDraft() {
+  if (!canConfigWrite.value || !rollbackVersionId.value) return
+  rollingBack.value = true
+  try {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/rollback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ versionId: rollbackVersionId.value })
+    })
+    if (!response.ok) throw new Error(`回滚失败 (${response.status})`)
+    const version = await response.json()
+    const parsed = JSON.parse(version.configJson)
+    deepMerge(config, parsed)
+    if (version.presetName) config.presetName = version.presetName
+    ensureConfigDefaults()
+    savedDraftJson.value = JSON.stringify(getCleanConfig())
+    publishedVersionId.value = version.id || null
+    publishedConfigJson.value = savedDraftJson.value
+    lastPublishedAt.value = version.createdAt || new Date().toISOString()
+    await loadVersions()
+    showRollbackConfirm.value = false
+    rollbackVersionId.value = null
+    refreshLivePreview()
+    toast.success('已回滚并发布该配置版本。')
+  } catch (err: any) {
+    toast.error(err.message || '回滚失败，请稍后重试')
+  } finally {
+    rollingBack.value = false
   }
 }
 
@@ -402,10 +494,15 @@ onMounted(() => {
           <Icon name="refresh" :size="16" />
           <span>重置默认</span>
         </button>
-        <button v-if="canConfigWrite" class="btn btn-primary" :disabled="saving" @click="save">
+        <button v-if="canConfigWrite" class="btn btn-secondary" :disabled="saving" @click="save">
           <Icon v-if="saving" name="refresh" :size="16" class="spin" />
           <Icon v-else name="check" :size="16" />
-          <span>{{ saving ? '保存中…' : '保存发布配置' }}</span>
+          <span>{{ saving ? '保存中…' : '保存草稿' }}</span>
+        </button>
+        <button v-if="canConfigWrite" class="btn btn-primary" :disabled="publishing || !hasUnpublishedDraft" @click="showPublishConfirm = true">
+          <Icon v-if="publishing" name="refresh" :size="16" class="spin" />
+          <Icon v-else name="upload" :size="16" />
+          <span>{{ publishing ? '发布中…' : '发布到访客' }}</span>
         </button>
       </div>
     </header>
@@ -614,6 +711,48 @@ onMounted(() => {
         </section>
     </fieldset>
 
+    <section v-if="!loading" class="config-card version-card">
+      <div class="card-header">
+        <div class="card-icon-box"><Icon name="history" :size="18" /></div>
+        <div>
+          <h3>发布版本历史</h3>
+          <p>{{ hasPublishedConfig ? `最近发布于 ${lastPublishedAt ? new Date(lastPublishedAt).toLocaleString() : '未知时间'}` : '尚未发布配置，访客使用默认视觉效果' }}</p>
+        </div>
+      </div>
+      <div v-if="versions.length" class="version-list">
+        <div v-for="(version, index) in versions" :key="version.id" class="version-row">
+          <div>
+            <strong>版本 {{ versions.length - index }}</strong>
+            <span>{{ version.presetName || 'custom' }} · {{ new Date(version.createdAt).toLocaleString() }}</span>
+          </div>
+          <button v-if="canConfigWrite" class="btn btn-secondary version-action" :disabled="rollingBack" @click="requestRollback(version.id)">
+            回滚并发布
+          </button>
+        </div>
+      </div>
+      <p v-else class="empty-version">保存并发布草稿后，这里会显示可回滚的版本。</p>
+    </section>
+
+    <ConfirmModal
+      :show="showPublishConfirm"
+      title="发布配置到访客"
+      message="当前草稿将成为公开 Viewer 使用的配置，确认继续吗？"
+      confirm-text="确认发布"
+      :loading="publishing"
+      @confirm="publishDraft"
+      @cancel="showPublishConfirm = false"
+    />
+
+    <ConfirmModal
+      :show="showRollbackConfirm"
+      title="回滚并发布配置"
+      message="将基于历史快照创建新的发布版本，当前公开配置会立即切换。"
+      confirm-text="确认回滚"
+      :loading="rollingBack"
+      @confirm="rollbackDraft"
+      @cancel="showRollbackConfirm = false"
+    />
+
     <!-- Confirm Reset Modal -->
     <ConfirmModal
       :show="showResetConfirm"
@@ -747,6 +886,51 @@ onMounted(() => {
     0 8px 24px rgba(15, 23, 42, 0.05),
     0 0 0 1px rgba(16, 185, 129, 0.15) inset;
   border-color: rgba(16, 185, 129, 0.25);
+}
+
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.version-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.version-row strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.version-row span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.version-action {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.empty-version {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 
 .card-header {

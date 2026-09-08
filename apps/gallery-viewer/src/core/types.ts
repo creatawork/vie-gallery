@@ -9,6 +9,8 @@ export interface PhotoMesh extends THREE.Mesh {
     index: number
     url: string
     thumbnailUrl: string
+    mediumUrl?: string | null
+    textureUrl?: string | null
     title?: string
   }
 }

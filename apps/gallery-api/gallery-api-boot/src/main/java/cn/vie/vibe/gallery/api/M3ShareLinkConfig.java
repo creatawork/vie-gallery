@@ -38,7 +38,8 @@ public class M3ShareLinkConfig {
             StorageObjectRepository storageObjectRepository,
             ObjectStoragePort objectStoragePort,
             PasswordHasher passwordHasher,
-            TokenGenerator tokenGenerator
+            TokenGenerator tokenGenerator,
+            PhotoAssetVariantRepository assetVariants
     ) {
         return new PublicAccessFacade(
                 galleryRepository,
@@ -47,18 +48,29 @@ public class M3ShareLinkConfig {
                 storageObjectRepository,
                 objectStoragePort,
                 passwordHasher,
-                tokenGenerator
+                tokenGenerator,
+                assetVariants
         );
+    }
+
+    @Bean
+    public GalleryTexturePolicy galleryTexturePolicy(
+            GalleryViewerConfigRepository configRepository,
+            GalleryRepository galleryRepository
+    ) {
+        return new DefaultGalleryTexturePolicy(configRepository, galleryRepository);
     }
 
     @Bean
     public GalleryViewerConfigFacade galleryViewerConfigFacade(
             GalleryViewerConfigRepository galleryViewerConfigRepository,
+            ViewerConfigVersionRepository viewerConfigVersionRepository,
             GalleryRepository galleryRepository,
             WorkspaceAuthorizationPolicy authorization
     ) {
         return new GalleryViewerConfigFacade(
                 galleryViewerConfigRepository,
+                viewerConfigVersionRepository,
                 galleryRepository,
                 authorization
         );

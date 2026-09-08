@@ -2,6 +2,7 @@ package cn.vie.vibe.gallery.application;
 
 import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.Photo;
+import cn.vie.vibe.gallery.domain.PhotoAssetVariant;
 import cn.vie.vibe.gallery.domain.PhotoProcessingTask;
 import cn.vie.vibe.gallery.domain.PhotoStatus;
 import cn.vie.vibe.gallery.domain.StorageObject;
@@ -33,6 +34,9 @@ public class PhotoProcessingWorker implements DisposableBean {
     private final ObjectStoragePort storage;
     private final ThumbnailProcessor thumbnails;
     private final TenantQuotaRepository quotas;
+    private final ImageVariantProcessor variants;
+    private final PhotoAssetVariantRepository assetVariants;
+    private final GalleryTexturePolicy texturePolicy;
     private final String workerId = "gallery-worker-" + UUID.randomUUID();
     private final int maxAttempts;
     private final Duration staleAfter;
@@ -44,12 +48,14 @@ public class PhotoProcessingWorker implements DisposableBean {
 
     public PhotoProcessingWorker(PhotoProcessingTaskRepository tasks, PhotoRepository photos, StorageObjectRepository objects,
                                  ObjectStoragePort storage, ThumbnailProcessor thumbnails) {
-        this(tasks, photos, objects, storage, thumbnails, null, 3, Duration.ofMinutes(10));
+        this(tasks, photos, objects, storage, thumbnails, null, null, null, null, 3, Duration.ofMinutes(10));
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public PhotoProcessingWorker(PhotoProcessingTaskRepository tasks, PhotoRepository photos, StorageObjectRepository objects,
                                  ObjectStoragePort storage, ThumbnailProcessor thumbnails, TenantQuotaRepository quotas,
+                                 ImageVariantProcessor variants, PhotoAssetVariantRepository assetVariants,
+                                 GalleryTexturePolicy texturePolicy,
                                  @Value("${gallery.processing.max-retries:3}") int maxRetries,
                                  @Value("${gallery.processing.stale-after:PT10M}") Duration staleAfter) {
         this.tasks = tasks;
@@ -58,6 +64,9 @@ public class PhotoProcessingWorker implements DisposableBean {
         this.storage = storage;
         this.thumbnails = thumbnails;
         this.quotas = quotas;
+        this.variants = variants;
+        this.assetVariants = assetVariants;
+        this.texturePolicy = texturePolicy;
         this.maxAttempts = Math.max(1, maxRetries);
         this.staleAfter = staleAfter == null || staleAfter.isNegative() || staleAfter.isZero()
                 ? Duration.ofMinutes(10) : staleAfter;
@@ -112,9 +121,31 @@ public class PhotoProcessingWorker implements DisposableBean {
                 }
                 requireLease(task, leaseLost);
                 String key = "tenant/" + task.tenantId() + "/photos/" + task.photoId() + "/thumbnail";
-                tasks.progress(task.tenantId(), task.id(), workerId, 80, "FINALIZE", Instant.now());
                 requireLease(task, leaseLost);
                 storage.put(key, new ByteArrayInputStream(result.content()), result.contentType(), result.content().length);
+                requireLease(task, leaseLost);
+                if (variants != null && assetVariants != null) {
+                    PhotoAssetVariant high = PhotoAssetVariant.ready(task.tenantId(), task.photoId(), object.id(),
+                            cn.vie.vibe.gallery.domain.VariantKind.HIGH, key, result.contentType(), result.content().length,
+                            result.width(), result.height(), null);
+                    assetVariants.upsert(high);
+                }
+                tasks.progress(task.tenantId(), task.id(), workerId, 60, "TEXTURE", Instant.now());
+                requireLease(task, leaseLost);
+                if (texturePolicy != null && texturePolicy.shouldGenerate(task.tenantId(), task.galleryId())) {
+                    try (InputStream textureIn = storage.get(object.objectKey())) {
+                        ImageVariantProcessor.VariantResult texture = variants.create(
+                                object.mimeType(), textureIn, ImageVariantProcessor.VariantSpec.texture());
+                        String textureKey = "tenant/" + task.tenantId() + "/photos/" + task.photoId() + "/texture";
+                        storage.put(textureKey, new ByteArrayInputStream(texture.content()), texture.contentType(), texture.content().length);
+                        if (assetVariants != null) {
+                            assetVariants.upsert(PhotoAssetVariant.ready(task.tenantId(), task.photoId(), object.id(),
+                                    cn.vie.vibe.gallery.domain.VariantKind.TEXTURE, textureKey, texture.contentType(), texture.content().length,
+                                    texture.width(), texture.height(), null));
+                        }
+                    }
+                }
+                tasks.progress(task.tenantId(), task.id(), workerId, 80, "FINALIZE", Instant.now());
                 requireLease(task, leaseLost);
                 if (objects.markReady(task.tenantId(), object.id(), key, result.width(), result.height()) == 0) {
                     throw new DomainException("STORAGE_UNAVAILABLE", "Unable to finalize thumbnail metadata");
