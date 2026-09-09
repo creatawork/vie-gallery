@@ -6,7 +6,7 @@ VIE Gallery 是一个面向个人用户和创作者的照片相册产品：保�
 
 当前唯一有效的产品与工程路线是 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)，下一阶段具体任务见 [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)。本期目标是完成个人相册的 **备份、记录、创作、分享、管理** 闭环并上线；团队协作、多工作区、企业客户门户、复杂商业化等后期领域暂不纳入本期。
 
-代码基线：`feat/gallery-workspace-slice`（2026-09-09）。提交后以该分支最新 hash 为准。
+代码基线：`feat/gallery-workspace-slice` / `2358489`（2026-09-09）。
 
 ### 阶段状态
 
