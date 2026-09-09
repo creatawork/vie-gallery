@@ -45,17 +45,25 @@ interface TaskState {
   errorMessage?: string | null
 }
 
+class StatusError extends Error {
+  status?: number
+  constructor(message: string, status?: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 function errorMessageFor(status: number, fallback: string) {
-  if (status === 401) return '????????????????????'
-  if (status === 403) return '????????????'
-  if (status === 404) return '??????????????????????'
-  if (status === 409) return '???????????????????'
-  if (status === 413) return '??????????????????'
+  if (status === 401) return '????????????'
+  if (status === 403) return '???????????'
+  if (status === 404) return '???????????'
+  if (status === 409) return '???????????'
+  if (status === 413) return '????????????'
   if (status >= 500) return '??????????????'
   return fallback
 }
 
-async function responseError(response: Response, fallback: string): Promise<Error> {
+async function responseError(response: Response, fallback: string): Promise<StatusError> {
   let message = errorMessageFor(response.status, fallback)
   try {
     const body = await response.json() as { message?: string; code?: string }
@@ -63,15 +71,18 @@ async function responseError(response: Response, fallback: string): Promise<Erro
   } catch {
     // The status-based message is enough when the response is not JSON.
   }
-  return new Error(message)
+  return new StatusError(message, response.status)
 }
 
 function classifyError(error: unknown, fallback: string): WorkspaceError {
   const message = error instanceof Error ? error.message : fallback
-  if (message.includes('??') || message.includes('??')) return { kind: 'unauthorized', message, status: 401 }
-  if (message.includes('??')) return { kind: 'forbidden', message, status: 403 }
-  if (message.includes('???') || message.includes('???')) return { kind: 'not-found', message, status: 404 }
-  if (error instanceof TypeError || message.includes('??')) return { kind: 'network', message }
+  const status = error instanceof StatusError ? error.status : undefined
+  if (status === 401 || message.includes('?????')) return { kind: 'unauthorized', message, status: 401 }
+  if (status === 403 || message.includes('????')) return { kind: 'forbidden', message, status: 403 }
+  if (status === 404 || message.includes('???')) return { kind: 'not-found', message, status: 404 }
+  if (error instanceof TypeError || message.includes('Failed to fetch') || message.includes('Network')) {
+    return { kind: 'network', message: '?????????????' }
+  }
   return { kind: 'unknown', message }
 }
 
@@ -99,7 +110,7 @@ export function useGalleryWorkspace(
 
   async function loadPhotos(galleryIdValue: string, version: number) {
     const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos`)
-    if (!response.ok) throw await responseError(response, '?????????')
+    if (!response.ok) throw await responseError(response, '???????????????')
     const data = await response.json() as WorkspacePhoto[]
     if (isCurrent(version)) {
       photos.value = data.map(photo => ({
@@ -126,7 +137,7 @@ export function useGalleryWorkspace(
       gallery.value = null
       photos.value = []
       loading.value = false
-      error.value = { kind: 'not-found', message: '?????????', status: 404 }
+      error.value = { kind: 'not-found', message: '????????', status: 404 }
       return
     }
 
@@ -134,37 +145,15 @@ export function useGalleryWorkspace(
     error.value = null
     try {
       const response = await apiFetch(`/api/galleries/${galleryIdValue}`)
-      if (!response.ok) throw await responseError(response, '?????????')
+      if (!response.ok) throw await responseError(response, '?????????????')
       const found = await response.json() as Gallery
       if (isCurrent(version)) gallery.value = found
       await loadPhotos(galleryIdValue, version)
     } catch (cause) {
       if (isCurrent(version)) {
-        if (import.meta.env.DEV) {
-          gallery.value = {
-            id: galleryIdValue || 'demo-mountains-seas',
-            name: '山海之间',
-            slug: 'mountains-seas',
-            status: 'PUBLISHED',
-            visibility: 'PUBLIC',
-            publishedAt: '2024-05-18T00:00:00.000Z',
-            createdAt: '2024-05-18T00:00:00.000Z'
-          }
-          photos.value = [
-            { id: 'photo-1', galleryId: galleryIdValue, title: '晨雾缭绕', cover: true, status: 'READY', sortOrder: 0, byteSize: 3.2 * 1024 * 1024, thumbnailUrl: '/covers/forest.png' },
-            { id: 'photo-2', galleryId: galleryIdValue, title: '海岸之歌', cover: false, status: 'READY', sortOrder: 1, byteSize: 4.1 * 1024 * 1024, thumbnailUrl: '/covers/coast.png' },
-            { id: 'photo-3', galleryId: galleryIdValue, title: '竹影清风', cover: false, status: 'READY', sortOrder: 2, byteSize: 2.8 * 1024 * 1024, thumbnailUrl: '/covers/bamboo.png' },
-            { id: 'photo-4', galleryId: galleryIdValue, title: '静谧湖泊', cover: false, status: 'READY', sortOrder: 3, byteSize: 3.6 * 1024 * 1024, thumbnailUrl: '/covers/lake.png' },
-            { id: 'photo-5', galleryId: galleryIdValue, title: '叶上露珠', cover: false, status: 'READY', sortOrder: 4, byteSize: 2.2 * 1024 * 1024, thumbnailUrl: '/covers/courtyard.png' },
-            { id: 'photo-6', galleryId: galleryIdValue, title: '山居水乡', cover: false, status: 'READY', sortOrder: 5, byteSize: 3.9 * 1024 * 1024, thumbnailUrl: '/covers/gallery.png' },
-            { id: 'photo-7', galleryId: galleryIdValue, title: '谷中飞瀑', cover: false, status: 'READY', sortOrder: 6, byteSize: 4.4 * 1024 * 1024, thumbnailUrl: '/covers/stream.png' }
-          ]
-          error.value = null
-        } else {
-          gallery.value = null
-          photos.value = []
-          error.value = classifyError(cause, '?????????????')
-        }
+        gallery.value = null
+        photos.value = []
+        error.value = classifyError(cause, '?????????????')
       }
     } finally {
       if (isCurrent(version)) loading.value = false
@@ -189,14 +178,17 @@ export function useGalleryWorkspace(
     return 'timedOut'
   }
 
-  async function uploadFiles(files: FileList | File[]): Promise<UploadSummary> {
+  async function uploadFiles(
+    files: FileList | File[],
+    options: { onQueued?: () => void | Promise<void> } = {}
+  ): Promise<UploadSummary> {
     const galleryIdValue = id.value
     if (!galleryIdValue || !files.length) return { succeeded: 0, failed: 0, timedOut: 0, rejected: 0 }
 
     const version = ++uploadVersion
     uploading.value = true
     uploadProgress.value = 8
-    uploadStatusText.value = `???? ${files.length} ????`
+    uploadStatusText.value = `???? ${files.length} ???`
     try {
       const form = new FormData()
       Array.from(files).forEach(file => form.append('files', file))
@@ -210,23 +202,24 @@ export function useGalleryWorkspace(
         },
         body: form
       })
-      if (!response.ok) throw await responseError(response, '???????????????')
+      if (!response.ok) throw await responseError(response, '?????????????')
 
       const result = await response.json() as { items?: UploadItem[] }
       const items = Array.isArray(result.items) ? result.items : []
       const acceptedItems = items.filter(item => item.accepted !== false && typeof item.taskId === 'string' && item.taskId)
       const rejected = Math.max(0, files.length - acceptedItems.length)
       uploadProgress.value = acceptedItems.length ? 35 : 100
-      uploadStatusText.value = acceptedItems.length ? '???????? 3D ???' : '??????????'
-
+      uploadStatusText.value = acceptedItems.length ? '???? 3D ??' : '????????'
+      await options.onQueued?.()
       const outcomes = await Promise.all(acceptedItems.map(item => pollTask(item.taskId as string, version)))
       const summary = outcomes.reduce<UploadSummary>((resultValue, outcome) => {
         resultValue[outcome === 'succeeded' ? 'succeeded' : outcome === 'failed' ? 'failed' : 'timedOut'] += 1
         return resultValue
       }, { succeeded: 0, failed: 0, timedOut: 0, rejected })
       uploadProgress.value = 100
-      uploadStatusText.value = summary.failed || summary.timedOut || summary.rejected ? '????????????' : '??????'
+      uploadStatusText.value = summary.failed || summary.timedOut || summary.rejected ? '????????' : '????'
       await reload()
+      await options.onQueued?.()
       return summary
     } finally {
       if (version === uploadVersion) {
@@ -247,7 +240,7 @@ export function useGalleryWorkspace(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cover: true })
       })
-      if (!response.ok) throw await responseError(response, '???????')
+      if (!response.ok) throw await responseError(response, '?????????????')
       await reload()
     } catch (cause) {
       photos.value = previous
@@ -257,7 +250,7 @@ export function useGalleryWorkspace(
 
   async function deletePhoto(photoId: string) {
     const response = await apiFetch(`/api/photos/${photoId}`, { method: 'DELETE' })
-    if (!response.ok) throw await responseError(response, '???????')
+    if (!response.ok) throw await responseError(response, '?????????????')
     await reload()
   }
 
@@ -267,7 +260,7 @@ export function useGalleryWorkspace(
     publishing.value = true
     try {
       const response = await apiFetch(`/api/galleries/${galleryIdValue}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST' })
-      if (!response.ok) throw await responseError(response, publish ? '???????' : '???????')
+      if (!response.ok) throw await responseError(response, publish ? '???????????' : '?????????????')
       const updated = response.status === 204 ? null : await response.json().catch(() => null) as Gallery | null
       if (updated && gallery.value?.id === galleryIdValue) gallery.value = updated
       await reload()

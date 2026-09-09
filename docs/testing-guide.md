@@ -4,7 +4,7 @@
 
 ## 当前验收快照
 
-> 快照日期：2026-09-08。以下状态以真实环境报告和近期提交为准，不以旧计划中的未勾选清单为准。
+> 快照日期：2026-09-09。以下状态以真实环境报告和近期提交为准，不以旧计划中的未勾选清单为准。
 
 ### 已完成并有验收证据
 
@@ -15,6 +15,7 @@
 - M6.5 登录/密码解锁限流、413 语义、PRIVATE 语义和分享访问记录。
 - M7.1 Viewer 配置草稿、发布、版本历史、schema 校验和回滚。
 - M7.2 3D Gallery 生成 WebP TEXTURE，2D Gallery 跳过 TEXTURE。
+- 创作者内部草稿预览：`POST /api/galleries/{id}/preview-token`，公开端接受 `X-Preview-Token` 或 `?preview=`；无令牌时未发布相册仍 404。
 - **P0-01 基础质量门禁**：文档链接检查、前端类型检查、前端构建和后端单元测试已纳入 GitHub Actions CI。
 - **P0-03 账户密码恢复与 Gallery 密码设置**：忘记密码/重置密码和 Gallery PASSWORD 设置/清除已完成。
 
@@ -103,9 +104,9 @@ mvn test
 mvn -DskipTests verify
 ```
 
-重点测试公开访问、分享 Token、密码 Session、READY 过滤、任务状态和配置版本：
+重点测试公开访问、分享 Token、创作者预览令牌、密码 Session、READY 过滤、任务状态和配置版本：
 
-- `PublicAccessFacadeTest`
+- `PublicAccessFacadeTest`（含未发布相册 + 有效预览令牌可见、无令牌仍 404）
 - `PublicGalleryControllerTest`
 - `ShareLinkFacadeTest`
 - `PhotoProcessingTaskStateMachineTest`
@@ -151,7 +152,7 @@ bash test-mcp-flow.sh
 
 脚本应只调用当前 Gallery 接口，不使用旧的 spaces/albums API、数字 ID 或只通过 grep 响应字符串判断成功。失败时应输出 HTTP status、endpoint、业务 code 和 requestId。
 
-当前 CLI 已验证注册、登录、Gallery 创建、上传 READY、发布、PRIVATE Token、PASSWORD 前置状态、分享列表和登出。撤回后重新发布、撤销 Token、PASSWORD 成功解锁等场景在补齐能力后执行。
+当前 CLI 已验证注册、登录、Gallery 创建、上传 READY、发布、PRIVATE Token、PASSWORD 前置状态、分享列表和登出。创作者草稿预览令牌由单元测试和浏览器手工流程覆盖，尚未纳入 CLI。撤回后重新发布、撤销 Token、PASSWORD 成功解锁等场景在补齐能力后执行。
 
 ## 个人相册 V1 验收矩阵
 
@@ -178,8 +179,8 @@ bash test-mcp-flow.sh
 
 - 2D 和 3D Viewer 均可用；配置草稿不会直接改变访客公开版本。
 - 保存草稿、发布、版本历史和回滚行为有真实 API 与浏览器证据。
-- 创作者可以预览草稿，发布前可看到内容/视觉变更状态。
-- 发布前至少有一张 READY 照片；DRAFT/ARCHIVED 不对外展示。
+- 创作者可以预览草稿：工作台签发 15 分钟预览令牌，Viewer 以 `?preview=` 打开草稿馆和配置草稿；令牌不写入公开 URL、canonical 或分享链接。
+- 无预览令牌时 DRAFT/ARCHIVED 对访客 404；发布前至少有一张 READY 照片才对外展示。
 - 配置 JSON 有 schema、大小和数值范围校验。
 
 ### 分享与安全访问
@@ -217,14 +218,16 @@ bash test-mcp-flow.sh
 ## 浏览器手工流程
 
 1. 打开 <http://localhost:5173>，注册并登录。
-2. 创建相册，确认跳转到 `/app/galleries/{id}`。
-3. 上传多张图片，确认任务中心显示批次、阶段、进度和部分成功结果。
-4. 设置封面、标题和顺序，刷新后确认工作区上下文仍存在。
-5. 打开配置页，保存草稿、预览、发布，再确认公开端只显示已发布配置。
-6. 发布相册，创建 7 天/30 天/永久分享链接，复制链接并验证访问。
-7. 撤回发布，确认公开端 404/noindex；重新发布后按 visibility 恢复访问。
-8. 验证 PRIVATE Token、PASSWORD 错误限流、过期 Session、空相册和不存在 slug。
-9. 禁用/模拟不可用 WebGL，确认自动切换 2D；在 390px 宽度检查交互和错误恢复入口。
+2. 创建相册，确认跳转到 `/app/galleries/{id}`。草稿状态下点「预览展厅」，应打开带 `?preview=` 的访客页而不是「相册空间未找到」。
+3. 复制不含 `preview` 的 `/g/{slug}`，确认未发布相册对匿名访客仍 404。
+4. 上传多张图片，确认投放后任务中心立即出现排队/完成行，不必刷新页面。
+5. 设置封面、标题和顺序，刷新后确认工作区上下文仍存在。
+6. 打开配置页：右侧嵌入内部预览或诚实空态（不要出现端口号）；保存草稿后预览更新，发布后再确认无令牌的公开端只显示已发布配置。
+7. 用 Esc 关闭新建空间、添加成员和确认删除，焦点应回到触发按钮。
+8. 发布相册，创建 7 天/30 天/永久分享链接，复制链接并验证访问。
+9. 撤回发布，确认公开端 404/noindex；重新发布后按 visibility 恢复访问。
+10. 验证 PRIVATE Token、PASSWORD 错误限流、过期 Session、空相册和不存在 slug。
+11. 禁用/模拟不可用 WebGL，确认自动切换 2D；在 390px 宽度检查交互和错误恢复入口。
 
 ## M7 当前证据
 

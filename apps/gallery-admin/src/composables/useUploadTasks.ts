@@ -232,6 +232,26 @@ export function useUploadTasks(
     document.removeEventListener('visibilitychange', handleVisibilityChange)
   })
 
+  function rememberLocal(files: File[]) {
+    const locals = files.map(file => ({
+      id: `local:${crypto.randomUUID()}`,
+      filename: file.name,
+      status: 'QUEUED' as UploadTaskStatus,
+      progress: 8,
+      attempts: 0,
+      maxAttempts: 3,
+      retryable: false,
+      createdAt: new Date().toISOString()
+    }))
+    tasks.value = [...locals, ...tasks.value.filter(task => !String(task.id).startsWith('local:'))]
+    summary.value = {
+      ...summary.value,
+      queued: summary.value.queued + locals.length
+    }
+    loading.value = false
+    error.value = null
+  }
+
   return {
     tasks,
     filteredTasks,
@@ -244,6 +264,7 @@ export function useUploadTasks(
     isPolling,
     load,
     retry,
-    cancel
+    cancel,
+    rememberLocal
   }
 }

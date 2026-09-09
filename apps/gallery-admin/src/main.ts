@@ -35,10 +35,15 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (to.name !== 'members') return true
   const auth = useAuth()
-  if (!auth.currentUser.value) await auth.checkAuth()
-  return auth.isOwner.value ? true : { name: 'overview' }
+  if (!auth.authChecked.value) await auth.checkAuth()
+  if (to.name !== 'overview' && !auth.isAuthenticated.value) {
+    return { name: 'overview' }
+  }
+  if (to.name === 'members' && !auth.isOwner.value) {
+    return { name: 'overview' }
+  }
+  return true
 })
 
 createApp(App).use(router).mount('#app')

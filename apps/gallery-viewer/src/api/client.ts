@@ -130,22 +130,33 @@ function readShareToken() {
   }
 }
 
+function readPreviewToken() {
+  return new URLSearchParams(window.location.search).get('preview')
+}
+
 /**
  * 公开 API 客户端。
  */
 export class PublicApiClient {
   private readonly baseUrl: string
   private shareToken: string | null = null
+  private previewToken: string | null = null
 
   constructor(baseUrl: string = '/api/public') {
     this.baseUrl = baseUrl
     this.shareToken = readShareToken()
+    this.previewToken = readPreviewToken()
+  }
+
+  private secrets() {
+    return [this.shareToken, this.previewToken].filter((value): value is string => !!value)
   }
 
   private headers(contentType?: string) {
     const headers: Record<string, string> = {}
     if (contentType) headers['Content-Type'] = contentType
     if (this.shareToken) headers['X-Share-Token'] = this.shareToken
+    if (this.previewToken) headers['X-Preview-Token'] = this.previewToken
     return headers
   }
 
@@ -162,8 +173,8 @@ export class PublicApiClient {
       headers: this.headers(),
       credentials: 'include'
     })
-    if (!response.ok) throw await parseApiError(response, this.shareToken ? [this.shareToken] : [])
-    return parseJsonResponse<PublicGalleryResponse>(response, this.shareToken ? [this.shareToken] : [])
+    if (!response.ok) throw await parseApiError(response, this.secrets())
+    return parseJsonResponse<PublicGalleryResponse>(response, this.secrets())
   }
 
   async unlock(slug: string, password: string): Promise<UnlockResponse> {
@@ -183,8 +194,8 @@ export class PublicApiClient {
       headers: this.headers(),
       credentials: 'include'
     })
-    if (!response.ok) throw await parseApiError(response, this.shareToken ? [this.shareToken] : [])
-    return parseJsonResponse<PublicPhotoPage>(response, this.shareToken ? [this.shareToken] : [])
+    if (!response.ok) throw await parseApiError(response, this.secrets())
+    return parseJsonResponse<PublicPhotoPage>(response, this.secrets())
   }
 
   /**
@@ -196,7 +207,7 @@ export class PublicApiClient {
       headers: this.headers(),
       credentials: 'include'
     })
-    const secrets = this.shareToken ? [this.shareToken] : []
+    const secrets = this.secrets()
     if (response.status === 404) {
       const body = await readBody(response)
       if (!body.trim()) return null

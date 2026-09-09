@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import Icon from './Icon.vue'
+import { useModalFocus } from '../composables/useModalFocus'
 
 interface Props {
   show: boolean
@@ -11,7 +13,7 @@ interface Props {
   loading?: boolean
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   confirmText: '确认',
   cancelText: '取消',
   danger: false,
@@ -22,18 +24,30 @@ const emit = defineEmits<{
   (e: 'confirm'): void
   (e: 'cancel'): void
 }>()
+
+const { root } = useModalFocus(computed(() => props.show), {
+  onEscape: () => { if (!props.loading) emit('cancel') },
+  disabled: computed(() => props.loading)
+})
 </script>
 
 <template>
   <Transition name="modal-fade">
     <div v-if="show" class="modal-backdrop" @click.self="!loading && emit('cancel')">
-      <div class="modal-card">
+      <div
+        ref="root"
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="'confirm-title'"
+        tabindex="-1"
+      >
         <div class="modal-header">
           <div class="icon-bubble" :class="{ 'icon-danger': danger }">
             <Icon :name="danger ? 'trash' : 'alert-circle'" :size="20" />
           </div>
           <div class="header-text">
-            <h3>{{ title }}</h3>
+            <h3 id="confirm-title">{{ title }}</h3>
             <p>{{ message }}</p>
           </div>
         </div>

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
 import Icon from '../components/Icon.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useAuth } from '../composables/useAuth'
+import { creatorPreviewUrl, issuePreviewToken, openCreatorPreview } from '../lib/preview'
 
 const route = useRoute()
 const router = useRouter()
@@ -86,13 +87,25 @@ const bloomThreshold = ref(18)
 const audioOn = ref(true)
 const floorMaterial = ref(FLOOR_OPTIONS[0])
 const wallMaterial = ref(WALL_OPTIONS[0])
-const lastSavedLabel = ref('10:42')
+const lastSavedLabel = ref('')
+const lastSaveFailed = ref(false)
+const loadError = ref('')
 const isFullscreen = ref(false)
 const previewIframeRef = ref<HTMLIFrameElement | null>(null)
 const previewLive = ref(false)
 const embedTimedOut = ref(false)
+const previewToken = ref('')
+const previewIssueError = ref('')
 let handshakeTimer: number | null = null
 const HANDSHAKE_MS = 8000
+const configTab = ref<'basics' | 'atmosphere' | 'advanced' | 'history'>('basics')
+
+const CONFIG_TABS = [
+  { id: 'basics' as const, label: '基础' },
+  { id: 'atmosphere' as const, label: '氛围' },
+  { id: 'advanced' as const, label: '高级' },
+  { id: 'history' as const, label: '版本' }
+]
 
 function clearHandshakeTimer() {
   if (handshakeTimer) {
@@ -103,25 +116,13 @@ function clearHandshakeTimer() {
 
 function startHandshakeTimer() {
   clearHandshakeTimer()
-  if (!canEmbedViewer.value) return
+  if (!showPreviewFrame.value) return
   handshakeTimer = window.setTimeout(() => {
     if (!previewLive.value) embedTimedOut.value = true
   }, HANDSHAKE_MS)
 }
 
 let saveTimer: number | null = null
-
-function demoVersions() {
-  const now = new Date()
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  yesterday.setHours(16, 20, 0, 0)
-  return [
-    { id: 'v14', versionNumber: '1.4.0', title: '当前版本', createdAt: now.toISOString() },
-    { id: 'v13', versionNumber: '1.3.0', title: '优化光照与色彩平衡', createdAt: yesterday.toISOString() },
-    { id: 'v12', versionNumber: '1.2.0', title: '调整展厅动线布局', createdAt: '2024-05-18T11:08:00' }
-  ]
-}
 
 function pad(n: number) {
   return String(n).padStart(2, '0')
@@ -188,7 +189,9 @@ function getCleanConfig() {
     },
     theme: {
       engine: config.theme?.engine || 'custom',
-      accent: accent.value
+      accent: accent.value,
+      floor: floorMaterial.value,
+      wall: wallMaterial.value
     }
   }
 }
@@ -232,6 +235,8 @@ function syncAtmosphereFromConfig() {
   if (config.theme?.accent && ACCENTS.includes(config.theme.accent)) {
     accent.value = config.theme.accent
   }
+  if (typeof config.theme?.floor === 'string') floorMaterial.value = config.theme.floor
+  if (typeof config.theme?.wall === 'string') wallMaterial.value = config.theme.wall
 }
 
 function applyAtmosphereToConfig() {
@@ -246,6 +251,8 @@ function applyAtmosphereToConfig() {
   if (config.theme) {
     config.theme.engine = 'custom'
     config.theme.accent = accent.value
+    config.theme.floor = floorMaterial.value
+    config.theme.wall = wallMaterial.value
   }
 }
 
@@ -257,13 +264,45 @@ function refreshLivePreview() {
   sendLiveMessage({ type: 'VIE_CONFIG_UPDATE', config: getCleanConfig() })
 }
 
+function isTrustedPreviewOrigin(origin: string) {
+  if (!origin || origin === 'null') return true
+  try {
+    const url = new URL(origin)
+    const localHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) return true
+    return url.hostname === window.location.hostname
+  } catch {
+    return false
+  }
+}
+
 function onPreviewReady(event: MessageEvent) {
-  if (event.origin && !event.origin.includes(window.location.hostname)) return
+  if (!isTrustedPreviewOrigin(event.origin)) return
   if (event.data?.type !== 'VIE_PREVIEW_READY') return
   clearHandshakeTimer()
   embedTimedOut.value = false
   previewLive.value = true
+  const payload = { type: 'VIE_CONFIG_UPDATE', config: getCleanConfig() }
+  const source = event.source as Window | MessagePort | ServiceWorker | null
+  if (source && 'postMessage' in source) {
+    source.postMessage(payload, { targetOrigin: event.origin === 'null' ? '*' : event.origin } as WindowPostMessageOptions)
+  }
   nextTick(() => refreshLivePreview())
+}
+
+async function retryEmbedPreview() {
+  embedTimedOut.value = false
+  previewLive.value = false
+  previewIssueError.value = ''
+  try {
+    previewToken.value = (await issuePreviewToken(galleryId)).token
+  } catch (cause) {
+    previewToken.value = ''
+    previewIssueError.value = cause instanceof Error ? cause.message : '暂时无法打开内部预览，请稍后重试。'
+    return
+  }
+  previewKey.value += 1
+  if (showPreviewFrame.value) startHandshakeTimer()
 }
 
 const config = reactive({
@@ -281,68 +320,94 @@ const config = reactive({
   },
   interaction: { clickRipple: true },
   audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-  theme: { engine: 'custom', accent: ACCENTS[0] }
+  theme: { engine: 'custom', accent: ACCENTS[0], floor: FLOOR_OPTIONS[0], wall: WALL_OPTIONS[0] }
 })
 
 const hasDraftChanges = computed(() => savedDraftJson.value !== JSON.stringify(getCleanConfig()))
 const hasUnpublishedDraft = computed(() => !publishedVersionId.value || publishedConfigJson.value !== savedDraftJson.value)
-
-const displayVersions = computed(() => {
-  if (versions.value.length) {
-    return versions.value.slice(0, 3).map((version, index) => ({
-      ...version,
-      title: version.title || (index === 0 ? '当前版本' : `版本 v${version.versionNumber}`),
-      current: version.id === publishedVersionId.value || index === 0
-    }))
+const syncStatus = computed(() => {
+  if (saving.value) return '正在保存草稿…'
+  if (lastSaveFailed.value) return '草稿保存失败，请重试'
+  if (hasDraftChanges.value) return '有未保存的更改'
+  if (hasUnpublishedDraft.value) {
+    return lastSavedLabel.value ? `草稿已保存 ${lastSavedLabel.value} · 尚未同步` : '草稿尚未同步到访客端'
   }
-  return import.meta.env.DEV ? demoVersions().map((version, index) => ({ ...version, current: index === 0 })) : []
+  if (lastSavedLabel.value) return `已同步到访客端`
+  return '尚未保存过配置'
 })
 
+const displayVersions = computed(() => {
+  return versions.value.slice(0, 10).map((version, index) => ({
+    ...version,
+    title: version.title || (index === 0 ? '当前版本' : `版本 v${version.versionNumber}`),
+    current: version.id === publishedVersionId.value || (index === 0 && !publishedVersionId.value)
+  }))
+})
+
+const gallerySlug = computed(() => galleryInfo.value?.slug || '')
+
 const previewUrl = computed(() => {
-  const slug = galleryInfo.value?.slug || 'demo'
-  const { protocol, hostname, port } = window.location
-  if (port === '5173' || port === '5174' || port === '5175') {
-    return `${protocol}//${hostname}:5174/g/${slug}`
-  }
-  return `${protocol}//${hostname}/g/${slug}`
+  if (!gallerySlug.value || !previewToken.value) return ''
+  return creatorPreviewUrl(gallerySlug.value, previewToken.value, true)
 })
 
 const canEmbedViewer = computed(() => {
   const port = window.location.port
-  if (port === '5173') return true
+  if (!gallerySlug.value || !previewToken.value) return false
   if (port === '5174' || port === '5175') return false
   return true
+})
+
+const showPreviewFrame = computed(() => canEmbedViewer.value && !embedTimedOut.value && !previewIssueError.value)
+const previewEmptyText = computed(() => {
+  if (previewIssueError.value) return previewIssueError.value
+  if (!gallerySlug.value) return '加载空间信息后才能预览。'
+  if (embedTimedOut.value) return '展厅预览没有响应。请确认预览页已启动，然后重试。'
+  if (!canEmbedViewer.value) return '当前窗口无法嵌入预览，请用新窗口打开。'
+  return '正在连接内部预览…'
 })
 
 async function loadVersions() {
   const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions?page=0&pageSize=20`)
   if (!response.ok) {
-    if (import.meta.env.DEV) versions.value = demoVersions()
+    versions.value = []
     return
   }
   const data = await response.json()
   versions.value = Array.isArray(data.items) ? data.items : []
   const published = versions.value.find(version => version.id === publishedVersionId.value)
-  publishedConfigJson.value = published?.configJson || null
-}
-
-function applyDemoGallery() {
-  galleryInfo.value = { id: galleryId, name: '山海之间', slug: 'mountains-seas' }
-  versions.value = demoVersions()
-  publishedVersionId.value = 'v14'
-  lastSavedLabel.value = '10:42'
-  applyAtmosphereToConfig()
-  savedDraftJson.value = JSON.stringify(getCleanConfig())
+  publishedConfigJson.value = published?.configJson || publishedConfigJson.value
 }
 
 async function loadGalleryAndConfig() {
   loading.value = true
+  loadError.value = ''
+  previewLive.value = false
+  embedTimedOut.value = false
+  lastSavedLabel.value = ''
+  lastSaveFailed.value = false
   try {
     const gallRes = await apiFetch(`/api/galleries/${galleryId}`)
-    if (gallRes.ok) {
-      galleryInfo.value = await gallRes.json()
-    } else if (import.meta.env.DEV) {
-      applyDemoGallery()
+    if (!gallRes.ok) {
+      if (gallRes.status === 401) {
+        loadError.value = '登录已失效，请重新登录。'
+      } else if (gallRes.status === 404) {
+        loadError.value = '找不到这个相册空间。'
+      } else if (gallRes.status === 403) {
+        loadError.value = '你没有权限查看这个展厅配置。'
+      } else {
+        loadError.value = '空间加载失败，请稍后重试。'
+      }
+      galleryInfo.value = null
+      return
+    }
+    galleryInfo.value = await gallRes.json()
+    previewIssueError.value = ''
+    try {
+      previewToken.value = (await issuePreviewToken(galleryId)).token
+    } catch (cause) {
+      previewToken.value = ''
+      previewIssueError.value = cause instanceof Error ? cause.message : '暂时无法打开内部预览，请稍后重试。'
     }
 
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`)
@@ -356,24 +421,25 @@ async function loadGalleryAndConfig() {
         }
         publishedVersionId.value = data.publishedVersionId || null
         lastPublishedAt.value = data.lastPublishedAt || null
-        publishedConfigJson.value = data.publishedVersionId ? null : JSON.stringify(getCleanConfig())
+        publishedConfigJson.value = data.publishedConfigJson || (data.publishedVersionId ? null : JSON.stringify(getCleanConfig()))
       }
       ensureConfigDefaults()
       syncAtmosphereFromConfig()
       savedDraftJson.value = JSON.stringify(getCleanConfig())
       lastSavedLabel.value = formatClock(new Date())
       await loadVersions()
-    } else if (import.meta.env.DEV) {
-      applyDemoGallery()
+    } else if (response.status === 404) {
+      ensureConfigDefaults()
+      syncAtmosphereFromConfig()
+      savedDraftJson.value = JSON.stringify(getCleanConfig())
+    } else {
+      loadError.value = '展厅配置加载失败，请稍后重试。'
     }
   } catch {
-    if (import.meta.env.DEV) {
-      applyDemoGallery()
-    } else {
-      toast.error('加载相册配置失败')
-    }
+    loadError.value = '网络连接失败，请稍后重试。'
   } finally {
     loading.value = false
+    if (galleryInfo.value?.slug) previewKey.value += 1
   }
 }
 
@@ -573,12 +639,7 @@ async function save(options?: { silent?: boolean }) {
     })
 
     if (!response.ok) {
-      if (import.meta.env.DEV) {
-        savedDraftJson.value = JSON.stringify(cleanConfig)
-        lastSavedLabel.value = formatClock(new Date())
-        return
-      }
-      let msg = `保存失败 (${response.status})`
+      let msg = '草稿保存失败，请稍后重试。'
       try {
         const data = await response.json()
         if (data && (data.message || data.code)) msg = data.message || data.code
@@ -588,13 +649,11 @@ async function save(options?: { silent?: boolean }) {
 
     savedDraftJson.value = JSON.stringify(cleanConfig)
     lastSavedLabel.value = formatClock(new Date())
+    lastSaveFailed.value = false
     refreshLivePreview()
     if (!options?.silent) toast.success('草稿已保存。')
   } catch (err: any) {
-    if (import.meta.env.DEV) {
-      lastSavedLabel.value = formatClock(new Date())
-      return
-    }
+    lastSaveFailed.value = true
     if (!options?.silent) toast.error(err.message || '保存失败，请检查网络或登录状态')
   } finally {
     saving.value = false
@@ -611,12 +670,7 @@ async function publishDraft() {
       body: JSON.stringify({ schemaVersion: 1 })
     })
     if (!response.ok) {
-      if (import.meta.env.DEV) {
-        showPublishConfirm.value = false
-        toast.success('配置已发布。')
-        return
-      }
-      throw new Error(`发布失败 (${response.status})`)
+      throw new Error('发布失败，请稍后重试。')
     }
     const version = await response.json()
     publishedVersionId.value = version.id || null
@@ -624,13 +678,8 @@ async function publishDraft() {
     lastPublishedAt.value = version.createdAt || new Date().toISOString()
     await loadVersions()
     showPublishConfirm.value = false
-    toast.success('配置已发布到访客端。')
+    toast.success('配置已同步到访客端。')
   } catch (err: any) {
-    if (import.meta.env.DEV) {
-      showPublishConfirm.value = false
-      toast.success('配置已发布。')
-      return
-    }
     toast.error(err.message || '发布失败，请稍后重试')
   } finally {
     publishing.value = false
@@ -656,19 +705,26 @@ async function rollbackDraft() {
   if (!canConfigWrite.value || !rollbackVersionId.value) return
   rollingBack.value = true
   try {
+    const selected = versions.value.find(version => version.id === rollbackVersionId.value)
+    if (selected?.configJson) {
+      const parsed = JSON.parse(selected.configJson)
+      deepMerge(config, parsed)
+      if (selected.presetName) config.presetName = selected.presetName
+      ensureConfigDefaults()
+      syncAtmosphereFromConfig()
+      await save({ silent: true })
+      showRollbackConfirm.value = false
+      rollbackVersionId.value = null
+      refreshLivePreview()
+      toast.success('已恢复为草稿。同步到访客端后才会生效。')
+      return
+    }
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/rollback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ versionId: rollbackVersionId.value })
+      body: JSON.stringify({ versionId: rollbackVersionId.value, publish: false })
     })
-    if (!response.ok) {
-      if (import.meta.env.DEV) {
-        showRollbackConfirm.value = false
-        toast.success('已回滚到上一版本。')
-        return
-      }
-      throw new Error(`回滚失败 (${response.status})`)
-    }
+    if (!response.ok) throw new Error('回滚失败，请稍后重试。')
     const version = await response.json()
     const parsed = JSON.parse(version.configJson)
     deepMerge(config, parsed)
@@ -676,20 +732,12 @@ async function rollbackDraft() {
     ensureConfigDefaults()
     syncAtmosphereFromConfig()
     savedDraftJson.value = JSON.stringify(getCleanConfig())
-    publishedVersionId.value = version.id || null
-    publishedConfigJson.value = savedDraftJson.value
-    lastPublishedAt.value = version.createdAt || new Date().toISOString()
     await loadVersions()
     showRollbackConfirm.value = false
     rollbackVersionId.value = null
     refreshLivePreview()
-    toast.success('已回滚并发布该配置版本。')
+    toast.success('已恢复为草稿。同步到访客端后才会生效。')
   } catch (err: any) {
-    if (import.meta.env.DEV) {
-      showRollbackConfirm.value = false
-      toast.success('已回滚到上一版本。')
-      return
-    }
     toast.error(err.message || '回滚失败，请稍后重试')
   } finally {
     rollingBack.value = false
@@ -705,10 +753,8 @@ async function confirmReset() {
       await loadGalleryAndConfig()
       toast.success('已恢复默认配置')
       showResetConfirm.value = false
-    } else if (import.meta.env.DEV) {
-      applyPreset('starry-night')
-      showResetConfirm.value = false
-      toast.success('已恢复默认配置')
+    } else {
+      toast.error('重置失败，请稍后重试')
     }
   } catch {
     toast.error('重置操作失败')
@@ -717,17 +763,30 @@ async function confirmReset() {
   }
 }
 
-function openLivePreview() {
-  window.open(previewUrl.value, '_blank', 'noopener,noreferrer')
+async function openLivePreview() {
+  if (!galleryInfo.value?.slug) {
+    toast.error(previewIssueError.value || '还没有可用的预览地址。')
+    return
+  }
+  try {
+    await openCreatorPreview(galleryId, galleryInfo.value.slug)
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : '暂时无法打开内部预览，请稍后重试。')
+  }
 }
 
 function goBack() {
   router.push({ name: 'gallery-workspace', params: { id: galleryId } })
 }
 
+watch(showPreviewFrame, (shouldEmbed) => {
+  previewLive.value = false
+  if (shouldEmbed) startHandshakeTimer()
+  else clearHandshakeTimer()
+})
+
 onMounted(() => {
   loadGalleryAndConfig()
-  startHandshakeTimer()
   window.addEventListener('message', onPreviewReady)
 })
 
@@ -743,27 +802,36 @@ onUnmounted(() => {
     <div class="config-scene" aria-hidden="true"></div>
 
     <header class="config-nav">
-      <div class="nav-brand">
-        <button class="brand" type="button" @click="goBack">
-          <span class="fold-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" fill="none">
-              <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
-              <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
-              <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
-            </svg>
-          </span>
-          <span>VIE Gallery</span>
+      <RouterLink to="/" class="brand">
+        <span class="fold-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
+            <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
+            <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
+          </svg>
+        </span>
+        <span>VIE Gallery</span>
+      </RouterLink>
+
+      <nav class="config-tabs" aria-label="展厅导航">
+        <RouterLink to="/" class="config-tab">
+          <Icon name="layout" :size="15" />
+          <span>我的空间</span>
+        </RouterLink>
+        <button class="config-tab" type="button" @click="goBack">
+          <Icon name="gallery" :size="15" />
+          <span>展厅工作区</span>
         </button>
-        <div class="nav-title">
-          <h1>展厅配置</h1>
-          <p>配置沉浸式观展空间的布局与氛围</p>
-        </div>
-      </div>
+        <span class="config-tab is-active">
+          <Icon name="settings" :size="15" />
+          <span>展厅配置</span>
+        </span>
+      </nav>
 
       <div class="nav-actions">
-        <p class="autosave">
-          <Icon name="check-circle" :size="15" />
-          <span>所有更改已自动保存 {{ lastSavedLabel }}</span>
+        <p class="autosave" :class="{ 'is-warn': lastSaveFailed || hasDraftChanges }">
+          <Icon :name="lastSaveFailed || hasDraftChanges ? 'alert-circle' : 'check-circle'" :size="15" />
+          <span>{{ syncStatus }}</span>
         </p>
         <button v-if="canConfigWrite" class="btn ghost" type="button" @click="requestHeaderRollback">
           <Icon name="undo" :size="14" />
@@ -773,21 +841,50 @@ onUnmounted(() => {
           <Icon name="refresh" :size="14" />
           <span>重置</span>
         </button>
-        <button v-if="canConfigWrite" class="btn outline" type="button" :disabled="saving" @click="save()">
-          <span>{{ saving ? '保存中…' : '保存草稿' }}</span>
+        <button
+          v-if="canConfigWrite && lastSaveFailed"
+          class="btn outline"
+          type="button"
+          :disabled="saving"
+          @click="save()"
+        >
+          <span>{{ saving ? '保存中…' : '重试保存' }}</span>
         </button>
-        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="publishing" @click="showPublishConfirm = true">
+        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="publishing || hasDraftChanges || lastSaveFailed" @click="showPublishConfirm = true">
           <Icon name="send" :size="14" />
-          <span>{{ publishing ? '发布中…' : '发布配置' }}</span>
+          <span>{{ publishing ? '同步中…' : '同步到访客端' }}</span>
         </button>
       </div>
     </header>
 
     <div v-if="loading" class="config-state">正在载入展厅配置…</div>
+    <div v-else-if="loadError" class="config-state">
+      <h1>无法加载展厅配置</h1>
+      <p>{{ loadError }}</p>
+      <div class="state-actions">
+        <button class="btn outline" type="button" @click="goBack">返回工作区</button>
+        <button class="btn solid" type="button" @click="loadGalleryAndConfig">重试</button>
+      </div>
+    </div>
 
     <div v-else class="config-split">
       <aside class="config-side">
-        <section class="side-block">
+        <div class="side-tabs" role="tablist" aria-label="配置分区">
+          <button
+            v-for="tab in CONFIG_TABS"
+            :key="tab.id"
+            class="side-tab"
+            :class="{ active: configTab === tab.id }"
+            type="button"
+            role="tab"
+            :aria-selected="configTab === tab.id"
+            @click="configTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <section v-show="configTab === 'basics'" class="side-block">
           <h2>
             <Icon name="layout" :size="15" />
             布局预设
@@ -839,7 +936,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section class="side-block">
+        <section v-show="configTab === 'basics'" class="side-block">
           <h2>
             <Icon name="sparkles" :size="15" />
             一键氛围
@@ -860,7 +957,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section class="side-block">
+        <section v-show="configTab === 'atmosphere'" class="side-block">
           <h2>
             <Icon name="sparkles" :size="15" />
             氛围
@@ -1016,7 +1113,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section class="side-block">
+        <section v-show="configTab === 'advanced'" class="side-block">
           <h2>
             <Icon name="star" :size="15" />
             粒子特效
@@ -1064,7 +1161,7 @@ onUnmounted(() => {
           />
         </section>
 
-        <section class="side-block">
+        <section v-show="configTab === 'advanced'" class="side-block">
           <h2>
             <Icon name="grid" :size="15" />
             纹理
@@ -1079,12 +1176,12 @@ onUnmounted(() => {
           </select>
         </section>
 
-        <section class="side-block">
+        <section v-show="configTab === 'history'" class="side-block">
           <h2>
             <Icon name="clock" :size="15" />
             版本历史
           </h2>
-          <ul class="history">
+          <ul v-if="displayVersions.length" class="history">
             <li v-for="version in displayVersions" :key="version.id">
               <button class="history-row" type="button" @click="version.current ? null : requestRollback(version.id)">
                 <span>
@@ -1095,20 +1192,22 @@ onUnmounted(() => {
               </button>
             </li>
           </ul>
-          <button class="history-more" type="button" @click="toast.info('完整版本列表即将开放')">
-            查看全部历史版本 →
-          </button>
+          <p v-else class="history-empty">还没有可回滚的历史版本。</p>
         </section>
       </aside>
 
       <section class="preview-pane" aria-label="3D 实时预览">
         <div v-if="!previewLive" class="preview-empty">
-          <p>实时预览需要访客端在 5174 运行</p>
-          <button class="btn solid" type="button" @click="openLivePreview">新窗口打开</button>
+          <p>{{ previewEmptyText }}</p>
+          <div class="preview-empty-actions">
+            <button v-if="embedTimedOut" class="btn outline" type="button" @click="retryEmbedPreview">重试连接</button>
+            <button v-if="gallerySlug" class="btn solid" type="button" @click="openLivePreview">新窗口打开</button>
+          </div>
         </div>
 
         <iframe
-          v-if="canEmbedViewer && !embedTimedOut"
+          v-if="showPreviewFrame"
+          :key="previewKey"
           ref="previewIframeRef"
           class="live-preview"
           :class="{ 'is-ready': previewLive }"
@@ -1132,9 +1231,9 @@ onUnmounted(() => {
 
     <ConfirmModal
       :show="showPublishConfirm"
-      title="发布配置"
-      message="确定要将当前展厅配置发布到线上吗？发布后访客将立即看到最新的空间布局与氛围。"
-      confirm-text="确认发布"
+      title="同步到访客端"
+      message="确定将当前展厅配置同步到访客端吗？访客将立即看到最新的空间布局与氛围。"
+      confirm-text="确认同步"
       :loading="publishing"
       @confirm="publishDraft"
       @cancel="showPublishConfirm = false"
@@ -1143,7 +1242,7 @@ onUnmounted(() => {
     <ConfirmModal
       :show="showRollbackConfirm"
       title="确认回滚配置版本"
-      message="回滚操作将立即应用历史版本并发布到线上，是否继续？"
+      message="确定将历史版本恢复为当前草稿吗？访客端在你再次同步前不会改变。"
       confirm-text="确认回滚"
       :loading="rollingBack"
       @confirm="rollbackDraft"
@@ -1191,10 +1290,10 @@ onUnmounted(() => {
 }
 
 .config-nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   margin: 14px 18px 0;
   padding: 12px 22px;
   background: rgba(255, 255, 255, 0.92);
@@ -1202,10 +1301,31 @@ onUnmounted(() => {
   box-shadow: 0 10px 28px rgba(15, 40, 28, 0.07);
 }
 
-.nav-brand {
-  display: flex;
+.config-tabs {
+  display: inline-flex;
   align-items: center;
-  gap: 16px;
+  gap: 4px;
+  justify-self: center;
+  padding: 4px;
+  border-radius: 12px;
+  background: #f3f4f6;
+}
+
+.config-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #6b7280;
+}
+
+.config-tab.is-active {
+  color: #047857;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
 }
 
 .brand {
@@ -1247,6 +1367,23 @@ onUnmounted(() => {
   color: #00b88f;
   font-size: 12px;
   font-weight: 650;
+}
+
+.autosave.is-warn {
+  color: #b45309;
+}
+
+.history-empty {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .btn {
@@ -1300,6 +1437,29 @@ onUnmounted(() => {
   background: #fff;
   border-radius: 20px;
   box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+}
+
+.side-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.side-tab {
+  padding: 8px 6px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  font-size: 12px;
+  font-weight: 650;
+  color: #6b7280;
+}
+
+.side-tab.active {
+  color: #047857;
+  border-color: #00b88f;
+  background: #ecfdf5;
 }
 
 .side-block + .side-block {
@@ -1589,8 +1749,12 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.preview-empty .btn {
-  justify-self: center;
+.preview-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .live-preview {

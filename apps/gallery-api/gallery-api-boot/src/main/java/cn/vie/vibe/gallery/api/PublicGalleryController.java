@@ -51,9 +51,12 @@ public class PublicGalleryController {
     public PublicGalleryResponse getGallery(
             @PathVariable("slug") String slug,
             @RequestHeader(value = "X-Share-Token", required = false) String shareToken,
+            @RequestHeader(value = "X-Preview-Token", required = false) String previewHeader,
+            @RequestParam(value = "preview", required = false) String previewQuery,
             HttpSession session
     ) {
-        PublicGalleryView view = publicAccessFacade.resolvePublicGallery(slug, shareToken, readSessionGalleryId(session));
+        PublicGalleryView view = publicAccessFacade.resolvePublicGallery(
+                slug, shareToken, readSessionGalleryId(session), previewToken(previewHeader, previewQuery));
 
         CoverResponse cover = view.cover() == null ? null : new CoverResponse(
                 view.cover().url(),
@@ -78,10 +81,14 @@ public class PublicGalleryController {
     public ResponseEntity<PublicViewerConfigResponse> getViewerConfig(
             @PathVariable("slug") String slug,
             @RequestHeader(value = "X-Share-Token", required = false) String shareToken,
+            @RequestHeader(value = "X-Preview-Token", required = false) String previewHeader,
+            @RequestParam(value = "preview", required = false) String previewQuery,
             HttpSession session
     ) {
-        publicAccessFacade.validateViewerConfigAccess(slug, shareToken, readSessionGalleryId(session));
-        return configFacade.getPublicConfig(slug)
+        String preview = previewToken(previewHeader, previewQuery);
+        publicAccessFacade.validateViewerConfigAccess(slug, shareToken, readSessionGalleryId(session), preview);
+        boolean includeDraft = publicAccessFacade.allowsCreatorPreview(slug, preview);
+        return configFacade.getPublicConfig(slug, includeDraft)
                 .map(config -> new PublicViewerConfigResponse(
                         config.id().toString(),
                         config.galleryId().toString(),
@@ -145,6 +152,8 @@ public class PublicGalleryController {
     public PhotoListResponse getPhotos(
             @PathVariable("slug") String slug,
             @RequestHeader(value = "X-Share-Token", required = false) String shareToken,
+            @RequestHeader(value = "X-Preview-Token", required = false) String previewHeader,
+            @RequestParam(value = "preview", required = false) String previewQuery,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "pageSize", defaultValue = "50") int pageSize,
             HttpSession session
@@ -154,6 +163,7 @@ public class PublicGalleryController {
                 slug,
                 shareToken,
                 publicSessionGalleryId,
+                previewToken(previewHeader, previewQuery),
                 page,
                 pageSize
         );
@@ -171,6 +181,12 @@ public class PublicGalleryController {
                 .toList();
 
         return new PhotoListResponse(items, result.page(), result.pageSize(), result.total());
+    }
+
+    private static String previewToken(String header, String query) {
+        if (header != null && !header.isBlank()) return header.trim();
+        if (query != null && !query.isBlank()) return query.trim();
+        return null;
     }
 
     private UUID readSessionGalleryId(HttpSession session) {

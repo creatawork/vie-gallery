@@ -23,6 +23,7 @@ public class PublicAccessFacade {
     private final PasswordHasher passwordHasher;
     private final PhotoAssetVariantRepository assetVariants;
     private final TokenGenerator tokenGenerator;
+    private final CreatorPreviewTokens previewTokens;
 
     public PublicAccessFacade(
             GalleryRepository galleryRepository,
@@ -34,7 +35,7 @@ public class PublicAccessFacade {
             TokenGenerator tokenGenerator
     ) {
         this(galleryRepository, shareLinkRepository, photoRepository, storageObjectRepository,
-                objectStoragePort, passwordHasher, tokenGenerator, null);
+                objectStoragePort, passwordHasher, tokenGenerator, null, null);
     }
 
     public PublicAccessFacade(
@@ -47,6 +48,21 @@ public class PublicAccessFacade {
             TokenGenerator tokenGenerator,
             PhotoAssetVariantRepository assetVariants
     ) {
+        this(galleryRepository, shareLinkRepository, photoRepository, storageObjectRepository,
+                objectStoragePort, passwordHasher, tokenGenerator, assetVariants, null);
+    }
+
+    public PublicAccessFacade(
+            GalleryRepository galleryRepository,
+            ShareLinkRepository shareLinkRepository,
+            PhotoRepository photoRepository,
+            StorageObjectRepository storageObjectRepository,
+            ObjectStoragePort objectStoragePort,
+            PasswordHasher passwordHasher,
+            TokenGenerator tokenGenerator,
+            PhotoAssetVariantRepository assetVariants,
+            CreatorPreviewTokens previewTokens
+    ) {
         this.galleryRepository = galleryRepository;
         this.shareLinkRepository = shareLinkRepository;
         this.photoRepository = photoRepository;
@@ -55,6 +71,7 @@ public class PublicAccessFacade {
         this.passwordHasher = passwordHasher;
         this.tokenGenerator = tokenGenerator;
         this.assetVariants = assetVariants;
+        this.previewTokens = previewTokens;
     }
 
     /**
@@ -65,9 +82,18 @@ public class PublicAccessFacade {
     }
 
     public PublicGalleryView resolvePublicGallery(String slug, String shareToken, UUID publicSessionGalleryId) {
-        Gallery gallery = findGallery(slug);
+        return resolvePublicGallery(slug, shareToken, publicSessionGalleryId, null);
+    }
+
+    public PublicGalleryView resolvePublicGallery(
+            String slug,
+            String shareToken,
+            UUID publicSessionGalleryId,
+            String previewToken
+    ) {
+        Gallery gallery = findGallery(slug, previewToken);
         Instant now = Instant.now();
-        PublicAccessState accessState = determineAccessState(gallery, shareToken, publicSessionGalleryId, now);
+        PublicAccessState accessState = determineAccessState(gallery, shareToken, publicSessionGalleryId, previewToken, now);
         boolean canExposePhotos = accessState == PublicAccessState.READY;
         int photoCount = canExposePhotos
                 ? photoRepository.countPublicReadyByGalleryId(gallery.tenantId(), gallery.id())
@@ -87,7 +113,7 @@ public class PublicAccessFacade {
      * 解锁密码相册，并返回真实的相册 ID 供 Controller 创建 gallery-scoped Session。
      */
     public UUID unlockGallery(String slug, String shareToken, String password) {
-        Gallery gallery = findGallery(slug);
+        Gallery gallery = findGallery(slug, null);
 
         if (gallery.visibility() != GalleryVisibility.PASSWORD) {
             throw new DomainException("INVALID_OPERATION", "Gallery does not require password");
@@ -105,8 +131,24 @@ public class PublicAccessFacade {
      * 验证公开 Viewer 配置的访问权限。
      */
     public void validateViewerConfigAccess(String slug, String shareToken, UUID publicSessionGalleryId) {
-        Gallery gallery = findGallery(slug);
-        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, Instant.now());
+        validateViewerConfigAccess(slug, shareToken, publicSessionGalleryId, null);
+    }
+
+    public void validateViewerConfigAccess(
+            String slug,
+            String shareToken,
+            UUID publicSessionGalleryId,
+            String previewToken
+    ) {
+        Gallery gallery = findGallery(slug, previewToken);
+        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, previewToken, Instant.now());
+    }
+
+    public boolean allowsCreatorPreview(String slug, String previewToken) {
+        return galleryRepository.findBySlug(slug)
+                .filter(g -> !g.deleted())
+                .filter(g -> allowsPreview(g, previewToken))
+                .isPresent();
     }
 
     /**
@@ -119,9 +161,20 @@ public class PublicAccessFacade {
             int page,
             int pageSize
     ) {
+        return listPublicPhotos(slug, shareToken, publicSessionGalleryId, null, page, pageSize);
+    }
+
+    public PublicPhotoPage listPublicPhotos(
+            String slug,
+            String shareToken,
+            UUID publicSessionGalleryId,
+            String previewToken,
+            int page,
+            int pageSize
+    ) {
         validatePage(page, pageSize);
-        Gallery gallery = findGallery(slug);
-        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, Instant.now());
+        Gallery gallery = findGallery(slug, previewToken);
+        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, previewToken, Instant.now());
 
         long offsetLong = (long) page * pageSize;
         if (offsetLong > Integer.MAX_VALUE) {
@@ -144,11 +197,18 @@ public class PublicAccessFacade {
         return new PublicPhotoPage(items, page, pageSize, total);
     }
 
-    private Gallery findGallery(String slug) {
+    private Gallery findGallery(String slug, String previewToken) {
         return galleryRepository.findBySlug(slug)
                 .filter(g -> !g.deleted())
-                .filter(g -> g.status() == GalleryStatus.PUBLISHED)
+                .filter(g -> g.status() == GalleryStatus.PUBLISHED || allowsPreview(g, previewToken))
                 .orElseThrow(PublicAccessException::galleryNotFound);
+    }
+
+    private boolean allowsPreview(Gallery gallery, String previewToken) {
+        if (previewTokens == null || gallery.status() == GalleryStatus.ARCHIVED) return false;
+        return previewTokens.resolve(previewToken)
+                .filter(galleryId -> galleryId.equals(gallery.id()))
+                .isPresent();
     }
 
     private PublicGalleryView.CoverView findCover(Gallery gallery) {
@@ -213,7 +273,16 @@ public class PublicAccessFacade {
         }
     }
 
-    private PublicAccessState determineAccessState(Gallery gallery, String shareToken, UUID publicSessionGalleryId, Instant now) {
+    private PublicAccessState determineAccessState(
+            Gallery gallery,
+            String shareToken,
+            UUID publicSessionGalleryId,
+            String previewToken,
+            Instant now
+    ) {
+        if (allowsPreview(gallery, previewToken)) {
+            return PublicAccessState.READY;
+        }
         return switch (gallery.visibility()) {
             case PUBLIC -> PublicAccessState.READY;
             case PRIVATE -> {
@@ -264,8 +333,12 @@ public class PublicAccessFacade {
             Gallery gallery,
             String shareToken,
             UUID publicSessionGalleryId,
+            String previewToken,
             Instant now
     ) {
+        if (allowsPreview(gallery, previewToken)) {
+            return;
+        }
         switch (gallery.visibility()) {
             case PUBLIC -> {
                 // PUBLIC 相册无需验证。

@@ -44,11 +44,18 @@ public class GalleryViewerConfigFacade {
         this.authorization = authorization;
     }
 
-    /** 获取公开展示配置（按相册 slug），只返回已发布快照。 */
+    /** 获取公开展示配置（按相册 slug），默认只返回已发布快照。 */
     public Optional<GalleryViewerConfig> getPublicConfig(String slug) {
+        return getPublicConfig(slug, false);
+    }
+
+    public Optional<GalleryViewerConfig> getPublicConfig(String slug, boolean includeDraft) {
         Optional<Gallery> gallery = galleryRepository.findBySlug(slug).filter(g -> !g.deleted());
         if (gallery.isEmpty()) return Optional.empty();
         Gallery value = gallery.get();
+        if (includeDraft) {
+            return configRepository.findByGalleryId(value.id());
+        }
         if (versionRepository == null) {
             return configRepository.findByGalleryId(value.id()).filter(GalleryViewerConfig::enabled);
         }

@@ -52,6 +52,29 @@ class PublicAccessFacadeTest {
     }
 
     @Test
+    void unpublishedGalleryIsVisibleWithCreatorPreviewToken() {
+        Fixture fixture = new Fixture();
+        CreatorPreviewTokens previewTokens = new CreatorPreviewTokens(fixture.tokens);
+        PublicAccessFacade facade = new PublicAccessFacade(
+                fixture.galleries, fixture.shareLinks, fixture.photos, fixture.storage,
+                new FixedObjectStorage(), new FixedPasswordHasher(), fixture.tokens, null, previewTokens);
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PUBLIC, null, "draft-preview");
+        fixture.galleries.values.put(gallery.id(), new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                gallery.visibility(), gallery.passwordHash(), gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
+                GalleryStatus.DRAFT, null));
+        fixture.addPhoto(gallery, "ready", PhotoStatus.READY, StorageObjectStatus.READY, 1);
+        String token = previewTokens.issue(gallery.id()).token();
+
+        PublicGalleryView result = facade.resolvePublicGallery(gallery.slug(), null, null, token);
+
+        assertEquals(PublicAccessState.READY, result.accessState());
+        assertEquals(1, result.photoCount());
+        assertTrue(facade.allowsCreatorPreview(gallery.slug(), token));
+        assertThrows(PublicAccessException.class,
+                () -> fixture.facade.resolvePublicGallery(gallery.slug(), null));
+    }
+
+    @Test
     void unpublishedGalleryIsNotFoundForAllPublicCredentials() {
         Fixture fixture = new Fixture();
         Gallery gallery = fixture.addGallery(GalleryVisibility.PUBLIC, null, "draft-gallery");

@@ -64,18 +64,22 @@ function handleDrop(event: DragEvent) {
   <section
     class="upload-tile"
     :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
+    role="button"
+    tabindex="0"
     aria-label="上传照片"
     @dragover.prevent="isDragOver = true"
     @dragleave.prevent="isDragOver = false"
     @drop.prevent="handleDrop"
     @click="!uploading && chooseFiles()"
+    @keydown.enter.prevent="!uploading && chooseFiles()"
+    @keydown.space.prevent="!uploading && chooseFiles()"
   >
     <template v-if="!uploading">
       <span class="upload-icon">
         <Icon name="upload" :size="28" />
       </span>
       <strong>拖拽上传照片</strong>
-      <small>JPG / PNG / WebP / RAW</small>
+      <small>JPG / PNG / WebP</small>
       <small>单张不超过 50MB</small>
     </template>
     <div v-else class="upload-progress" role="status" @click.stop>
@@ -105,9 +109,15 @@ function handleDrop(event: DragEvent) {
 }
 
 .upload-tile:hover,
-.upload-tile.drag-over {
+.upload-tile.drag-over,
+.upload-tile:focus-visible {
   background: rgba(220, 252, 231, 0.85);
   border-color: #00b88f;
+}
+
+.upload-tile:focus-visible {
+  outline: 2px solid #00b88f;
+  outline-offset: 2px;
 }
 
 .upload-icon {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ShareLinkStatus } from '@vie/gallery-contracts'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
@@ -7,6 +7,8 @@ import { useAuth } from '../composables/useAuth'
 import { useGalleryWorkspace, type WorkspacePhoto } from '../composables/useGalleryWorkspace'
 import { useUploadTasks, type UploadTask } from '../composables/useUploadTasks'
 import { apiFetch } from '../api'
+import { openCreatorPreview } from '../lib/preview'
+import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/Icon.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import LightboxModal from '../components/LightboxModal.vue'
@@ -19,15 +21,7 @@ type LightboxPhoto = Omit<WorkspacePhoto, 'title'> & { title?: string }
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const {
-  currentUser,
-  loading: authLoading,
-  can,
-  userDisplayName,
-  userInitial,
-  isOwner,
-  logout
-} = useAuth()
+const { currentUser, loading: authLoading, can, userDisplayName, userInitial, isOwner, logout, clearUser } = useAuth()
 const canPhotoWrite = can('PHOTO_WRITE')
 const canPublish = can('PUBLISH')
 const canShareManage = can('SHARE_MANAGE')
@@ -37,7 +31,6 @@ const workspace = useGalleryWorkspace(galleryId, computed(() => !!currentUser.va
 const taskCenter = useUploadTasks(galleryId, computed(() => !!currentUser.value && !authLoading.value && !!workspace.gallery.value))
 
 const photoViewMode = ref<'grid' | 'list'>('grid')
-const photoPanelRef = ref<HTMLElement | null>(null)
 const userMenuOpen = ref(false)
 const showLightbox = ref(false)
 const lightboxIndex = ref(0)
@@ -52,6 +45,8 @@ const shareLinksLoading = ref(false)
 const shareLinkToRevoke = ref<ShareLink | null>(null)
 const revokingShareLink = ref(false)
 const copied = ref(false)
+const previewOpening = ref(false)
+const { root: shareModalRoot } = useModalFocus(showShareModal, { onEscape: closeShareModal })
 
 type ShareLink = {
   id: string
@@ -61,32 +56,6 @@ type ShareLink = {
   lastAccessedAt?: string | null
 }
 
-const DEMO_TASKS: UploadTask[] = [
-  { id: 'demo-t1', filename: 'morning-mist.jpg', status: 'QUEUED', progress: 0, attempts: 0, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/forest.png' },
-  { id: 'demo-t2', filename: 'bamboo-path.jpg', status: 'QUEUED', progress: 0, attempts: 0, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/bamboo.png' },
-  { id: 'demo-t3', filename: 'quiet-lake.jpg', status: 'QUEUED', progress: 0, attempts: 0, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/lake.png' },
-  { id: 'demo-t4', filename: 'coast-wave.jpg', status: 'PROCESSING', progress: 68, attempts: 1, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/coast.png' },
-  { id: 'demo-t5', filename: 'valley-clip.mp4', status: 'PROCESSING', progress: 32, attempts: 1, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/stream.png' },
-  { id: 'demo-c1', filename: 'done-01.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
-  { id: 'demo-c2', filename: 'done-02.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
-  { id: 'demo-c3', filename: 'done-03.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
-  { id: 'demo-c4', filename: 'done-04.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
-  { id: 'demo-c5', filename: 'done-05.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
-  { id: 'demo-c6', filename: 'done-06.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
-  { id: 'demo-c7', filename: 'done-07.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
-  { id: 'demo-c8', filename: 'done-08.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false }
-]
-
-const displayTasks = computed(() => {
-  if (taskCenter.tasks.value.length) return taskCenter.tasks.value
-  return import.meta.env.DEV ? DEMO_TASKS : []
-})
-
-const displaySummary = computed(() => {
-  if (taskCenter.tasks.value.length) return taskCenter.summary.value
-  return { queued: 3, processing: 2, succeeded: 8, failed: 0, cancelRequested: 0, cancelled: 0 }
-})
-
 const lightboxPhotos = computed<LightboxPhoto[]>(() => workspace.photos.value.map(photo => ({
   ...photo,
   title: photo.title || undefined
@@ -95,16 +64,17 @@ const lightboxPhotos = computed<LightboxPhoto[]>(() => workspace.photos.value.ma
 const hallDescription = computed(() => {
   const gallery = workspace.gallery.value
   if (!gallery) return ''
-  if (gallery.slug === 'mountains-seas' || gallery.name === '山海之间') {
-    return '山海相连，光影流转，记录自然与心灵的共鸣。'
-  }
-  return '管理和编辑这个 3D 沉浸式画廊空间。'
+  return gallery.status === 'PUBLISHED'
+    ? '展厅已上线。上传照片、调整配置后，可通过分享链接邀请访客。'
+    : '展厅尚未上线。按下方步骤上传照片、配置氛围，再发布展厅。'
 })
 
-const visitLabel = computed(() => {
+const workflowStep = computed(() => {
   const gallery = workspace.gallery.value
-  if (gallery && (gallery.slug === 'mountains-seas' || gallery.name === '山海之间')) return '1,248'
-  return null
+  if (!gallery) return 1
+  if (gallery.status === 'PUBLISHED') return 4
+  if (workspace.photos.value.length > 0) return 3
+  return 1
 })
 
 function formatCreatedAt(value?: string | null) {
@@ -117,20 +87,19 @@ function formatCreatedAt(value?: string | null) {
   return `${y}-${m}-${d}`
 }
 
+watch(() => workspace.error.value, (err) => {
+  if (err?.kind === 'unauthorized') {
+    clearUser()
+    router.push({ name: 'overview' })
+  }
+})
+
 function goToOverview() {
   router.push({ name: 'overview' })
 }
 
 function goToConfig() {
   router.push({ name: 'gallery-config', params: { id: galleryId.value } })
-}
-
-function goToMembers() {
-  router.push('/members')
-}
-
-function scrollToPhotos() {
-  photoPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function viewerUrl(slug: string) {
@@ -152,18 +121,22 @@ function normalizeViewerShareUrl(value: string) {
   }
 }
 
-function openViewer() {
-  if (!workspace.gallery.value) return
-  window.open(viewerUrl(workspace.gallery.value.slug), '_blank', 'noopener,noreferrer')
+async function openViewer() {
+  const gallery = workspace.gallery.value
+  if (!gallery || previewOpening.value) return
+  previewOpening.value = true
+  try {
+    await openCreatorPreview(gallery.id, gallery.slug)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '暂时无法打开内部预览，请稍后重试。')
+  } finally {
+    previewOpening.value = false
+  }
 }
 
 function openLightbox(index: number) {
   lightboxIndex.value = index
   showLightbox.value = true
-}
-
-function comingSoon(name: string) {
-  toast.info(`${name}即将开放`)
 }
 
 async function handleLogout() {
@@ -176,7 +149,7 @@ async function handlePublish() {
   if (!canPublish.value) return
   try {
     await workspace.publish()
-    toast.success('展厅已发布。')
+    toast.success('展厅已发布，访客现在可以访问。')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '发布失败，请重试。')
   }
@@ -184,8 +157,10 @@ async function handlePublish() {
 
 async function handleUpload(files: FileList | File[]) {
   if (!canPhotoWrite.value) return
+  taskCenter.rememberLocal(Array.from(files))
   try {
-    const summary = await workspace.uploadFiles(files)
+    const summary = await workspace.uploadFiles(files, { onQueued: () => taskCenter.load(true) })
+    await taskCenter.load(true)
     if (summary.failed || summary.timedOut || summary.rejected) {
       toast.warning(`已处理 ${summary.succeeded} 张，${summary.failed + summary.timedOut + summary.rejected} 张仍需检查。`)
     } else {
@@ -193,6 +168,7 @@ async function handleUpload(files: FileList | File[]) {
     }
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '照片上传失败，请重试。')
+    await taskCenter.load(true)
   }
 }
 
@@ -377,35 +353,19 @@ function shareStatusLabel(status: string) {
         <nav class="hall-tabs">
           <RouterLink to="/" class="hall-tab">
             <Icon name="layout" :size="15" />
-            <span>工作台</span>
+            <span>我的空间</span>
           </RouterLink>
           <span class="hall-tab is-active">
             <Icon name="gallery" :size="15" />
-            <span>展厅管理</span>
+            <span>展厅工作区</span>
           </span>
-          <button class="hall-tab" type="button" @click="scrollToPhotos">
-            <Icon name="image" :size="15" />
-            <span>作品管理</span>
-          </button>
-          <button class="hall-tab" type="button" @click="goToConfig">
-            <Icon name="wrench" :size="15" />
-            <span>创作工具</span>
-          </button>
-          <button class="hall-tab" type="button" @click="comingSoon('数据分析')">
-            <Icon name="activity" :size="15" />
-            <span>数据分析</span>
-          </button>
-          <button class="hall-tab" type="button" @click="goToMembers">
-            <Icon name="settings" :size="15" />
-            <span>设置</span>
-          </button>
+          <RouterLink v-if="isOwner" to="/members" class="hall-tab">
+            <Icon name="users" :size="15" />
+            <span>成员管理</span>
+          </RouterLink>
         </nav>
 
         <div class="hall-user">
-          <button class="bell" type="button" aria-label="通知">
-            <Icon name="bell" :size="16" />
-            <span>6</span>
-          </button>
           <button class="user-chip" type="button" @click="userMenuOpen = !userMenuOpen">
             <span class="avatar">{{ userInitial }}</span>
             <span class="user-meta">
@@ -440,23 +400,38 @@ function shareStatusLabel(status: string) {
             <div>
               <div class="title-row">
                 <h1>{{ workspace.gallery.value.name }}</h1>
-                <Icon name="edit" :size="14" />
                 <span class="vis-pill" :class="workspace.gallery.value.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
                   {{ workspace.gallery.value.visibility === 'PUBLIC' ? '公开' : '私密' }}
                 </span>
+                <span class="vis-pill" :class="workspace.gallery.value.status === 'PUBLISHED' ? 'is-public' : 'is-private'">
+                  {{ workspace.gallery.value.status === 'PUBLISHED' ? '已发布' : '草稿' }}
+                </span>
               </div>
               <p>{{ hallDescription }}</p>
+              <ol class="workflow-steps" aria-label="展厅上线步骤">
+                <li :class="{ done: workspace.photos.value.length > 0, current: workflowStep === 1 }">
+                  <span>1</span>上传照片
+                </li>
+                <li :class="{ done: workspace.photos.value.length > 0 }">
+                  <span>2</span>配置氛围
+                </li>
+                <li :class="{ done: workspace.gallery.value.status === 'PUBLISHED', current: workflowStep === 3 }">
+                  <span>3</span>发布展厅
+                </li>
+                <li :class="{ done: workspace.gallery.value.status === 'PUBLISHED', current: workflowStep === 4 }">
+                  <span>4</span>分享链接
+                </li>
+              </ol>
               <div class="meta-row">
                 <span>创建于 {{ formatCreatedAt(workspace.gallery.value.createdAt) }}</span>
                 <span>{{ workspace.photos.value.length }} 张照片</span>
-                <span v-if="visitLabel">访问量 {{ visitLabel }}</span>
               </div>
             </div>
           </div>
           <div class="hero-actions">
-            <button class="btn outline" type="button" @click="openViewer">
+            <button class="btn outline" type="button" :disabled="previewOpening" @click="openViewer">
               <Icon name="eye" :size="15" />
-              <span>预览展厅</span>
+              <span>{{ previewOpening ? '正在打开…' : '预览展厅' }}</span>
             </button>
             <button v-if="canConfig" class="btn outline" type="button" @click="goToConfig">
               <Icon name="settings" :size="15" />
@@ -470,7 +445,7 @@ function shareStatusLabel(status: string) {
               @click="handlePublish"
             >
               <Icon name="send" :size="15" />
-              <span>发布</span>
+              <span>发布展厅</span>
             </button>
             <button
               v-else-if="canShareManage && workspace.gallery.value.status === 'PUBLISHED'"
@@ -479,22 +454,21 @@ function shareStatusLabel(status: string) {
               @click="openShareModal"
             >
               <Icon name="send" :size="15" />
-              <span>发布</span>
+              <span>分享</span>
             </button>
           </div>
         </section>
 
         <div class="hall-split">
-          <section ref="photoPanelRef" class="photo-panel">
+          <section class="photo-panel">
             <div class="photo-toolbar">
               <h2>照片管理 ({{ workspace.photos.value.length }})</h2>
               <div class="photo-tools">
-                <button class="sort-btn" type="button">排序</button>
                 <div class="view-toggle">
-                  <button class="view-btn" :class="{ active: photoViewMode === 'grid' }" type="button" @click="photoViewMode = 'grid'">
+                  <button class="view-btn" :class="{ active: photoViewMode === 'grid' }" type="button" aria-label="网格视图" @click="photoViewMode = 'grid'">
                     <Icon name="grid" :size="14" />
                   </button>
-                  <button class="view-btn" :class="{ active: photoViewMode === 'list' }" type="button" @click="photoViewMode = 'list'">
+                  <button class="view-btn" :class="{ active: photoViewMode === 'list' }" type="button" aria-label="列表视图" @click="photoViewMode = 'list'">
                     <Icon name="list" :size="14" />
                   </button>
                 </div>
@@ -521,6 +495,16 @@ function shareStatusLabel(status: string) {
               />
             </div>
             <div v-else class="photo-list">
+              <GalleryUploadDropzone
+                v-if="canPhotoWrite"
+                class="list-dropzone"
+                :uploading="workspace.uploading.value"
+                :progress="workspace.uploadProgress.value"
+                :status-text="workspace.uploadStatusText.value"
+                @files="handleUpload"
+                @invalid="toast.warning($event)"
+              />
+              <p v-if="!workspace.photos.value.length && !canPhotoWrite" class="list-empty">还没有照片。</p>
               <button
                 v-for="(photo, index) in workspace.photos.value"
                 :key="photo.id"
@@ -535,28 +519,27 @@ function shareStatusLabel(status: string) {
           </section>
 
           <UploadTaskCenter
-            :tasks="displayTasks"
-            :summary="displaySummary"
-            :loading="!!taskCenter.tasks.value.length && taskCenter.loading.value"
+            :tasks="taskCenter.tasks.value"
+            :summary="taskCenter.summary.value"
+            :loading="taskCenter.loading.value"
             :refreshing="taskCenter.refreshing.value"
-            :error="taskCenter.tasks.value.length ? taskCenter.error.value : null"
+            :error="taskCenter.error.value"
             :can-write="canPhotoWrite"
             :filter="taskCenter.filter.value"
             @update:filter="taskCenter.filter.value = $event"
             @refresh="taskCenter.load(true)"
             @retry="handleRetryTask"
             @cancel="handleCancelTask"
-            @pause-all="toast.info('当前队列暂不支持全部暂停')"
           />
         </div>
 
-        <footer class="hall-footer">© 2024 VIE Gallery · 让创作，遇见更多可能</footer>
+        <footer class="hall-footer">© 2026 VIE Gallery</footer>
       </div>
     </template>
 
     <Transition name="modal-fade">
       <div v-if="showShareModal" class="modal-backdrop" @click.self="closeShareModal">
-        <div class="modal-card" role="dialog" aria-modal="true">
+        <div ref="shareModalRoot" class="modal-card" role="dialog" aria-modal="true" tabindex="-1">
           <div class="modal-header-row">
             <h3>分享链接</h3>
             <button type="button" @click="closeShareModal"><Icon name="x" :size="18" /></button>
@@ -616,6 +599,7 @@ function shareStatusLabel(status: string) {
       :current-index="lightboxIndex"
       :can-write="canPhotoWrite"
       @close="showLightbox = false"
+      @select="lightboxIndex = $event"
       @set-cover="handleSetCover"
       @delete="promptDeletePhoto"
     />
@@ -699,29 +683,6 @@ function shareStatusLabel(status: string) {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.bell {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  color: #6b7280;
-}
-
-.bell span {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 999px;
-  background: #00b88f;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 700;
 }
 
 .user-chip {
@@ -845,6 +806,59 @@ function shareStatusLabel(status: string) {
   color: #6b7280;
 }
 
+.workflow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.workflow-steps li span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e5e7eb;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.workflow-steps li.done {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.workflow-steps li.done span {
+  background: #00b88f;
+  color: #fff;
+}
+
+.workflow-steps li.current {
+  color: #111827;
+  background: #fff;
+  box-shadow: 0 0 0 1px #00b88f inset;
+}
+
+.workflow-steps li.current span {
+  background: #059669;
+  color: #fff;
+}
+
 .meta-row {
   display: flex;
   gap: 16px;
@@ -952,6 +966,17 @@ function shareStatusLabel(status: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.photo-list :deep(.list-dropzone) {
+  min-height: 120px;
+}
+
+.list-empty {
+  margin: 0;
+  padding: 16px;
+  color: #6b7280;
+  font-size: 13px;
 }
 
 .list-row {

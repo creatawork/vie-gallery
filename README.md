@@ -6,7 +6,7 @@ VIE Gallery 是一个面向个人用户和创作者的照片相册产品：保�
 
 当前唯一有效的产品与工程路线是 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)，下一阶段具体任务见 [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)。本期目标是完成个人相册的 **备份、记录、创作、分享、管理** 闭环并上线；团队协作、多工作区、企业客户门户、复杂商业化等后期领域暂不纳入本期。
 
-代码基线：`feat/gallery-workspace-slice` / `3337049`（2026-09-08）。
+代码基线：`feat/gallery-workspace-slice`（2026-09-09）。提交后以该分支最新 hash 为准。
 
 ### 阶段状态
 
@@ -29,18 +29,26 @@ M7 的当前证据见 [`docs/m7-testing-results.md`](docs/m7-testing-results.md)
 注册/登录 → /app/ → 创建或选择相册 → /app/galleries/:id
                                       ├─ 上传、处理、整理照片
                                       ├─ 配置 2D/3D 展示并保存草稿
-                                      ├─ 预览、发布和回滚配置
+                                      ├─ 内部预览草稿（不改变公开 URL）
+                                      ├─ 发布和回滚配置
                                       └─ 生成分享链接 → /g/:slug?t=<token>
 ```
 
 访客路径：
 
 ```text
-/g/:slug                  PUBLIC 相册
-/g/:slug?t=<token>        PRIVATE 或受保护相册
+/g/:slug                  已发布的 PUBLIC 相册
+/g/:slug?t=<token>        已发布的 PRIVATE 或受保护相册
 ```
 
-当前 PRIVATE 语义是“仅持有有效分享 Token 的访客可访问”；登录用户直接访问 PRIVATE 属于上线后的后期能力。
+创作者内部预览：
+
+```text
+POST /api/galleries/{id}/preview-token
+→ /g/:slug?preview=<token>     15 分钟内可看草稿馆和当前配置草稿
+```
+
+未发布相册对无预览令牌的访客仍返回 404。当前 PRIVATE 语义是“仅持有有效分享 Token 的访客可访问”；登录用户直接访问 PRIVATE 属于上线后的后期能力。
 
 ## 主要目录
 
@@ -71,6 +79,7 @@ POST /api/galleries/{id}/photos
 GET  /api/galleries/{id}/photos
 PATCH /api/photos/{id}
 DELETE /api/photos/{id}
+POST /api/galleries/{id}/preview-token
 POST /api/galleries/{id}/publish
 POST /api/galleries/{id}/unpublish
 POST /api/galleries/{id}/share-links
@@ -93,7 +102,7 @@ GET  /api/public/g/{slug}/photos?page=0&pageSize=50
 GET  /api/public/g/{slug}/viewer-config
 ```
 
-公开照片和 `photoCount` 只包含 `READY` 且未软删除的照片。新分享链接统一使用 query Token；Viewer 暂时兼容旧的 `token` 参数和 `#s=` 格式。
+公开端可通过 `X-Preview-Token` 或 `?preview=` 携带创作者预览令牌。有效令牌可读取对应草稿馆的照片和当前配置草稿；过期、错馆或缺失令牌时，未发布相册仍按不存在处理。公开照片和 `photoCount` 只包含 `READY` 且未软删除的照片。新分享链接统一使用 query Token；Viewer 暂时兼容旧的 `token` 参数和 `#s=` 格式。
 
 ## 本地启动
 

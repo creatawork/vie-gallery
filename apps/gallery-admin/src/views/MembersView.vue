@@ -7,6 +7,7 @@ import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
 import Icon from '../components/Icon.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
+import { useModalFocus } from '../composables/useModalFocus'
 
 const router = useRouter()
 const { isOwner, userDisplayName, userInitial, currentUser, logout } = useAuth()
@@ -21,15 +22,11 @@ const updatingId = ref('')
 const showInviteModal = ref(false)
 const userMenuOpen = ref(false)
 const rowMenuId = ref<string | null>(null)
-const usedDemo = ref(false)
 const rbacPanelRef = ref<HTMLElement | null>(null)
-
-const DEMO_MEMBERS: WorkspaceMember[] = [
-  { id: 'm-owner', displayName: 'VIE Gallery', email: 'hello@viegallery.com', role: 'OWNER', joinedAt: '2024-03-12T00:00:00.000Z' },
-  { id: 'm-yx', displayName: '杨晓', email: 'yx@viegallery.com', role: 'EDITOR', joinedAt: '2024-04-08T00:00:00.000Z' },
-  { id: 'm-lq', displayName: '林栖', email: 'lq@viegallery.com', role: 'EDITOR', joinedAt: '2024-05-18T00:00:00.000Z' },
-  { id: 'm-cz', displayName: '陈舟', email: 'cz@viegallery.com', role: 'EDITOR', joinedAt: '2024-06-21T00:00:00.000Z' }
-]
+const { root: inviteModalRoot } = useModalFocus(showInviteModal, {
+  onEscape: () => { if (!submitting.value) showInviteModal.value = false },
+  disabled: submitting
+})
 
 const statusMessage = computed(() => {
   if (!isOwner.value) return '只有工作区所有者可以管理成员与指派权限。'
@@ -42,7 +39,7 @@ function pad(n: number) {
 }
 
 function roleLabel(role: MembershipRole) {
-  return role === 'OWNER' ? 'Owner' : role === 'EDITOR' ? 'Editor' : 'Viewer'
+  return role === 'OWNER' ? '所有者' : role === 'EDITOR' ? '编辑' : '查看者'
 }
 
 function formatDate(value?: string | null) {
@@ -53,7 +50,6 @@ function formatDate(value?: string | null) {
 }
 
 function initials(member: WorkspaceMember) {
-  if (member.email === 'hello@viegallery.com') return 'VL'
   const source = (member.displayName || member.email || '?').trim()
   if (/[\u4e00-\u9fff]/.test(source)) return source[0]
   const parts = source.split(/\s+/)
@@ -63,20 +59,7 @@ function initials(member: WorkspaceMember) {
 
 function isYou(member: WorkspaceMember) {
   const email = currentUser.value?.user?.email || currentUser.value?.email
-  if (email && member.email === email) return true
-  return usedDemo.value && member.role === 'OWNER'
-}
-
-function comingSoon(name: string) {
-  toast.info(`${name}即将开放`)
-}
-
-function goToOverview() {
-  router.push('/')
-}
-
-function scrollToRbac() {
-  rbacPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  return !!email && member.email === email
 }
 
 function closeMenus(event?: Event) {
@@ -100,12 +83,6 @@ async function readError(response: Response, fallback: string) {
   return body.message || fallback
 }
 
-function applyDemoMembers() {
-  members.value = DEMO_MEMBERS
-  usedDemo.value = true
-  error.value = ''
-}
-
 async function loadMembers() {
   if (!isOwner.value) {
     loading.value = false
@@ -117,13 +94,9 @@ async function loadMembers() {
     const response = await apiFetch('/api/workspace/members')
     if (!response.ok) throw new Error(await readError(response, '成员列表加载失败，请稍后重试。'))
     members.value = await response.json() as WorkspaceMember[]
-    usedDemo.value = false
   } catch (cause) {
-    if (import.meta.env.DEV) {
-      applyDemoMembers()
-    } else {
-      error.value = cause instanceof Error ? cause.message : '成员列表加载失败，请稍后重试。'
-    }
+    members.value = []
+    error.value = cause instanceof Error ? cause.message : '成员列表加载失败，请稍后重试。'
   } finally {
     loading.value = false
   }
@@ -140,22 +113,6 @@ async function addMember() {
       body: JSON.stringify({ email: form.value.email.trim(), role: form.value.role })
     })
     if (!response.ok) {
-      if (import.meta.env.DEV) {
-        members.value = [
-          ...members.value,
-          {
-            id: `demo-${Date.now()}`,
-            displayName: form.value.email.trim().split('@')[0],
-            email: form.value.email.trim(),
-            role: form.value.role,
-            joinedAt: new Date().toISOString()
-          }
-        ]
-        form.value = { email: '', role: 'EDITOR' }
-        showInviteModal.value = false
-        toast.success('成员已成功添加。')
-        return
-      }
       throw new Error(await readError(response, '添加成员失败，请稍后重试。'))
     }
     form.value = { email: '', role: 'EDITOR' }
@@ -163,22 +120,6 @@ async function addMember() {
     showInviteModal.value = false
     await loadMembers()
   } catch (cause) {
-    if (import.meta.env.DEV) {
-      members.value = [
-        ...members.value,
-        {
-          id: `demo-${Date.now()}`,
-          displayName: form.value.email.trim().split('@')[0],
-          email: form.value.email.trim(),
-          role: form.value.role,
-          joinedAt: new Date().toISOString()
-        }
-      ]
-      form.value = { email: '', role: 'EDITOR' }
-      showInviteModal.value = false
-      toast.success('成员已成功添加。')
-      return
-    }
     error.value = cause instanceof Error ? cause.message : '添加成员失败，请稍后重试。'
     toast.error(error.value)
   } finally {
@@ -197,21 +138,11 @@ async function updateRole(member: WorkspaceMember, role: MembershipRole) {
       body: JSON.stringify({ role })
     })
     if (!response.ok) {
-      if (import.meta.env.DEV) {
-        member.role = role
-        toast.success('成员角色已更新。')
-        return
-      }
       throw new Error(await readError(response, '角色更新失败，请稍后重试。'))
     }
     member.role = role
     toast.success('成员角色已更新。')
   } catch (cause) {
-    if (import.meta.env.DEV) {
-      member.role = role
-      toast.success('成员角色已更新。')
-      return
-    }
     toast.error(cause instanceof Error ? cause.message : '角色更新失败，请稍后重试。')
     await loadMembers()
   } finally {
@@ -226,24 +157,12 @@ async function removeMember() {
   try {
     const response = await apiFetch(`/api/workspace/members/${member.id}`, { method: 'DELETE' })
     if (!response.ok) {
-      if (import.meta.env.DEV) {
-        members.value = members.value.filter(item => item.id !== member.id)
-        toast.success('成员已移除。')
-        memberToRemove.value = null
-        return
-      }
       throw new Error(await readError(response, '移除成员失败，请稍后重试。'))
     }
     toast.success('成员已移除。')
     memberToRemove.value = null
     await loadMembers()
   } catch (cause) {
-    if (import.meta.env.DEV) {
-      members.value = members.value.filter(item => item.id !== member.id)
-      toast.success('成员已移除。')
-      memberToRemove.value = null
-      return
-    }
     toast.error(cause instanceof Error ? cause.message : '移除成员失败，请稍后重试。')
   } finally {
     updatingId.value = ''
@@ -279,24 +198,12 @@ onUnmounted(() => {
       <nav class="top-tabs">
         <RouterLink to="/" class="top-tab">
           <Icon name="grid" :size="15" />
-          <span>概览</span>
+          <span>我的空间</span>
         </RouterLink>
-        <button class="top-tab" type="button" @click="comingSoon('作品')">
-          <Icon name="image" :size="15" />
-          <span>作品</span>
-        </button>
-        <button class="top-tab" type="button" @click="comingSoon('展览')">
-          <Icon name="calendar" :size="15" />
-          <span>展览</span>
-        </button>
-        <button class="top-tab" type="button" @click="comingSoon('收藏')">
-          <Icon name="heart" :size="15" />
-          <span>收藏</span>
-        </button>
-        <button class="top-tab" type="button" @click="comingSoon('设置')">
-          <Icon name="settings" :size="15" />
-          <span>设置</span>
-        </button>
+        <span class="top-tab is-active">
+          <Icon name="users" :size="15" />
+          <span>成员管理</span>
+        </span>
       </nav>
 
       <div class="user-chip" @click.stop="userMenuOpen = !userMenuOpen">
@@ -310,56 +217,6 @@ onUnmounted(() => {
     </header>
 
     <div class="members-body">
-      <aside class="side-card">
-        <RouterLink to="/" class="home-btn" aria-label="回到概览">
-          <Icon name="home" :size="16" />
-        </RouterLink>
-
-        <p class="side-label">内容管理</p>
-        <button class="side-item" type="button" @click="goToOverview">
-          <Icon name="image" :size="15" />
-          <span>作品管理</span>
-        </button>
-        <button class="side-item" type="button" @click="goToOverview">
-          <Icon name="calendar" :size="15" />
-          <span>展览管理</span>
-        </button>
-        <button class="side-item" type="button" @click="comingSoon('收藏管理')">
-          <Icon name="heart" :size="15" />
-          <span>收藏管理</span>
-        </button>
-
-        <p class="side-label">团队管理</p>
-        <span class="side-item is-active">
-          <Icon name="users" :size="15" />
-          <span>成员管理</span>
-        </span>
-
-        <p class="side-label">系统设置</p>
-        <button class="side-item" type="button" @click="comingSoon('系统设置')">
-          <Icon name="settings" :size="15" />
-          <span>系统设置</span>
-        </button>
-        <button class="side-item" type="button" @click="scrollToRbac">
-          <Icon name="shield" :size="15" />
-          <span>权限与安全</span>
-        </button>
-
-        <div class="side-brand">
-          <span class="fold-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" fill="none">
-              <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
-              <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
-              <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
-            </svg>
-          </span>
-          <div>
-            <strong>VIE Gallery</strong>
-            <small>艺术收藏 · 灵感分享</small>
-          </div>
-        </div>
-      </aside>
-
       <section class="main-card">
         <div class="main-head">
           <div>
@@ -368,7 +225,7 @@ onUnmounted(() => {
           </div>
           <button v-if="isOwner" class="invite-btn" type="button" @click="showInviteModal = true">
             <Icon name="plus" :size="15" />
-            <span>邀请成员</span>
+            <span>添加成员</span>
           </button>
         </div>
 
@@ -412,8 +269,8 @@ onUnmounted(() => {
                     <Icon name="more" :size="16" />
                   </button>
                   <div v-if="rowMenuId === member.id" class="menu-pop">
-                    <button type="button" :disabled="updatingId === member.id" @click="updateRole(member, 'EDITOR')">设为 Editor</button>
-                    <button type="button" :disabled="updatingId === member.id" @click="updateRole(member, 'VIEWER')">设为 Viewer</button>
+                    <button type="button" :disabled="updatingId === member.id" @click="updateRole(member, 'EDITOR')">设为编辑</button>
+                    <button type="button" :disabled="updatingId === member.id" @click="updateRole(member, 'VIEWER')">设为查看者</button>
                     <button type="button" class="danger" :disabled="!!updatingId" @click="memberToRemove = member; rowMenuId = null">移除成员</button>
                   </div>
                 </div>
@@ -424,24 +281,24 @@ onUnmounted(() => {
 
         <p class="hint">
           <Icon name="shield" :size="14" />
-          <span>所有成员邀请链接的权限有效期为 7 天</span>
+          <span>通过电子邮箱添加已注册成员。对方加入后即可按角色协作。</span>
         </p>
 
         <section ref="rbacPanelRef" class="rbac-panel">
-          <h2>权限与安全</h2>
-          <p>工作区角色对照。邀请链接 7 天内有效，过期后需重新发送。</p>
+          <h2>权限说明</h2>
+          <p>邀请时直接指定角色。只有所有者可以管理成员。</p>
           <ul>
             <li>
-              <strong>Owner</strong>
-              <span>所有者：管理成员、发布配置、全部相册权限</span>
+              <strong>所有者</strong>
+              <span>管理成员、发布配置、全部相册权限</span>
             </li>
             <li>
-              <strong>Editor</strong>
-              <span>编辑：上传照片、修改展厅配置，不能管理成员</span>
+              <strong>编辑</strong>
+              <span>上传照片、修改展厅配置，不能管理成员</span>
             </li>
             <li>
-              <strong>Viewer</strong>
-              <span>查看者：浏览相册，不能修改内容或配置</span>
+              <strong>查看者</strong>
+              <span>浏览相册，不能修改内容或配置</span>
             </li>
           </ul>
         </section>
@@ -450,11 +307,18 @@ onUnmounted(() => {
 
     <Transition name="modal-fade">
       <div v-if="showInviteModal" class="modal-backdrop" @click.self="!submitting && (showInviteModal = false)">
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+        <div
+          ref="inviteModalRoot"
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="invite-title"
+          tabindex="-1"
+        >
           <div class="modal-head">
             <div>
-              <h2 id="invite-title">邀请成员</h2>
-              <p>输入成员电子邮箱并指派初始协作角色</p>
+              <h2 id="invite-title">添加成员</h2>
+              <p>输入已注册账号的电子邮箱并指派角色</p>
             </div>
             <button type="button" aria-label="关闭" :disabled="submitting" @click="showInviteModal = false">
               <Icon name="x" :size="18" />
@@ -465,13 +329,13 @@ onUnmounted(() => {
             <input id="invite-email" v-model="form.email" type="email" placeholder="colleague@example.com" required />
             <label for="invite-role">协作角色</label>
             <select id="invite-role" v-model="form.role">
-              <option value="EDITOR">Editor</option>
-              <option value="VIEWER">Viewer</option>
+              <option value="EDITOR">编辑</option>
+              <option value="VIEWER">查看者</option>
             </select>
             <div class="modal-actions">
               <button type="button" class="ghost" :disabled="submitting" @click="showInviteModal = false">取消</button>
               <button type="submit" class="invite-btn" :disabled="submitting">
-                {{ submitting ? '邀请中…' : '发送邀请' }}
+                {{ submitting ? '添加中…' : '添加成员' }}
               </button>
             </div>
           </form>
@@ -609,86 +473,16 @@ onUnmounted(() => {
 }
 
 .members-body {
-  display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  gap: 18px;
   width: min(1280px, calc(100% - 40px));
   margin: 18px auto 28px;
-  align-items: start;
 }
 
-.side-card,
 .main-card {
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 22px;
   box-shadow: 0 12px 32px rgba(15, 40, 28, 0.06);
   backdrop-filter: blur(18px);
-}
-
-.side-card {
-  display: flex;
-  flex-direction: column;
-  min-height: calc(100dvh - 130px);
-  padding: 16px 14px 18px;
-}
-
-.home-btn {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  margin-bottom: 10px;
-  border-radius: 10px;
-  color: #0f766e;
-  background: rgba(16, 185, 129, 0.1);
-}
-
-.side-label {
-  margin: 14px 8px 6px;
-  color: #9ca3af;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.side-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 10px;
-  border-radius: 12px;
-  color: #6b7280;
-  font-size: 13px;
-  font-weight: 650;
-  text-align: left;
-}
-
-.side-item.is-active,
-.side-item:hover {
-  color: #0f766e;
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.side-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: auto;
-  padding: 12px 10px;
-  border-radius: 14px;
-  background: rgba(240, 253, 250, 0.9);
-}
-
-.side-brand strong {
-  display: block;
-  font-size: 13px;
-}
-
-.side-brand small {
-  color: #9ca3af;
-  font-size: 11px;
 }
 
 .main-card {

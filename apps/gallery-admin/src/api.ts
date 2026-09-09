@@ -7,7 +7,7 @@ function readCookie(name: string): string | undefined {
 export async function csrfToken(): Promise<string> {
   if (!csrfState.token) {
     const response = await fetch('/api/auth/csrf', { credentials: 'include' })
-    if (!response.ok) throw new Error('Unable to initialize CSRF protection')
+    if (!response.ok) throw new Error('无法建立安全连接，请刷新后重试。')
     const body = await response.json() as { token: string }
     csrfState.token = body.token
   }

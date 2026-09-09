@@ -89,7 +89,11 @@ watch(gyroEnabled, (enabled) => {
   }
 })
 
-function handlePostMessage(event: MessageEvent) {
+function isEmbedPreview() {
+  return window.parent !== window
+}
+
+async function handlePostMessage(event: MessageEvent) {
   if (!event.data || typeof event.data !== 'object') return
   const { type, mode, config, presetName } = event.data
 
@@ -97,14 +101,22 @@ function handlePostMessage(event: MessageEvent) {
     engine.getEventBus().emit('layout:change', mode)
   } else if (type === 'VIE_PRESET_CHANGE' && presetName) {
     selectPreset(presetName)
-  } else if (type === 'VIE_CONFIG_UPDATE' && config && engine) {
-    engine.applyConfig(config)
+  } else if (type === 'VIE_CONFIG_UPDATE' && config) {
+    if (!engine && isEmbedPreview()) {
+      await nextTick()
+      await init3DEngine()
+    }
+    if (engine) engine.applyConfig(config)
   }
 }
 
 function notifyParentReady() {
+  const payload = { type: 'VIE_PREVIEW_READY' }
   if (window.parent && window.parent !== window) {
-    window.parent.postMessage({ type: 'VIE_PREVIEW_READY' }, '*')
+    window.parent.postMessage(payload, '*')
+  }
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage(payload, '*')
   }
 }
 
@@ -122,9 +134,11 @@ function toggleFullscreen() {
 
 // 监听照片数据加载或视图模式切换后初始化 3D 引擎
 watch(
-  () => [viewer.isReady.value, viewer.photos.value, viewMode.value],
-  async ([isReady, photos, mode]) => {
-    if (isReady && mode === '3d') {
+  () => [viewer.isReady.value, viewer.isEmpty.value, viewer.state.value, viewMode.value],
+  async ([isReady, isEmpty, state, mode]) => {
+    const embedReady = isEmbedPreview() && state !== 'loading' && state !== 'password_prompt'
+    const canInit3d = mode === '3d' && (isReady || isEmpty || embedReady)
+    if (canInit3d) {
       await nextTick()
       init3DEngine()
     } else if (mode === '2d') {
@@ -141,7 +155,7 @@ async function init3DEngine() {
   try {
     const rawPhotos = viewer.photos.value
     if (!rawPhotos || rawPhotos.length === 0) {
-      if (!isDevDemo()) return
+      if (!isDevDemo() && !isEmbedPreview()) return
     }
 
     engine = new ViewerEngine(canvasRef.value)
@@ -188,7 +202,12 @@ async function init3DEngine() {
     })
 
     engine.setPhotos(meshes)
-    await engine.init(slug)
+    try {
+      await engine.init(slug)
+    } catch (err) {
+      if (!isEmbedPreview()) throw err
+      await engine.init()
+    }
     engine.start()
     notifyParentReady()
 
@@ -436,13 +455,20 @@ async function selectPreset(presetName: string) {
       @unlock="handleUnlock"
     />
 
-    <!-- 3. 空相册状态 -->
+    <!-- 3. Admin 嵌入预览：草稿/未公开时仍渲染 WebGL 沙盒 -->
+    <div v-else-if="isEmbedPreview()" class="gallery-viewport embed-preview">
+      <div class="canvas-container">
+        <canvas ref="canvasRef" class="webgl-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- 4. 空相册状态 -->
     <EmptyState
       v-else-if="viewer.isEmpty.value"
       :message="viewer.gallery.value?.title ? `“${viewer.gallery.value.title}” 暂无照片` : undefined"
     />
 
-    <!-- 4. 错误状态 -->
+    <!-- 5. 错误状态 -->
     <ErrorState
       v-else-if="viewer.state.value === 'not_found'"
       title="相册空间未找到"
@@ -1064,6 +1090,19 @@ async function selectPreset(presetName: string) {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.embed-preview {
+  position: fixed;
+  inset: 0;
+  background: #0b1220;
+}
+
+.embed-preview .canvas-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* ==========================================

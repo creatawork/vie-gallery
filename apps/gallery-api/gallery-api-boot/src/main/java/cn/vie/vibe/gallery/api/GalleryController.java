@@ -1,5 +1,6 @@
 package cn.vie.vibe.gallery.api;
 
+import cn.vie.vibe.gallery.application.CreatorPreviewTokens;
 import cn.vie.vibe.gallery.application.GalleryFacade;
 import cn.vie.vibe.gallery.application.PhotoRepository;
 import cn.vie.vibe.gallery.application.StorageObjectRepository;
@@ -26,13 +27,22 @@ public class GalleryController {
     private final StorageObjectRepository objects;
     private final ObjectStoragePort storage;
     private final TenantContextResolver tenantContext;
+    private final CreatorPreviewTokens previewTokens;
 
-    public GalleryController(GalleryFacade facade, PhotoRepository photos, StorageObjectRepository objects, ObjectStoragePort storage, TenantContextResolver tenantContext) {
+    public GalleryController(
+            GalleryFacade facade,
+            PhotoRepository photos,
+            StorageObjectRepository objects,
+            ObjectStoragePort storage,
+            TenantContextResolver tenantContext,
+            CreatorPreviewTokens previewTokens
+    ) {
         this.facade = facade;
         this.photos = photos;
         this.objects = objects;
         this.storage = storage;
         this.tenantContext = tenantContext;
+        this.previewTokens = previewTokens;
     }
 
     @GetMapping public List<GalleryResponse> list() {
@@ -57,6 +67,13 @@ public class GalleryController {
                     .orElse(null);
         }
         return GalleryResponse.from(gallery, coverUrl);
+    }
+
+    @PostMapping("/{galleryId}/preview-token")
+    public PreviewTokenResponse issuePreviewToken(@PathVariable UUID galleryId) {
+        Gallery gallery = facade.get(galleryId);
+        CreatorPreviewTokens.IssuedToken issued = previewTokens.issue(gallery.id());
+        return new PreviewTokenResponse(issued.token(), issued.expiresAt());
     }
 
     @PostMapping("/{galleryId}/publish")
@@ -97,6 +114,9 @@ public class GalleryController {
     }
 
     public record SetPasswordRequest(@NotBlank @Size(min = 6, max = 128) String password) {
+    }
+
+    public record PreviewTokenResponse(String token, java.time.Instant expiresAt) {
     }
 
     public record GalleryResponse(String id, String slug, String name, GalleryVisibility visibility,

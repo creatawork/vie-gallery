@@ -19,9 +19,9 @@ const emit = defineEmits<{
 const menuOpen = ref(false)
 
 function formatBytes(bytes?: number) {
-  if (!bytes) return 'JPG'
-  if (bytes < 1024 * 1024) return `JPG · ${(bytes / 1024).toFixed(0)}KB`
-  return `JPG · ${(bytes / (1024 * 1024)).toFixed(1)}MB`
+  if (!bytes) return ''
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function toggleMenu(event: Event) {
@@ -56,11 +56,8 @@ function toggleMenu(event: Event) {
     <div class="photo-info">
       <h3>{{ photo.title || '未命名照片' }}</h3>
       <div class="photo-meta">
-        <span>{{ formatBytes(photo.byteSize) }}</span>
+        <span v-if="formatBytes(photo.byteSize)">{{ formatBytes(photo.byteSize) }}</span>
         <div class="meta-actions" @click.stop>
-          <button class="ghost-btn" type="button" title="拖拽排序" tabindex="-1">
-            <Icon name="grip" :size="14" />
-          </button>
           <button class="ghost-btn" type="button" aria-label="更多操作" @click="toggleMenu">
             <Icon name="more" :size="16" />
           </button>

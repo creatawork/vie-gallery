@@ -18,7 +18,6 @@ const emit = defineEmits<{
   (event: 'refresh'): void
   (event: 'retry', task: UploadTask): void
   (event: 'cancel', task: UploadTask): void
-  (event: 'pause-all'): void
 }>()
 
 const completedOpen = ref(false)
@@ -31,8 +30,12 @@ function fileLabel(task: UploadTask) {
   return task.filename || '未命名文件'
 }
 
-function formatSize() {
-  return 'JPG · 2.4MB'
+function statusCopy(task: UploadTask) {
+  if (task.status === 'QUEUED') return '排队中'
+  if (task.status === 'PROCESSING' || task.status === 'CANCEL_REQUESTED') return '处理中'
+  if (task.status === 'FAILED') return task.errorMessage || '失败'
+  if (task.status === 'CANCELLED') return '已取消'
+  return '已完成'
 }
 </script>
 
@@ -43,24 +46,26 @@ function formatSize() {
         <Icon name="check-circle" :size="18" />
         <h2>上传任务中心</h2>
       </div>
-      <button class="pause-btn" type="button" @click="emit('pause-all')">全部暂停</button>
     </header>
 
     <div v-if="loading && !tasks.length" class="task-empty">正在同步任务队列…</div>
-    <div v-else-if="error" class="task-empty">{{ error.message }}</div>
-    <div v-else-if="!tasks.length" class="task-empty">暂无上传任务</div>
+    <div v-else-if="error" class="task-empty">
+      <p>{{ error.message }}</p>
+      <button class="pause-btn" type="button" @click="emit('refresh')">重试</button>
+    </div>
+    <div v-else-if="!tasks.length" class="task-empty">还没有上传任务。把照片拖到左侧即可开始。</div>
 
     <div v-else class="task-groups">
       <section v-if="readyTasks.length" class="task-group">
-        <h3>准备中 (READY) · {{ readyTasks.length }}</h3>
+        <h3>排队中 · {{ readyTasks.length }}</h3>
         <div v-for="task in readyTasks" :key="task.id" class="task-item">
           <img v-if="task.thumbnailUrl || task.photoThumbnailUrl" :src="task.thumbnailUrl || task.photoThumbnailUrl || undefined" class="thumb" />
           <div v-else class="thumb-fallback"><Icon name="photo" :size="14" /></div>
           <div class="task-copy">
             <strong>{{ fileLabel(task) }}</strong>
-            <span>{{ formatSize() }}</span>
+            <span>{{ statusCopy(task) }}</span>
           </div>
-          <span class="ready-tag">READY</span>
+          <span class="ready-tag">排队</span>
           <button v-if="canWrite" class="icon-x" type="button" @click="emit('cancel', task)">
             <Icon name="x" :size="14" />
           </button>
@@ -68,15 +73,15 @@ function formatSize() {
       </section>
 
       <section v-if="processingTasks.length" class="task-group">
-        <h3>处理中 (PROCESSING) · {{ processingTasks.length }}</h3>
+        <h3>处理中 · {{ processingTasks.length }}</h3>
         <div v-for="task in processingTasks" :key="task.id" class="task-item processing">
           <img v-if="task.thumbnailUrl || task.photoThumbnailUrl" :src="task.thumbnailUrl || task.photoThumbnailUrl || undefined" class="thumb" />
           <div v-else class="thumb-fallback"><Icon name="photo" :size="14" /></div>
           <div class="task-copy">
             <strong>{{ fileLabel(task) }}</strong>
-            <div class="bar"><div class="fill" :style="{ width: `${task.progress || 32}%` }"></div></div>
+            <div class="bar"><div class="fill" :style="{ width: `${task.progress || 0}%` }"></div></div>
           </div>
-          <span class="pct">{{ task.progress || 32 }}%</span>
+          <span class="pct">{{ task.progress || 0 }}%</span>
           <button v-if="canWrite" class="icon-x" type="button" @click="emit('cancel', task)">
             <Icon name="pause" :size="14" />
           </button>
@@ -85,7 +90,7 @@ function formatSize() {
 
       <section v-if="completedTasks.length" class="task-group">
         <button class="collapse" type="button" @click="completedOpen = !completedOpen">
-          <span>已完成 (COMPLETED) · {{ completedTasks.length }}</span>
+          <span>已完成 · {{ completedTasks.length }}</span>
           <Icon name="chevron-down" :size="14" />
         </button>
         <div v-if="completedOpen">
@@ -93,7 +98,7 @@ function formatSize() {
             <div class="thumb-fallback"><Icon name="check" :size="14" /></div>
             <div class="task-copy">
               <strong>{{ fileLabel(task) }}</strong>
-              <span>{{ task.status === 'FAILED' ? '失败' : '已完成' }}</span>
+              <span>{{ statusCopy(task) }}</span>
             </div>
             <button v-if="canWrite && task.status === 'FAILED'" class="icon-x" type="button" @click="emit('retry', task)">
               <Icon name="refresh" :size="14" />

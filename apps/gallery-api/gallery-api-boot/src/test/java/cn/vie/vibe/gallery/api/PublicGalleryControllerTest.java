@@ -93,20 +93,20 @@ class PublicGalleryControllerTest {
         GalleryViewerConfigFacade config = mock(GalleryViewerConfigFacade.class);
         RedisRateLimiter limiter = mock(RedisRateLimiter.class);
         PublicPhotoPage page = new PublicPhotoPage(List.of(), 0, 10, 0);
-        when(access.listPublicPhotos(eq(SLUG), any(), eq(null), eq(0), eq(10))).thenReturn(page);
+        when(access.listPublicPhotos(eq(SLUG), any(), eq(null), eq(null), eq(0), eq(10))).thenReturn(page);
         PublicGalleryController controller = new PublicGalleryController(access, config, limiter);
 
         MockHttpSession session = new MockHttpSession();
         session.setAttribute("public_gallery_id", "not-a-uuid");
         session.setAttribute("public_expires_at", Instant.now().plusSeconds(60).toString());
-        controller.getPhotos(SLUG, null, 0, 10, session);
+        controller.getPhotos(SLUG, null, null, null, 0, 10, session);
         assertNull(session.getAttribute("public_gallery_id"));
         assertNull(session.getAttribute("public_expires_at"));
 
         MockHttpSession expired = new MockHttpSession();
         expired.setAttribute("public_gallery_id", GALLERY_ID.toString());
         expired.setAttribute("public_expires_at", Instant.now().minusSeconds(1).toString());
-        controller.getPhotos(SLUG, null, 0, 10, expired);
+        controller.getPhotos(SLUG, null, null, null, 0, 10, expired);
         assertNull(expired.getAttribute("public_gallery_id"));
         assertNull(expired.getAttribute("public_expires_at"));
     }
@@ -122,11 +122,11 @@ class PublicGalleryControllerTest {
                 1,
                 7
         );
-        when(access.listPublicPhotos(SLUG, null, null, 2, 1)).thenReturn(page);
+        when(access.listPublicPhotos(SLUG, null, null, null, 2, 1)).thenReturn(page);
         PublicGalleryController controller = new PublicGalleryController(access, config, limiter);
 
         PublicGalleryController.PhotoListResponse result = controller.getPhotos(
-                SLUG, null, 2, 1, new MockHttpSession());
+                SLUG, null, null, null, 2, 1, new MockHttpSession());
 
         assertEquals(1, result.items().size());
         assertEquals(2, result.page());
@@ -139,12 +139,12 @@ class PublicGalleryControllerTest {
         PublicAccessFacade access = mock(PublicAccessFacade.class);
         GalleryViewerConfigFacade config = mock(GalleryViewerConfigFacade.class);
         RedisRateLimiter limiter = mock(RedisRateLimiter.class);
-        when(access.resolvePublicGallery(eq(SLUG), eq(null), any())).thenReturn(new PublicGalleryView(
+        when(access.resolvePublicGallery(eq(SLUG), eq(null), any(), eq(null))).thenReturn(new PublicGalleryView(
                 SLUG, "Public Space", GalleryVisibility.PUBLIC, PublicAccessState.READY,
                 new PublicGalleryView.CoverView("https://cdn/cover", 1200, 800), 7));
         PublicGalleryController controller = new PublicGalleryController(access, config, limiter);
 
-        PublicGalleryController.PublicGalleryResponse result = controller.getGallery(SLUG, null, new MockHttpSession());
+        PublicGalleryController.PublicGalleryResponse result = controller.getGallery(SLUG, null, null, null, new MockHttpSession());
 
         assertEquals(SLUG, result.slug());
         assertEquals("Public Space", result.title());

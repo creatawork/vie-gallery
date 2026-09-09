@@ -50,6 +50,13 @@ function formatBytes(bytes?: number) {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
 }
+
+function statusLabel(status?: string) {
+  if (status === 'PROCESSING') return '处理中'
+  if (status === 'FAILED') return '失败'
+  if (status === 'DELETED') return '已删除'
+  return '已就绪'
+}
 </script>
 
 <template>
@@ -136,7 +143,7 @@ function formatBytes(bytes?: number) {
             </span>
             <span class="meta-tag">{{ formatBytes(photos[currentIndex].byteSize) }}</span>
             <span class="meta-tag status-tag" :class="`status-${photos[currentIndex].status?.toLowerCase()}`">
-              {{ photos[currentIndex].status || 'READY' }}
+              {{ statusLabel(photos[currentIndex].status) }}
             </span>
           </div>
         </div>

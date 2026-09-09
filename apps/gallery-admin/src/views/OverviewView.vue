@@ -6,6 +6,8 @@ import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import Icon from '../components/Icon.vue'
+import { openCreatorPreview } from '../lib/preview'
+import { useModalFocus } from '../composables/useModalFocus'
 
 const FALLBACK_COVERS = [
   '/covers/forest.png',
@@ -16,16 +18,6 @@ const FALLBACK_COVERS = [
   '/covers/gallery.png',
   '/covers/bamboo.png'
 ]
-
-const DEMO_COVERS: Record<string, string> = {
-  'demo-1': '/covers/forest.png',
-  'demo-2': '/covers/lake.png',
-  'demo-3': '/covers/coast.png',
-  'demo-4': '/covers/courtyard.png',
-  'demo-5': '/covers/stream.png',
-  'demo-6': '/covers/gallery.png',
-  'demo-7': '/covers/bamboo.png'
-}
 
 const router = useRouter()
 const toast = useToast()
@@ -54,16 +46,20 @@ const showCreateModal = ref(false)
 const createForm = ref({ name: '', slug: '', visibility: 'PUBLIC' })
 const creating = ref(false)
 const createError = ref('')
+const slugSeed = ref(makeSlugSeed())
+const { root: createModalRoot } = useModalFocus(showCreateModal, {
+  onEscape: () => { if (!creating.value) showCreateModal.value = false },
+  disabled: creating
+})
 
-const DEMO_GALLERIES: Gallery[] = [
-  { id: 'demo-1', slug: 'morning-forest', name: '晨雾森林', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-05-20T00:00:00.000Z' },
-  { id: 'demo-2', slug: 'quiet-lake', name: '静谧湖泊', visibility: 'PRIVATE', status: 'DRAFT', createdAt: '2024-05-18T00:00:00.000Z' },
-  { id: 'demo-3', slug: 'coastal-secret', name: '海岸秘境', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-05-12T00:00:00.000Z' },
-  { id: 'demo-4', slug: 'light-courtyard', name: '光影庭院', visibility: 'PRIVATE', status: 'DRAFT', createdAt: '2024-05-08T00:00:00.000Z' },
-  { id: 'demo-5', slug: 'valley-stream', name: '山谷溪流', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-04-30T00:00:00.000Z' },
-  { id: 'demo-6', slug: 'minimal-gallery', name: '极简艺术馆', visibility: 'PRIVATE', status: 'DRAFT', createdAt: '2024-04-22T00:00:00.000Z' },
-  { id: 'demo-7', slug: 'bamboo-path', name: '竹林幽径', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-04-16T00:00:00.000Z' }
-]
+function makeSlugSeed() {
+  return `space-${Date.now().toString(36)}`
+}
+
+function openCreateModal() {
+  slugSeed.value = makeSlugSeed()
+  showCreateModal.value = true
+}
 
 const filteredGalleries = computed(() => {
   return galleries.value.filter(g => {
@@ -75,7 +71,6 @@ const filteredGalleries = computed(() => {
 
 function coverFor(gallery: Gallery) {
   if (gallery.coverThumbnailUrl) return gallery.coverThumbnailUrl
-  if (DEMO_COVERS[gallery.id]) return DEMO_COVERS[gallery.id]
   let hash = 0
   for (const ch of gallery.id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
   return FALLBACK_COVERS[hash % FALLBACK_COVERS.length]
@@ -92,21 +87,11 @@ function formatCreatedAt(value?: string | null) {
 }
 
 function visibilityLabel(gallery: Gallery) {
-  return gallery.visibility === 'PUBLIC' ? 'PUBLIC' : 'PRIVATE'
+  return gallery.visibility === 'PUBLIC' ? '公开' : '私密'
 }
 
-function photoLabel(gallery: Gallery) {
-  const demoCounts: Record<string, number> = {
-    'demo-1': 128,
-    'demo-2': 86,
-    'demo-3': 64,
-    'demo-4': 42,
-    'demo-5': 110,
-    'demo-6': 36,
-    'demo-7': 72
-  }
-  const count = demoCounts[gallery.id]
-  return typeof count === 'number' ? `${count} 张照片` : '画廊空间'
+function statusLabel(gallery: Gallery) {
+  return gallery.status === 'PUBLISHED' ? '已发布' : '草稿'
 }
 
 function toggleCardMenu(id: string, event: Event) {
@@ -136,12 +121,12 @@ function navigateToConfig(id: string) {
   router.push({ name: 'gallery-config', params: { id } })
 }
 
-function viewerUrl(slug: string) {
-  return `${window.location.protocol}//${window.location.hostname}:5174/g/${slug}`
-}
-
-function openViewer(slug: string) {
-  window.open(viewerUrl(slug), '_blank', 'noopener,noreferrer')
+async function openViewer(gallery: Gallery) {
+  try {
+    await openCreatorPreview(gallery.id, gallery.slug)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '暂时无法打开内部预览，请稍后重试。')
+  }
 }
 
 async function loadGalleries() {
@@ -150,18 +135,15 @@ async function loadGalleries() {
   loadError.value = ''
   try {
     const response = await apiFetch('/api/galleries')
-    if (!response.ok) throw new Error(response.status === 403 ? '你没有权限查看这些空间。' : '空间列表加载失败，请稍后重试。')
+    if (!response.ok) throw new Error(response.status === 401 ? '登录已失效，请重新登录。' : response.status === 403 ? '你没有权限查看这些空间。' : '空间列表加载失败，请稍后重试。')
     galleries.value = await response.json() as Gallery[]
-    if (import.meta.env.DEV && !galleries.value.length) {
-      galleries.value = DEMO_GALLERIES
-    }
   } catch (error) {
-    if (import.meta.env.DEV) {
-      galleries.value = DEMO_GALLERIES
-    } else {
-      loadError.value = error instanceof Error ? error.message : '空间列表加载失败，请稍后重试。'
-      toast.error(loadError.value)
+    galleries.value = []
+    loadError.value = error instanceof Error ? error.message : '空间列表加载失败，请稍后重试。'
+    if (loadError.value.includes('登录已失效')) {
+      logout()
     }
+    toast.error(loadError.value)
   } finally {
     loading.value = false
   }
@@ -194,7 +176,12 @@ async function handleAuthSubmit() {
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({})) as { message?: string }
-      authError.value = body.message || (authMode.value === 'register' ? '注册失败，请检查填写内容。' : '登录失败，请检查邮箱和密码。')
+      const raw = body.message || ''
+      if (raw.toLowerCase().includes('invalid credentials')) {
+        authError.value = '邮箱或密码不正确。'
+      } else {
+        authError.value = raw || (authMode.value === 'register' ? '注册失败，请检查填写内容。' : '登录失败，请检查邮箱和密码。')
+      }
       toast.error(authError.value)
       return
     }
@@ -209,13 +196,22 @@ async function handleAuthSubmit() {
 }
 
 function handleNameInput() {
-  if (!createForm.value.slug || createForm.value.slug === slugify(createForm.value.name.slice(0, -1))) {
+  const previous = slugify(createForm.value.name.slice(0, -1))
+  if (!createForm.value.slug || createForm.value.slug === previous) {
     createForm.value.slug = slugify(createForm.value.name)
   }
 }
 
 function slugify(text: string) {
-  return text.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-')
+  const ascii = text
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w-]+/g, '-')
+    .replace(/--+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+  return ascii || slugSeed.value
 }
 
 async function handleCreateGallery() {
@@ -223,8 +219,15 @@ async function handleCreateGallery() {
     toast.error('当前角色没有创建空间的权限。')
     return
   }
-  if (!createForm.value.name.trim() || !createForm.value.slug.trim()) {
-    createError.value = '请填写空间名称和标识符（Slug）。'
+  if (!createForm.value.name.trim()) {
+    createError.value = '请填写空间名称。'
+    return
+  }
+  if (!createForm.value.slug.trim()) {
+    createForm.value.slug = slugify(createForm.value.name)
+  }
+  if (!createForm.value.slug.trim()) {
+    createError.value = '请填写访问地址，可用字母、数字和连字符。'
     return
   }
   creating.value = true
@@ -295,7 +298,7 @@ async function handleCreateGallery() {
           <label class="form-label" for="auth-password">密码（至少 12 位）</label>
           <div class="auth-input-wrap">
             <Icon name="lock" :size="16" class="auth-input-icon" />
-            <input id="auth-password" v-model="authForm.password" type="password" placeholder="••••••••••••" class="form-input" required />
+            <input id="auth-password" v-model="authForm.password" type="password" placeholder="至少 12 位密码" class="form-input" minlength="12" required />
           </div>
         </div>
         <button id="btn-auth-submit" type="submit" class="btn btn-primary auth-submit" :disabled="authLoading">
@@ -355,7 +358,7 @@ async function handleCreateGallery() {
           id="btn-open-create-modal"
           class="space-create-btn"
           type="button"
-          @click="showCreateModal = true"
+          @click="openCreateModal"
         >
           <Icon name="plus" :size="16" />
           <span>新建空间</span>
@@ -399,7 +402,7 @@ async function handleCreateGallery() {
         <button class="btn btn-secondary btn-sm" type="button" @click="loadGalleries">重试</button>
       </div>
 
-      <div v-if="viewMode === 'grid'" class="space-grid">
+      <div v-if="!loading && !loadError && viewMode === 'grid' && filteredGalleries.length" class="space-grid">
         <article
           v-for="gallery in filteredGalleries"
           :key="gallery.id"
@@ -418,9 +421,9 @@ async function handleCreateGallery() {
             <h2>{{ gallery.name }}</h2>
             <p class="card-date">{{ formatCreatedAt(gallery.createdAt) }}</p>
             <div class="card-foot">
-              <span class="photo-meta">
-                <Icon name="image" :size="14" />
-                <span>{{ photoLabel(gallery) }}</span>
+              <span class="status-meta">
+                <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
+                <span>{{ statusLabel(gallery) }}</span>
               </span>
               <div class="more-wrap">
                 <button
@@ -434,7 +437,7 @@ async function handleCreateGallery() {
                 <div v-if="menuId === gallery.id" class="card-menu" @click.stop>
                   <button type="button" @click="navigateToWorkspace(gallery.id)">进入工作区</button>
                   <button type="button" @click="navigateToConfig(gallery.id)">展厅配置</button>
-                  <button type="button" @click="openViewer(gallery.slug)">预览展厅</button>
+                  <button type="button" @click="openViewer(gallery)">预览展厅</button>
                 </div>
               </div>
             </div>
@@ -445,7 +448,7 @@ async function handleCreateGallery() {
           v-if="canCreateGallery"
           class="create-card"
           type="button"
-          @click="showCreateModal = true"
+          @click="openCreateModal"
         >
           <span class="create-plus">
             <Icon name="plus" :size="22" />
@@ -480,15 +483,30 @@ async function handleCreateGallery() {
         <button class="btn btn-secondary" type="button" @click="searchQuery = ''">清除搜索</button>
       </div>
 
-      <div v-else-if="!loading && !galleries.length && !loadError" class="space-empty">
+      <div v-else-if="loading" class="space-empty">
+        <h2>正在加载空间…</h2>
+      </div>
+
+      <div v-else-if="!galleries.length && !loadError" class="space-empty">
         <h2>还没有画廊空间</h2>
-        <p>创建属于你的第一个 3D 沉浸式画廊空间。</p>
+        <p>创建第一个 3D 展厅，上传照片后即可配置氛围并分享给访客。</p>
+        <button v-if="canCreateGallery" class="space-create-btn" type="button" @click="openCreateModal">
+          <Icon name="plus" :size="16" />
+          <span>新建空间</span>
+        </button>
       </div>
     </div>
 
     <Transition name="modal-fade">
       <div v-if="showCreateModal" class="modal-backdrop" @click.self="!creating && (showCreateModal = false)">
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="create-title">
+        <div
+          ref="createModalRoot"
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-title"
+          tabindex="-1"
+        >
           <div class="modal-header-row">
             <div class="modal-title-box">
               <div class="modal-icon-bubble">
@@ -522,7 +540,7 @@ async function handleCreateGallery() {
               />
             </div>
             <div class="form-group">
-              <label class="form-label" for="input-gallery-slug">标识符（Slug）</label>
+              <label class="form-label" for="input-gallery-slug">访问地址</label>
               <input
                 id="input-gallery-slug"
                 v-model="createForm.slug"
@@ -530,12 +548,13 @@ async function handleCreateGallery() {
                 class="form-input"
                 required
               />
+              <p class="form-hint">用于访客链接，可用字母、数字和连字符。中文名称会自动生成可用地址。</p>
             </div>
             <div class="form-group">
               <label class="form-label" for="select-gallery-visibility">访问权限</label>
               <select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input">
-                <option value="PUBLIC">公开（PUBLIC）</option>
-                <option value="PRIVATE">私密（PRIVATE）</option>
+                <option value="PUBLIC">公开</option>
+                <option value="PRIVATE">私密</option>
               </select>
             </div>
             <div class="modal-actions">
@@ -586,7 +605,7 @@ async function handleCreateGallery() {
   font-size: clamp(26px, 4.2vw, 48px);
   font-weight: 800;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.42);
   text-transform: uppercase;
   user-select: none;
   text-shadow: 0 8px 28px rgba(6, 40, 28, 0.35);
@@ -866,6 +885,7 @@ async function handleCreateGallery() {
 
 .space-user {
   position: relative;
+  z-index: 20;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -896,6 +916,7 @@ async function handleCreateGallery() {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
+  z-index: 30;
   min-width: 140px;
   padding: 6px;
   background: #fff;
@@ -1111,12 +1132,28 @@ async function handleCreateGallery() {
   margin-top: 12px;
 }
 
-.photo-meta {
+.status-meta {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #9ca3af;
+  color: #6b7280;
+  font-weight: 650;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d1d5db;
+}
+
+.status-dot.is-live {
+  background: #00b88f;
+}
+
+.status-dot.is-draft {
+  background: #f59e0b;
 }
 
 .more-wrap {
@@ -1263,6 +1300,13 @@ async function handleCreateGallery() {
 
 .space-empty p {
   margin: 8px 0 16px;
+  color: #6b7280;
+}
+
+.form-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
   color: #6b7280;
 }
 

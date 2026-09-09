@@ -66,7 +66,6 @@ onMounted(() => {
 
           <div class="nav-divider"></div>
 
-          <!-- Top Navigation Links -->
           <nav class="top-nav-links" aria-label="顶部导航">
             <RouterLink to="/" class="nav-tab" :class="{ active: route.path === '/' }">
               <Icon name="gallery" :size="16" />
@@ -79,16 +78,6 @@ onMounted(() => {
           </nav>
         </div>
 
-        <!-- Center: System & Storage Status Pill -->
-        <div class="nav-center">
-          <div class="status-indicator-pill">
-            <div class="pulse-dot"></div>
-            <span class="status-text">Cloud Engine Active</span>
-            <span class="status-sub">· WebGL 3D Studio</span>
-          </div>
-        </div>
-
-        <!-- Right: User Info & Actions -->
         <div class="nav-right">
           <!-- Logged In User Profile Capsule -->
           <div v-if="isAuthenticated" class="user-profile-capsule">
