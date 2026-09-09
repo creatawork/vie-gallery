@@ -33,6 +33,19 @@ withDefaults(defineProps<Props>(), {
       <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
     </g>
 
+    <!-- Home / House -->
+    <g v-else-if="name === 'home'">
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5 10.5V20h5v-6h4v6h5v-9.5" />
+    </g>
+
+    <!-- More horizontal -->
+    <g v-else-if="name === 'more' || name === 'more-horizontal'">
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </g>
+
     <!-- Gallery / Layers -->
     <g v-else-if="name === 'gallery'">
       <path d="M4 3h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
@@ -327,9 +340,105 @@ withDefaults(defineProps<Props>(), {
       <circle cx="18" cy="16" r="3" />
     </g>
 
+    <!-- Bell -->
+    <g v-else-if="name === 'bell'">
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </g>
+
+    <!-- Send / Paper plane -->
+    <g v-else-if="name === 'send'">
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </g>
+
+    <!-- Pause -->
+    <g v-else-if="name === 'pause'">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </g>
+
+    <!-- Edit / Pencil -->
+    <g v-else-if="name === 'edit' || name === 'pencil'">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </g>
+
+    <!-- Grip -->
+    <g v-else-if="name === 'grip'">
+      <circle cx="9" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1.1" fill="currentColor" stroke="none" />
+    </g>
+
+    <!-- Layout / Workbench -->
+    <g v-else-if="name === 'layout'">
+      <rect x="3" y="3" width="7" height="18" rx="1" />
+      <rect x="14" y="3" width="7" height="8" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </g>
+
+    <!-- Wrench -->
+    <g v-else-if="name === 'wrench' || name === 'tool'">
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-1.8-1.8Z" />
+    </g>
+
+    <!-- Leaf -->
+    <g v-else-if="name === 'leaf'">
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 19 8.6 20 13.4 16 13 13 16 11 20Z" />
+      <path d="M12 12c-2 3-4 6-7 8" />
+    </g>
+
     <!-- Zap / Lightning -->
     <g v-else-if="name === 'zap'">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </g>
+
+    <!-- Sun -->
+    <g v-else-if="name === 'sun'">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </g>
+
+    <!-- Cloud -->
+    <g v-else-if="name === 'cloud'">
+      <path d="M17.5 19H8a5 5 0 0 1-.4-10 6 6 0 0 1 11.3 1.5A4 4 0 0 1 17.5 19Z" />
+    </g>
+
+    <!-- Undo -->
+    <g v-else-if="name === 'undo'">
+      <path d="M3 7v6h6" />
+      <path d="M3 13a9 9 0 1 0 2.6-6.7L3 13" />
+    </g>
+
+    <!-- Mouse pointer -->
+    <g v-else-if="name === 'mouse-pointer' || name === 'pointer'">
+      <path d="M4 4 11.2 20l1.7-6.1L19 12.2 4 4Z" />
+    </g>
+
+    <!-- Minus -->
+    <g v-else-if="name === 'minus'">
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </g>
+
+    <!-- Volume -->
+    <g v-else-if="name === 'volume'">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    </g>
+
+    <!-- Calendar -->
+    <g v-else-if="name === 'calendar'">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M3 11h18" />
+    </g>
+
+    <!-- Heart -->
+    <g v-else-if="name === 'heart'">
+      <path d="M19 14c1.5-1.4 3-3.2 3-5.6A4.4 4.4 0 0 0 12 6a4.4 4.4 0 0 0-10 2.4C2 10.8 3.5 12.6 5 14l7 7Z" />
     </g>
 
     <!-- Default generic bullet -->

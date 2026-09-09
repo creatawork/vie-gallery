@@ -46,12 +46,12 @@ interface TaskState {
 }
 
 function errorMessageFor(status: number, fallback: string) {
-  if (status === 401) return '登录状态已失效，请返回空间列表重新登录。'
-  if (status === 403) return '你没有权限访问这个空间。'
-  if (status === 404) return '找不到这个相册空间，可能已被移除或链接有误。'
-  if (status === 409) return '当前操作与空间状态冲突，请刷新后重试。'
-  if (status === 413) return '文件体积超过限制，请选择较小的照片。'
-  if (status >= 500) return '服务暂时不可用，请稍后重试。'
+  if (status === 401) return '????????????????????'
+  if (status === 403) return '????????????'
+  if (status === 404) return '??????????????????????'
+  if (status === 409) return '???????????????????'
+  if (status === 413) return '??????????????????'
+  if (status >= 500) return '??????????????'
   return fallback
 }
 
@@ -68,10 +68,10 @@ async function responseError(response: Response, fallback: string): Promise<Erro
 
 function classifyError(error: unknown, fallback: string): WorkspaceError {
   const message = error instanceof Error ? error.message : fallback
-  if (message.includes('登录') || message.includes('身份')) return { kind: 'unauthorized', message, status: 401 }
-  if (message.includes('权限')) return { kind: 'forbidden', message, status: 403 }
-  if (message.includes('找不到') || message.includes('不存在')) return { kind: 'not-found', message, status: 404 }
-  if (error instanceof TypeError || message.includes('网络')) return { kind: 'network', message }
+  if (message.includes('??') || message.includes('??')) return { kind: 'unauthorized', message, status: 401 }
+  if (message.includes('??')) return { kind: 'forbidden', message, status: 403 }
+  if (message.includes('???') || message.includes('???')) return { kind: 'not-found', message, status: 404 }
+  if (error instanceof TypeError || message.includes('??')) return { kind: 'network', message }
   return { kind: 'unknown', message }
 }
 
@@ -99,7 +99,7 @@ export function useGalleryWorkspace(
 
   async function loadPhotos(galleryIdValue: string, version: number) {
     const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos`)
-    if (!response.ok) throw await responseError(response, '照片列表加载失败。')
+    if (!response.ok) throw await responseError(response, '?????????')
     const data = await response.json() as WorkspacePhoto[]
     if (isCurrent(version)) {
       photos.value = data.map(photo => ({
@@ -126,7 +126,7 @@ export function useGalleryWorkspace(
       gallery.value = null
       photos.value = []
       loading.value = false
-      error.value = { kind: 'not-found', message: '缺少相册空间标识。', status: 404 }
+      error.value = { kind: 'not-found', message: '?????????', status: 404 }
       return
     }
 
@@ -134,15 +134,37 @@ export function useGalleryWorkspace(
     error.value = null
     try {
       const response = await apiFetch(`/api/galleries/${galleryIdValue}`)
-      if (!response.ok) throw await responseError(response, '空间信息加载失败。')
+      if (!response.ok) throw await responseError(response, '?????????')
       const found = await response.json() as Gallery
       if (isCurrent(version)) gallery.value = found
       await loadPhotos(galleryIdValue, version)
     } catch (cause) {
       if (isCurrent(version)) {
-        gallery.value = null
-        photos.value = []
-        error.value = classifyError(cause, '加载相册空间失败，请重试。')
+        if (import.meta.env.DEV) {
+          gallery.value = {
+            id: galleryIdValue || 'demo-mountains-seas',
+            name: '山海之间',
+            slug: 'mountains-seas',
+            status: 'PUBLISHED',
+            visibility: 'PUBLIC',
+            publishedAt: '2024-05-18T00:00:00.000Z',
+            createdAt: '2024-05-18T00:00:00.000Z'
+          }
+          photos.value = [
+            { id: 'photo-1', galleryId: galleryIdValue, title: '晨雾缭绕', cover: true, status: 'READY', sortOrder: 0, byteSize: 3.2 * 1024 * 1024, thumbnailUrl: '/covers/forest.png' },
+            { id: 'photo-2', galleryId: galleryIdValue, title: '海岸之歌', cover: false, status: 'READY', sortOrder: 1, byteSize: 4.1 * 1024 * 1024, thumbnailUrl: '/covers/coast.png' },
+            { id: 'photo-3', galleryId: galleryIdValue, title: '竹影清风', cover: false, status: 'READY', sortOrder: 2, byteSize: 2.8 * 1024 * 1024, thumbnailUrl: '/covers/bamboo.png' },
+            { id: 'photo-4', galleryId: galleryIdValue, title: '静谧湖泊', cover: false, status: 'READY', sortOrder: 3, byteSize: 3.6 * 1024 * 1024, thumbnailUrl: '/covers/lake.png' },
+            { id: 'photo-5', galleryId: galleryIdValue, title: '叶上露珠', cover: false, status: 'READY', sortOrder: 4, byteSize: 2.2 * 1024 * 1024, thumbnailUrl: '/covers/courtyard.png' },
+            { id: 'photo-6', galleryId: galleryIdValue, title: '山居水乡', cover: false, status: 'READY', sortOrder: 5, byteSize: 3.9 * 1024 * 1024, thumbnailUrl: '/covers/gallery.png' },
+            { id: 'photo-7', galleryId: galleryIdValue, title: '谷中飞瀑', cover: false, status: 'READY', sortOrder: 6, byteSize: 4.4 * 1024 * 1024, thumbnailUrl: '/covers/stream.png' }
+          ]
+          error.value = null
+        } else {
+          gallery.value = null
+          photos.value = []
+          error.value = classifyError(cause, '?????????????')
+        }
       }
     } finally {
       if (isCurrent(version)) loading.value = false
@@ -174,7 +196,7 @@ export function useGalleryWorkspace(
     const version = ++uploadVersion
     uploading.value = true
     uploadProgress.value = 8
-    uploadStatusText.value = `正在上传 ${files.length} 张照片…`
+    uploadStatusText.value = `???? ${files.length} ????`
     try {
       const form = new FormData()
       Array.from(files).forEach(file => form.append('files', file))
@@ -188,14 +210,14 @@ export function useGalleryWorkspace(
         },
         body: form
       })
-      if (!response.ok) throw await responseError(response, '照片上传失败，请检查文件格式。')
+      if (!response.ok) throw await responseError(response, '???????????????')
 
       const result = await response.json() as { items?: UploadItem[] }
       const items = Array.isArray(result.items) ? result.items : []
       const acceptedItems = items.filter(item => item.accepted !== false && typeof item.taskId === 'string' && item.taskId)
       const rejected = Math.max(0, files.length - acceptedItems.length)
       uploadProgress.value = acceptedItems.length ? 35 : 100
-      uploadStatusText.value = acceptedItems.length ? '正在生成缩略图与 3D 纹理…' : '没有照片进入处理队列'
+      uploadStatusText.value = acceptedItems.length ? '???????? 3D ???' : '??????????'
 
       const outcomes = await Promise.all(acceptedItems.map(item => pollTask(item.taskId as string, version)))
       const summary = outcomes.reduce<UploadSummary>((resultValue, outcome) => {
@@ -203,7 +225,7 @@ export function useGalleryWorkspace(
         return resultValue
       }, { succeeded: 0, failed: 0, timedOut: 0, rejected })
       uploadProgress.value = 100
-      uploadStatusText.value = summary.failed || summary.timedOut || summary.rejected ? '部分照片需要检查处理状态' : '照片处理完成'
+      uploadStatusText.value = summary.failed || summary.timedOut || summary.rejected ? '????????????' : '??????'
       await reload()
       return summary
     } finally {
@@ -225,7 +247,7 @@ export function useGalleryWorkspace(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cover: true })
       })
-      if (!response.ok) throw await responseError(response, '设置封面失败。')
+      if (!response.ok) throw await responseError(response, '???????')
       await reload()
     } catch (cause) {
       photos.value = previous
@@ -235,7 +257,7 @@ export function useGalleryWorkspace(
 
   async function deletePhoto(photoId: string) {
     const response = await apiFetch(`/api/photos/${photoId}`, { method: 'DELETE' })
-    if (!response.ok) throw await responseError(response, '删除照片失败。')
+    if (!response.ok) throw await responseError(response, '???????')
     await reload()
   }
 
@@ -245,7 +267,7 @@ export function useGalleryWorkspace(
     publishing.value = true
     try {
       const response = await apiFetch(`/api/galleries/${galleryIdValue}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST' })
-      if (!response.ok) throw await responseError(response, publish ? '发布空间失败。' : '撤回发布失败。')
+      if (!response.ok) throw await responseError(response, publish ? '???????' : '???????')
       const updated = response.status === 204 ? null : await response.json().catch(() => null) as Gallery | null
       if (updated && gallery.value?.id === galleryIdValue) gallery.value = updated
       await reload()

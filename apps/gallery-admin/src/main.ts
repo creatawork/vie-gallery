@@ -37,7 +37,7 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   if (to.name !== 'members') return true
   const auth = useAuth()
-  if (!auth.currentUser.value && !auth.loading.value) await auth.checkAuth()
+  if (!auth.currentUser.value) await auth.checkAuth()
   return auth.isOwner.value ? true : { name: 'overview' }
 })
 

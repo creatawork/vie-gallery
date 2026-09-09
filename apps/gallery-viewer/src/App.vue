@@ -102,6 +102,12 @@ function handlePostMessage(event: MessageEvent) {
   }
 }
 
+function notifyParentReady() {
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: 'VIE_PREVIEW_READY' }, '*')
+  }
+}
+
 function handleFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
 }
@@ -184,6 +190,7 @@ async function init3DEngine() {
     engine.setPhotos(meshes)
     await engine.init(slug)
     engine.start()
+    notifyParentReady()
 
     // 监听 APM 探针
     engine.getEventBus().on('metrics:update', (metrics: EngineMetrics) => {

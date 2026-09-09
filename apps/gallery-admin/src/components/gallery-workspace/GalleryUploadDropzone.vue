@@ -16,7 +16,7 @@ const emit = defineEmits<{
 const isDragOver = ref(false)
 const input = ref<HTMLInputElement | null>(null)
 const MAX_FILES = 50
-const MAX_FILE_SIZE = 100 * 1024 * 1024
+const MAX_FILE_SIZE = 50 * 1024 * 1024
 const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 function chooseFiles() {
@@ -36,7 +36,7 @@ function validateFiles(files: FileList | File[]): File[] {
   }
   const oversized = selected.find(file => file.size > MAX_FILE_SIZE)
   if (oversized) {
-    emit('invalid', `${oversized.name} 超过 100MB 大小限制。`)
+    emit('invalid', `${oversized.name} 超过 50MB 大小限制。`)
     return []
   }
   return selected
@@ -62,7 +62,7 @@ function handleDrop(event: DragEvent) {
 
 <template>
   <section
-    class="upload-dropzone-box"
+    class="upload-tile"
     :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
     aria-label="上传照片"
     @dragover.prevent="isDragOver = true"
@@ -71,167 +71,84 @@ function handleDrop(event: DragEvent) {
     @click="!uploading && chooseFiles()"
   >
     <template v-if="!uploading">
-      <div class="dropzone-body">
-        <div class="upload-icon-circle">
-          <Icon name="upload" :size="22" />
-        </div>
-        <div class="dropzone-text-group">
-          <h3 class="dropzone-title">拖拽照片到此处上传，或 <span class="highlight-link">浏览文件</span></h3>
-          <p class="dropzone-hint">支持 JPG、PNG、WebP 高清大图，系统将自动切片并生成 WebGL 3D 纹理</p>
-        </div>
-      </div>
+      <span class="upload-icon">
+        <Icon name="upload" :size="28" />
+      </span>
+      <strong>拖拽上传照片</strong>
+      <small>JPG / PNG / WebP / RAW</small>
+      <small>单张不超过 50MB</small>
     </template>
-
-    <div v-else class="upload-progress-box" role="status" aria-live="polite" @click.stop>
-      <div class="progress-top-info">
-        <div class="progress-label-wrap">
-          <Icon name="refresh" :size="16" class="spin spin-emerald" />
-          <strong class="progress-status-title">{{ statusText || '正在分片上传并处理照片…' }}</strong>
-        </div>
-        <span class="progress-percentage">{{ progress }}%</span>
-      </div>
-      <div class="progress-track" aria-hidden="true">
-        <div class="progress-fill" :style="{ width: `${progress}%` }"></div>
-      </div>
+    <div v-else class="upload-progress" role="status" @click.stop>
+      <strong>{{ statusText || '正在上传…' }}</strong>
+      <div class="track"><div class="fill" :style="{ width: `${progress}%` }"></div></div>
+      <span>{{ progress }}%</span>
     </div>
-
     <input ref="input" type="file" multiple accept="image/jpeg,image/png,image/webp" hidden @change="handleInput" />
   </section>
 </template>
 
 <style scoped>
-.upload-dropzone-box {
-  position: relative;
+.upload-tile {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px 28px;
-  border-radius: 18px;
-  border: 1.5px dashed rgba(16, 185, 129, 0.4);
-  background: linear-gradient(145deg, rgba(236, 253, 245, 0.45) 0%, rgba(255, 255, 255, 0.9) 100%);
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.upload-dropzone-box:hover,
-.upload-dropzone-box.drag-over {
-  border-color: #10b981;
-  background: rgba(236, 253, 245, 0.8);
-  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.12);
-  transform: translateY(-1px);
-}
-
-.upload-dropzone-box.is-uploading {
-  cursor: default;
-  border-style: solid;
-  border-color: rgba(16, 185, 129, 0.35);
-  background: #ffffff;
-}
-
-.dropzone-body {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.upload-icon-circle {
-  width: 48px;
-  height: 48px;
+  gap: 8px;
+  min-height: 248px;
+  padding: 20px 16px;
   border-radius: 14px;
+  border: 1.5px dashed #7dd3b5;
+  background: rgba(236, 253, 245, 0.55);
+  color: #00b88f;
+  cursor: pointer;
+  text-align: center;
+}
+
+.upload-tile:hover,
+.upload-tile.drag-over {
+  background: rgba(220, 252, 231, 0.85);
+  border-color: #00b88f;
+}
+
+.upload-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #059669;
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  flex-shrink: 0;
+  background: rgba(0, 184, 143, 0.12);
+  margin-bottom: 4px;
 }
 
-.dropzone-text-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dropzone-title {
+.upload-tile strong {
   font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
+  font-weight: 750;
 }
 
-.highlight-link {
-  color: #059669;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.upload-tile small {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: #9ca3af;
 }
 
-.dropzone-hint {
-  font-size: 12.5px;
-  color: #64748b;
-}
-
-/* Uploading Progress */
-.upload-progress-box {
+.upload-progress {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.progress-top-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.progress-label-wrap {
-  display: flex;
-  align-items: center;
   gap: 8px;
+  color: #047857;
 }
 
-.spin-emerald {
-  color: #059669;
-}
-
-.progress-status-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.progress-percentage {
-  font-size: 14px;
-  font-weight: 800;
-  color: #059669;
-}
-
-.progress-track {
-  width: 100%;
-  height: 8px;
-  background: #f1f5f9;
-  border-radius: 9999px;
+.track {
+  height: 6px;
+  border-radius: 999px;
+  background: #d1fae5;
   overflow: hidden;
 }
 
-.progress-fill {
+.fill {
   height: 100%;
-  background: linear-gradient(90deg, #34d399, #059669);
-  border-radius: 9999px;
-  transition: width 0.25s ease;
-}
-
-.spin {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (max-width: 640px) {
-  .dropzone-body {
-    flex-direction: column;
-    text-align: center;
-  }
+  background: #00b88f;
 }
 </style>

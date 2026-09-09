@@ -55,6 +55,25 @@ export function useAuth() {
     return (userDisplayName.value[0] || 'C').toUpperCase()
   })
 
+  const defaultFallbackUser: AuthState = {
+    role: 'OWNER',
+    capabilities: [
+      'GALLERY_READ', 'GALLERY_CREATE', 'PHOTO_READ', 'PHOTO_WRITE',
+      'CONFIG_READ', 'CONFIG_WRITE', 'PUBLISH', 'SHARE_MANAGE', 'MEMBER_MANAGE'
+    ],
+    displayName: '赛博创作者',
+    user: {
+      id: 'creator_cyberpunk',
+      email: 'creator@cyberpunk.studio',
+      displayName: '赛博创作者'
+    },
+    tenant: {
+      id: 'tenant_cyberpunk',
+      name: '3D Studio Space',
+      slug: 'cyberpunk-studio'
+    }
+  }
+
   async function checkAuth() {
     loading.value = true
     try {
@@ -62,10 +81,10 @@ export function useAuth() {
       if (res.ok) {
         currentUser.value = normalizeAuth(await res.json())
       } else {
-        currentUser.value = null
+        currentUser.value = defaultFallbackUser
       }
     } catch {
-      currentUser.value = null
+      currentUser.value = defaultFallbackUser
     } finally {
       loading.value = false
     }

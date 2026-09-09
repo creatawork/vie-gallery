@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { WorkspacePhoto } from '../../composables/useGalleryWorkspace'
 import Icon from '../Icon.vue'
 
@@ -8,41 +9,35 @@ defineProps<{
   selected?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'open'): void
   (event: 'set-cover'): void
   (event: 'delete'): void
   (event: 'toggle-select'): void
 }>()
 
-const statusLabels: Record<string, string> = {
-  READY: '已就绪',
-  PROCESSING: '处理中',
-  FAILED: '处理失败',
-  DELETED: '已删除'
-}
-
-function statusLabel(status: string) {
-  return statusLabels[status] || status
-}
+const menuOpen = ref(false)
 
 function formatBytes(bytes?: number) {
-  if (!bytes) return '未知'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+  if (!bytes) return 'JPG'
+  if (bytes < 1024 * 1024) return `JPG · ${(bytes / 1024).toFixed(0)}KB`
+  return `JPG · ${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+function toggleMenu(event: Event) {
+  event.stopPropagation()
+  menuOpen.value = !menuOpen.value
 }
 </script>
 
 <template>
   <article
     class="photo-card"
-    :class="{ 'is-selected': selected, 'is-cover': photo.cover }"
+    :class="{ 'is-selected': selected }"
     tabindex="0"
     @click="$emit('open')"
     @keydown.enter="$emit('open')"
   >
-    <!-- Visual Image Box -->
     <div class="photo-img-box">
       <img
         v-if="photo.thumbnailUrl"
@@ -51,290 +46,148 @@ function formatBytes(bytes?: number) {
         loading="lazy"
         class="photo-image"
       />
-      <div v-else class="empty-thumb-pattern">
+      <div v-else class="empty-thumb">
         <Icon name="photo" :size="28" />
       </div>
-
-      <!-- Cover Tag Pill -->
-      <div v-if="photo.cover" class="photo-cover-tag">
-        <Icon name="star" :size="12" />
-        <span>封面</span>
-      </div>
-
-      <!-- Selection Checkbox (Top Left) -->
-      <button
-        v-if="canWrite"
-        class="select-checkbox-btn"
-        :class="{ checked: selected }"
-        type="button"
-        title="勾选照片"
-        @click.stop="$emit('toggle-select')"
-      >
-        <Icon v-if="selected" name="check" :size="12" stroke-width="3" />
-      </button>
-
-      <!-- Glassmorphic Hover Overlay -->
-      <div class="photo-hover-overlay" @click.stop>
-        <div class="overlay-top-tools">
-          <button
-            v-if="canWrite"
-            class="photo-action-btn"
-            :class="{ 'is-active-cover': photo.cover }"
-            :title="photo.cover ? '当前相册封面' : '设为相册封面'"
-            type="button"
-            @click="$emit('set-cover')"
-          >
-            <Icon name="star" :size="14" />
-          </button>
-          <button
-            class="photo-action-btn"
-            title="查看大图"
-            type="button"
-            @click="$emit('open')"
-          >
-            <Icon name="eye" :size="14" />
-          </button>
-          <button
-            v-if="canWrite"
-            class="photo-action-btn btn-danger-action"
-            title="删除照片"
-            type="button"
-            @click="$emit('delete')"
-          >
-            <Icon name="trash" :size="14" />
-          </button>
-        </div>
-
-        <div class="overlay-bottom-info">
-          <span class="file-size-tag">{{ formatBytes(photo.byteSize) }}</span>
-        </div>
-      </div>
+      <span v-if="photo.status === 'READY'" class="ready-mark" aria-label="已就绪">
+        <Icon name="check" :size="12" stroke-width="3" />
+      </span>
     </div>
-
-    <!-- Info Bar -->
-    <div class="photo-info-bar">
-      <span class="photo-name" :title="photo.title || '未命名素材'">
-        {{ photo.title || '未命名素材' }}
-      </span>
-      <span class="photo-status" :class="`status-${photo.status.toLowerCase()}`">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span>{{ statusLabel(photo.status) }}</span>
-      </span>
+    <div class="photo-info">
+      <h3>{{ photo.title || '未命名照片' }}</h3>
+      <div class="photo-meta">
+        <span>{{ formatBytes(photo.byteSize) }}</span>
+        <div class="meta-actions" @click.stop>
+          <button class="ghost-btn" type="button" title="拖拽排序" tabindex="-1">
+            <Icon name="grip" :size="14" />
+          </button>
+          <button class="ghost-btn" type="button" aria-label="更多操作" @click="toggleMenu">
+            <Icon name="more" :size="16" />
+          </button>
+          <div v-if="menuOpen" class="card-menu">
+            <button type="button" @click="$emit('open'); menuOpen = false">查看大图</button>
+            <button v-if="canWrite" type="button" @click="$emit('set-cover'); menuOpen = false">设为封面</button>
+            <button v-if="canWrite" type="button" class="danger" @click="$emit('delete'); menuOpen = false">删除</button>
+          </div>
+        </div>
+      </div>
     </div>
   </article>
 </template>
 
 <style scoped>
 .photo-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.85);
+  background: #fff;
+  border-radius: 14px;
   overflow: hidden;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 8px 22px rgba(15, 40, 28, 0.06);
 }
 
 .photo-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(16, 185, 129, 0.35);
-  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.1);
-}
-
-.photo-card.is-selected {
-  border-color: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25), 0 8px 20px rgba(16, 185, 129, 0.12);
-}
-
-.photo-card.is-cover {
-  border-color: rgba(245, 158, 11, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(15, 40, 28, 0.1);
 }
 
 .photo-img-box {
   position: relative;
   aspect-ratio: 4 / 3;
+  background: #e8f5ef;
   overflow: hidden;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
 }
 
 .photo-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
-  transition: transform 0.35s ease;
 }
 
-.photo-card:hover .photo-image {
-  transform: scale(1.05);
-}
-
-.empty-thumb-pattern {
+.empty-thumb {
   width: 100%;
   height: 100%;
   display: grid;
   place-items: center;
-  color: rgba(5, 150, 105, 0.3);
+  color: #86efac;
 }
 
-.photo-cover-tag {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #b45309;
-  background: rgba(254, 243, 199, 0.95);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-}
-
-.select-checkbox-btn {
+.ready-mark {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 4;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.85);
-  border: 1.5px solid rgba(148, 163, 184, 0.6);
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #ffffff;
-  transition: all 0.2s ease;
-  backdrop-filter: blur(4px);
+  background: #00b88f;
+  color: #fff;
 }
 
-.select-checkbox-btn:hover {
-  border-color: #10b981;
-  background: #ffffff;
+.photo-info {
+  padding: 10px 12px 12px;
 }
 
-.select-checkbox-btn.checked {
-  background: #10b981;
-  border-color: #10b981;
+.photo-info h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
 }
 
-/* Glassmorphic Hover Overlay */
-.photo-hover-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.3) 0%, rgba(15, 23, 42, 0.65) 100%);
+.photo-meta {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: space-between;
-  padding: 10px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.meta-actions {
+  position: relative;
+  display: flex;
+  gap: 2px;
+}
+
+.ghost-btn {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: #9ca3af;
+  border-radius: 6px;
+}
+
+.ghost-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.card-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  min-width: 120px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
   z-index: 3;
 }
 
-.photo-card:hover .photo-hover-overlay {
-  opacity: 1;
+.card-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #374151;
 }
 
-.overlay-top-tools {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.card-menu button:hover {
+  background: #ecfdf5;
 }
 
-.photo-action-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #334155;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  transition: all 0.15s ease;
-}
-
-.photo-action-btn:hover {
-  background: #ffffff;
-  color: #059669;
-  transform: scale(1.06);
-}
-
-.photo-action-btn.is-active-cover {
-  background: #fef3c7;
-  color: #d97706;
-  border-color: #fde68a;
-}
-
-.photo-action-btn.btn-danger-action:hover {
-  background: #fee2e2;
+.card-menu .danger {
   color: #dc2626;
-  border-color: #fecaca;
 }
-
-.overlay-bottom-info {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.file-size-tag {
-  font-size: 11px;
-  font-weight: 600;
-  color: #ffffff;
-  background: rgba(0, 0, 0, 0.5);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-/* Info Bar */
-.photo-info-bar {
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  background: #ffffff;
-}
-
-.photo-name {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: #1e293b;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.photo-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.status-ready { color: #059669; }
-.status-ready .status-dot { background: #10b981; }
-
-.status-processing { color: #d97706; }
-.status-processing .status-dot { background: #f59e0b; }
-
-.status-failed { color: #dc2626; }
-.status-failed .status-dot { background: #ef4444; }
 </style>

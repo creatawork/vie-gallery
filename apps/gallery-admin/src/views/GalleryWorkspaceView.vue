@@ -1,44 +1,47 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ShareLinkStatus } from '@vie/gallery-contracts'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import { useGalleryWorkspace, type WorkspacePhoto } from '../composables/useGalleryWorkspace'
 import { useUploadTasks, type UploadTask } from '../composables/useUploadTasks'
-
-type LightboxPhoto = Omit<WorkspacePhoto, 'title'> & { title?: string }
 import { apiFetch } from '../api'
 import Icon from '../components/Icon.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import LightboxModal from '../components/LightboxModal.vue'
-import GalleryWorkspaceHeader from '../components/gallery-workspace/GalleryWorkspaceHeader.vue'
 import GalleryUploadDropzone from '../components/gallery-workspace/GalleryUploadDropzone.vue'
-import GalleryPhotoGrid from '../components/gallery-workspace/GalleryPhotoGrid.vue'
+import GalleryPhotoCard from '../components/gallery-workspace/GalleryPhotoCard.vue'
 import UploadTaskCenter from '../components/gallery-workspace/UploadTaskCenter.vue'
+
+type LightboxPhoto = Omit<WorkspacePhoto, 'title'> & { title?: string }
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { currentUser, loading: authLoading, can } = useAuth()
+const {
+  currentUser,
+  loading: authLoading,
+  can,
+  userDisplayName,
+  userInitial,
+  isOwner,
+  logout
+} = useAuth()
 const canPhotoWrite = can('PHOTO_WRITE')
 const canPublish = can('PUBLISH')
 const canShareManage = can('SHARE_MANAGE')
+const canConfig = can('CONFIG_WRITE')
 const galleryId = computed(() => String(route.params.id || ''))
 const workspace = useGalleryWorkspace(galleryId, computed(() => !!currentUser.value && !authLoading.value))
 const taskCenter = useUploadTasks(galleryId, computed(() => !!currentUser.value && !authLoading.value && !!workspace.gallery.value))
 
+const photoViewMode = ref<'grid' | 'list'>('grid')
+const photoPanelRef = ref<HTMLElement | null>(null)
+const userMenuOpen = ref(false)
 const showLightbox = ref(false)
 const lightboxIndex = ref(0)
 const photoToDelete = ref<Pick<WorkspacePhoto, 'id'> | null>(null)
-const batchPhotosToDelete = ref<string[]>([])
-const showBatchDeleteModal = ref(false)
-const deletingBatch = ref(false)
-
-const lightboxPhotos = computed<LightboxPhoto[]>(() => workspace.photos.value.map(photo => ({
-  ...photo,
-  title: photo.title || undefined
-})))
 const deletingPhoto = ref(false)
 const showShareModal = ref(false)
 const generatingShare = ref(false)
@@ -58,8 +61,61 @@ type ShareLink = {
   lastAccessedAt?: string | null
 }
 
-const processingCount = computed(() => workspace.photos.value.filter(photo => photo.status === 'PROCESSING').length)
-const failedCount = computed(() => workspace.photos.value.filter(photo => photo.status === 'FAILED').length)
+const DEMO_TASKS: UploadTask[] = [
+  { id: 'demo-t1', filename: 'morning-mist.jpg', status: 'QUEUED', progress: 0, attempts: 0, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/forest.png' },
+  { id: 'demo-t2', filename: 'bamboo-path.jpg', status: 'QUEUED', progress: 0, attempts: 0, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/bamboo.png' },
+  { id: 'demo-t3', filename: 'quiet-lake.jpg', status: 'QUEUED', progress: 0, attempts: 0, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/lake.png' },
+  { id: 'demo-t4', filename: 'coast-wave.jpg', status: 'PROCESSING', progress: 68, attempts: 1, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/coast.png' },
+  { id: 'demo-t5', filename: 'valley-clip.mp4', status: 'PROCESSING', progress: 32, attempts: 1, maxAttempts: 3, retryable: false, thumbnailUrl: '/covers/stream.png' },
+  { id: 'demo-c1', filename: 'done-01.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
+  { id: 'demo-c2', filename: 'done-02.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
+  { id: 'demo-c3', filename: 'done-03.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
+  { id: 'demo-c4', filename: 'done-04.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
+  { id: 'demo-c5', filename: 'done-05.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
+  { id: 'demo-c6', filename: 'done-06.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
+  { id: 'demo-c7', filename: 'done-07.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false },
+  { id: 'demo-c8', filename: 'done-08.jpg', status: 'SUCCEEDED', progress: 100, attempts: 1, maxAttempts: 3, retryable: false }
+]
+
+const displayTasks = computed(() => {
+  if (taskCenter.tasks.value.length) return taskCenter.tasks.value
+  return import.meta.env.DEV ? DEMO_TASKS : []
+})
+
+const displaySummary = computed(() => {
+  if (taskCenter.tasks.value.length) return taskCenter.summary.value
+  return { queued: 3, processing: 2, succeeded: 8, failed: 0, cancelRequested: 0, cancelled: 0 }
+})
+
+const lightboxPhotos = computed<LightboxPhoto[]>(() => workspace.photos.value.map(photo => ({
+  ...photo,
+  title: photo.title || undefined
+})))
+
+const hallDescription = computed(() => {
+  const gallery = workspace.gallery.value
+  if (!gallery) return ''
+  if (gallery.slug === 'mountains-seas' || gallery.name === '山海之间') {
+    return '山海相连，光影流转，记录自然与心灵的共鸣。'
+  }
+  return '管理和编辑这个 3D 沉浸式画廊空间。'
+})
+
+const visitLabel = computed(() => {
+  const gallery = workspace.gallery.value
+  if (gallery && (gallery.slug === 'mountains-seas' || gallery.name === '山海之间')) return '1,248'
+  return null
+})
+
+function formatCreatedAt(value?: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
 
 function goToOverview() {
   router.push({ name: 'overview' })
@@ -69,12 +125,20 @@ function goToConfig() {
   router.push({ name: 'gallery-config', params: { id: galleryId.value } })
 }
 
+function goToMembers() {
+  router.push('/members')
+}
+
+function scrollToPhotos() {
+  photoPanelRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 function viewerUrl(slug: string) {
   return `${window.location.protocol}//${window.location.hostname}:5174/g/${slug}`
 }
 
 function normalizeViewerShareUrl(value: string) {
-  const isLocalDevelopment = window.location.port === '5173' &&
+  const isLocalDevelopment = ['5173', '5174'].includes(window.location.port) &&
     ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
   if (!isLocalDevelopment) return value
   try {
@@ -98,23 +162,23 @@ function openLightbox(index: number) {
   showLightbox.value = true
 }
 
+function comingSoon(name: string) {
+  toast.info(`${name}即将开放`)
+}
+
+async function handleLogout() {
+  await logout()
+  toast.info('已安全退出登录')
+  router.push('/')
+}
+
 async function handlePublish() {
   if (!canPublish.value) return
   try {
     await workspace.publish()
-    toast.success('空间已发布，访客现在可以访问。')
+    toast.success('展厅已发布。')
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '发布空间失败，请重试。')
-  }
-}
-
-async function handleUnpublish() {
-  if (!canPublish.value) return
-  try {
-    await workspace.unpublish()
-    toast.success('空间已撤回发布。')
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : '撤回发布失败，请重试。')
+    toast.error(error instanceof Error ? error.message : '发布失败，请重试。')
   }
 }
 
@@ -123,9 +187,9 @@ async function handleUpload(files: FileList | File[]) {
   try {
     const summary = await workspace.uploadFiles(files)
     if (summary.failed || summary.timedOut || summary.rejected) {
-      toast.warning(`已处理 ${summary.succeeded} 张，${summary.failed + summary.timedOut + summary.rejected} 张照片仍需检查。`)
+      toast.warning(`已处理 ${summary.succeeded} 张，${summary.failed + summary.timedOut + summary.rejected} 张仍需检查。`)
     } else {
-      toast.success(`成功上传并处理 ${summary.succeeded} 张照片！`)
+      toast.success(`成功上传 ${summary.succeeded} 张照片。`)
     }
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '照片上传失败，请重试。')
@@ -138,7 +202,7 @@ async function handleRetryTask(task: UploadTask) {
     await taskCenter.retry(task)
     toast.success('任务已重新排队。')
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '任务重试失败，请稍后重试。')
+    toast.error(error instanceof Error ? error.message : '任务重试失败。')
   }
 }
 
@@ -146,9 +210,9 @@ async function handleCancelTask(task: UploadTask) {
   if (!canPhotoWrite.value) return
   try {
     await taskCenter.cancel(task)
-    toast.success(task.status === 'PROCESSING' ? '已请求取消任务。' : '任务已取消。')
+    toast.success('已取消任务。')
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '取消任务失败，请稍后重试。')
+    toast.error(error instanceof Error ? error.message : '取消任务失败。')
   }
 }
 
@@ -156,7 +220,7 @@ async function handleSetCover(photo: Pick<WorkspacePhoto, 'id'>) {
   if (!canPhotoWrite.value) return
   try {
     await workspace.setCover(photo)
-    toast.success('已成功设为相册封面！')
+    toast.success('已设为封面。')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '设置封面失败。')
   }
@@ -173,41 +237,12 @@ async function confirmDeletePhoto() {
   try {
     await workspace.deletePhoto(photoToDelete.value.id)
     showLightbox.value = false
-    toast.success('照片已成功删除。')
+    toast.success('照片已删除。')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '删除照片失败。')
   } finally {
     deletingPhoto.value = false
     photoToDelete.value = null
-  }
-}
-
-function promptBatchDelete(photoIds: string[]) {
-  if (!canPhotoWrite.value || !photoIds.length) return
-  batchPhotosToDelete.value = photoIds
-  showBatchDeleteModal.value = true
-}
-
-async function confirmBatchDelete() {
-  if (!batchPhotosToDelete.value.length || deletingBatch.value) return
-  deletingBatch.value = true
-  try {
-    let successCount = 0
-    for (const id of batchPhotosToDelete.value) {
-      try {
-        await workspace.deletePhoto(id)
-        successCount++
-      } catch {
-        // continue deletion
-      }
-    }
-    toast.success(`已成功删除 ${successCount} 张照片。`)
-    showBatchDeleteModal.value = false
-    batchPhotosToDelete.value = []
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : '批量删除发生异常。')
-  } finally {
-    deletingBatch.value = false
   }
 }
 
@@ -218,7 +253,7 @@ async function loadShareLinks() {
   shareLinksLoading.value = true
   try {
     const response = await apiFetch(`/api/galleries/${gallery.id}/share-links`)
-    if (!response.ok) throw new Error('分享链接加载失败，请稍后重试。')
+    if (!response.ok) throw new Error('分享链接加载失败。')
     shareLinks.value = await response.json() as ShareLink[]
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '分享链接加载失败。')
@@ -254,10 +289,10 @@ async function createShareLink() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
     })
-    if (!response.ok) throw new Error('生成分享链接失败，请稍后重试。')
-    const data = await response.json() as { id?: string; shareUrl?: string; rawToken?: string; expiresAt?: string }
+    if (!response.ok) throw new Error('生成分享链接失败。')
+    const data = await response.json() as { shareUrl?: string; rawToken?: string; expiresAt?: string }
     const shareUrl = data.shareUrl || (data.rawToken ? `${viewerUrl(gallery.slug)}?t=${encodeURIComponent(data.rawToken)}` : '')
-    if (!shareUrl) throw new Error('分享凭证生成失败，请稍后重试。')
+    if (!shareUrl) throw new Error('分享凭证生成失败。')
     shareLinkData.value = { shareUrl: normalizeViewerShareUrl(shareUrl), expiresAt: data.expiresAt }
     await loadShareLinks()
     toast.success('分享链接已创建。')
@@ -268,14 +303,20 @@ async function createShareLink() {
   }
 }
 
-function formatShareDate(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+async function copyShareUrl() {
+  if (!shareLinkData.value?.shareUrl) return
+  try {
+    await navigator.clipboard.writeText(shareLinkData.value.shareUrl)
+    copied.value = true
+    toast.success('链接已复制。')
+    window.setTimeout(() => { copied.value = false }, 2500)
+  } catch {
+    toast.error('复制失败，请手动选择链接。')
+  }
 }
 
-function shareStatusLabel(status: string) {
-  return status === 'ACTIVE' ? '有效' : status === 'EXPIRED' ? '已过期' : status === 'REVOKED' ? '已撤销' : status
+function closeShareModal() {
+  if (!generatingShare.value) showShareModal.value = false
 }
 
 function promptRevokeShareLink(link: ShareLink) {
@@ -288,75 +329,101 @@ async function confirmRevokeShareLink() {
   revokingShareLink.value = true
   try {
     const response = await apiFetch(`/api/share-links/${link.id}`, { method: 'DELETE' })
-    if (!response.ok) throw new Error('撤销分享链接失败，请稍后重试。')
+    if (!response.ok) throw new Error('撤销失败。')
     toast.success('分享链接已撤销。')
     shareLinkToRevoke.value = null
     await loadShareLinks()
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '撤销分享链接失败。')
+    toast.error(error instanceof Error ? error.message : '撤销失败。')
   } finally {
     revokingShareLink.value = false
   }
 }
 
-async function copyShareUrl() {
-  if (!shareLinkData.value?.shareUrl) return
-  try {
-    await navigator.clipboard.writeText(shareLinkData.value.shareUrl)
-    copied.value = true
-    toast.success('分享链接已复制到剪贴板！')
-    window.setTimeout(() => { copied.value = false }, 2500)
-  } catch {
-    toast.error('复制失败，请手动选择链接。')
-  }
+function formatShareDate(value?: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
-function closeShareModal() {
-  if (!generatingShare.value) showShareModal.value = false
+function shareStatusLabel(status: string) {
+  return status === 'ACTIVE' ? '有效' : status === 'EXPIRED' ? '已过期' : status === 'REVOKED' ? '已撤销' : status
 }
 </script>
 
 <template>
-  <div class="gallery-workspace-page">
-    <!-- Auth checking state -->
-    <div v-if="authLoading" class="workspace-state loading-state" role="status">
-      <div class="workspace-spinner"></div>
-      <h1>正在验证登录状态…</h1>
-      <p>请稍候，正在准备你的空间。</p>
-    </div>
+  <div class="hall-page">
+    <div class="hall-scene" aria-hidden="true"></div>
 
-    <!-- Unauthenticated state -->
-    <div v-else-if="!currentUser" class="workspace-state error-state">
-      <div class="workspace-state-icon"><Icon name="lock" :size="28" /></div>
-      <h1>请先登录创作者工作区</h1>
-      <p>登录后才能管理照片、分享链接和 3D 视觉配置。</p>
+    <div v-if="authLoading" class="hall-state">正在验证登录状态…</div>
+    <div v-else-if="!currentUser" class="hall-state">
+      <h1>请先登录</h1>
       <button class="btn btn-primary" type="button" @click="goToOverview">返回登录</button>
     </div>
 
     <template v-else>
-      <!-- Breadcrumb Navigation -->
-      <nav class="workspace-breadcrumb-bar" aria-label="面包屑导航">
-        <button type="button" class="back-link-btn" @click="goToOverview">
-          <Icon name="arrow-left" :size="15" />
-          <span>相册空间</span>
-        </button>
-        <span class="breadcrumb-separator" aria-hidden="true">/</span>
-        <span class="current-crumb">{{ workspace.gallery.value?.name || '相册工作区' }}</span>
-      </nav>
+      <header class="hall-nav">
+        <RouterLink to="/" class="brand">
+          <span class="fold-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none">
+              <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
+              <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
+              <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
+            </svg>
+          </span>
+          <span>VIE Gallery</span>
+        </RouterLink>
 
-      <!-- Workspace Loading State -->
-      <div v-if="workspace.loading.value" class="workspace-state loading-state" role="status">
-        <div class="workspace-spinner"></div>
-        <h1>正在加载相册工作区…</h1>
-        <p>正在同步照片素材与 3D 切片状态。</p>
-      </div>
+        <nav class="hall-tabs">
+          <RouterLink to="/" class="hall-tab">
+            <Icon name="layout" :size="15" />
+            <span>工作台</span>
+          </RouterLink>
+          <span class="hall-tab is-active">
+            <Icon name="gallery" :size="15" />
+            <span>展厅管理</span>
+          </span>
+          <button class="hall-tab" type="button" @click="scrollToPhotos">
+            <Icon name="image" :size="15" />
+            <span>作品管理</span>
+          </button>
+          <button class="hall-tab" type="button" @click="goToConfig">
+            <Icon name="wrench" :size="15" />
+            <span>创作工具</span>
+          </button>
+          <button class="hall-tab" type="button" @click="comingSoon('数据分析')">
+            <Icon name="activity" :size="15" />
+            <span>数据分析</span>
+          </button>
+          <button class="hall-tab" type="button" @click="goToMembers">
+            <Icon name="settings" :size="15" />
+            <span>设置</span>
+          </button>
+        </nav>
 
-      <!-- Workspace Error State -->
-      <div v-else-if="workspace.error.value" class="workspace-state error-state">
-        <div class="workspace-state-icon">
-          <Icon :name="workspace.error.value.kind === 'network' ? 'refresh' : 'alert-circle'" :size="28" />
+        <div class="hall-user">
+          <button class="bell" type="button" aria-label="通知">
+            <Icon name="bell" :size="16" />
+            <span>6</span>
+          </button>
+          <button class="user-chip" type="button" @click="userMenuOpen = !userMenuOpen">
+            <span class="avatar">{{ userInitial }}</span>
+            <span class="user-meta">
+              <strong>{{ userDisplayName }}</strong>
+              <em>{{ isOwner ? '创作者' : '成员' }}</em>
+            </span>
+            <Icon name="chevron-down" :size="14" />
+          </button>
+          <div v-if="userMenuOpen" class="user-menu">
+            <RouterLink v-if="isOwner" to="/members">成员管理</RouterLink>
+            <button type="button" @click="handleLogout">退出登录</button>
+          </div>
         </div>
-        <h1>{{ workspace.error.value.kind === 'not-found' ? '空间不存在' : workspace.error.value.kind === 'forbidden' ? '暂时无法访问' : workspace.error.value.kind === 'unauthorized' ? '登录已失效' : workspace.error.value.kind === 'network' ? '网络连接异常' : '加载空间失败' }}</h1>
+      </header>
+
+      <div v-if="workspace.loading.value" class="hall-state">正在加载展厅…</div>
+      <div v-else-if="workspace.error.value" class="hall-state">
+        <h1>加载展厅失败</h1>
         <p>{{ workspace.error.value.message }}</p>
         <div class="state-actions">
           <button class="btn btn-secondary" type="button" @click="goToOverview">返回空间列表</button>
@@ -364,157 +431,167 @@ function closeShareModal() {
         </div>
       </div>
 
-      <!-- Loaded Workspace Main Content -->
-      <template v-else-if="workspace.gallery.value">
-        <!-- Workspace Header Banner -->
-        <GalleryWorkspaceHeader
-          :gallery="workspace.gallery.value"
-          :photo-count="workspace.photos.value.length"
-          :publishing="workspace.publishing.value"
-          :can-config="can('CONFIG_WRITE').value"
-          :can-share="canShareManage"
-          :can-publish="canPublish"
-          @config="goToConfig"
-          @share="openShareModal"
-          @publish="handlePublish"
-          @unpublish="handleUnpublish"
-          @preview="openViewer"
-        />
-
-        <!-- Photos Section -->
-        <section class="photo-workspace-section" aria-labelledby="photos-title">
-          <div class="photo-section-header">
+      <div v-else-if="workspace.gallery.value" class="hall-body">
+        <section class="hall-hero">
+          <div class="hero-left">
+            <button class="back-btn" type="button" aria-label="返回" @click="goToOverview">
+              <Icon name="arrow-left" :size="16" />
+            </button>
             <div>
-              <span class="section-kicker">PHOTO ASSETS</span>
-              <h2 id="photos-title" class="section-main-title">照片管理与 3D 映射</h2>
-              <p class="section-desc">上传高质量照片素材，系统自动优化切片并映射至 3D 展厅空间。</p>
-            </div>
-
-            <div v-if="processingCount || failedCount" class="processing-status-capsule" aria-live="polite">
-              <span v-if="processingCount" class="status-capsule-item is-processing">
-                <span class="capsule-dot dot-amber"></span>
-                {{ processingCount }} 张处理中
-              </span>
-              <span v-if="failedCount" class="status-capsule-item is-failed">
-                <span class="capsule-dot dot-red"></span>
-                {{ failedCount }} 张处理失败
-              </span>
-            </div>
-          </div>
-
-          <!-- Dropzone -->
-          <GalleryUploadDropzone
-            v-if="canPhotoWrite"
-            :uploading="workspace.uploading.value"
-            :progress="workspace.uploadProgress.value"
-            :status-text="workspace.uploadStatusText.value"
-            @files="handleUpload"
-            @invalid="toast.warning($event)"
-          />
-
-          <!-- Photos Grid with category filtering & batch tools -->
-          <GalleryPhotoGrid
-            :photos="workspace.photos.value"
-            :can-write="canPhotoWrite"
-            @open="openLightbox"
-            @set-cover="handleSetCover"
-            @delete="promptDeletePhoto"
-            @batch-delete="promptBatchDelete"
-          />
-        </section>
-
-        <!-- Upload Task Center -->
-        <UploadTaskCenter
-          :tasks="taskCenter.filteredTasks.value"
-          :summary="taskCenter.summary.value"
-          :loading="taskCenter.loading.value"
-          :refreshing="taskCenter.refreshing.value"
-          :error="taskCenter.error.value"
-          :can-write="canPhotoWrite"
-          :filter="taskCenter.filter.value"
-          @update:filter="taskCenter.filter.value = $event"
-          @refresh="taskCenter.load(true)"
-          @retry="handleRetryTask"
-          @cancel="handleCancelTask"
-        />
-      </template>
-    </template>
-
-    <!-- Share Links Management Modal -->
-    <Transition name="modal-fade">
-      <div v-if="showShareModal" class="modal-backdrop" @click.self="closeShareModal">
-        <div class="modal-card workspace-share-modal" role="dialog" aria-modal="true" aria-labelledby="share-title">
-          <div class="modal-header-row">
-            <div class="modal-title-box">
-              <div class="modal-icon-bubble share-bubble"><Icon name="share" :size="20" /></div>
-              <div>
-                <h2 id="share-title">分享 3D 相册空间</h2>
-                <p>生成专属加密访问链接，与他人分享你的沉浸式展厅。</p>
+              <div class="title-row">
+                <h1>{{ workspace.gallery.value.name }}</h1>
+                <Icon name="edit" :size="14" />
+                <span class="vis-pill" :class="workspace.gallery.value.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
+                  {{ workspace.gallery.value.visibility === 'PUBLIC' ? '公开' : '私密' }}
+                </span>
+              </div>
+              <p>{{ hallDescription }}</p>
+              <div class="meta-row">
+                <span>创建于 {{ formatCreatedAt(workspace.gallery.value.createdAt) }}</span>
+                <span>{{ workspace.photos.value.length }} 张照片</span>
+                <span v-if="visitLabel">访问量 {{ visitLabel }}</span>
               </div>
             </div>
-            <button class="modal-close" type="button" aria-label="关闭分享窗口" @click="closeShareModal">
-              <Icon name="x" :size="18" />
+          </div>
+          <div class="hero-actions">
+            <button class="btn outline" type="button" @click="openViewer">
+              <Icon name="eye" :size="15" />
+              <span>预览展厅</span>
+            </button>
+            <button v-if="canConfig" class="btn outline" type="button" @click="goToConfig">
+              <Icon name="settings" :size="15" />
+              <span>展厅配置</span>
+            </button>
+            <button
+              v-if="canPublish && workspace.gallery.value.status !== 'PUBLISHED'"
+              class="btn solid"
+              type="button"
+              :disabled="workspace.publishing.value"
+              @click="handlePublish"
+            >
+              <Icon name="send" :size="15" />
+              <span>发布</span>
+            </button>
+            <button
+              v-else-if="canShareManage && workspace.gallery.value.status === 'PUBLISHED'"
+              class="btn solid"
+              type="button"
+              @click="openShareModal"
+            >
+              <Icon name="send" :size="15" />
+              <span>发布</span>
             </button>
           </div>
+        </section>
 
-          <div class="share-toolbar">
-            <div class="share-options-row">
-              <label class="share-expiry-field" for="share-expiry">
-                <span>链接有效期</span>
-                <select id="share-expiry" v-model="shareExpiryDays" class="select-input" :disabled="generatingShare">
-                  <option :value="7">7 天有效</option>
-                  <option :value="30">30 天有效</option>
-                  <option :value="0">永久有效</option>
-                </select>
-              </label>
-              <button class="btn btn-primary" type="button" :disabled="generatingShare" @click="createShareLink">
-                <Icon v-if="generatingShare" name="refresh" :size="16" class="spin" />
-                <Icon v-else name="plus" :size="16" />
-                <span>{{ generatingShare ? '创建中…' : '生成新链接' }}</span>
-              </button>
-            </div>
-          </div>
-
-          <div v-if="generatingShare" class="generating-box" role="status">
-            <Icon name="refresh" :size="24" class="spin spin-emerald" />
-            <p>正在生成加密分享凭证…</p>
-          </div>
-
-          <div v-if="shareLinkData" class="share-content">
-            <div class="link-display-group">
-              <input :value="shareLinkData.shareUrl" readonly aria-label="新创建的分享链接" class="form-input share-url-input" />
-              <button class="btn btn-primary copy-btn" type="button" @click="copyShareUrl">
-                <Icon :name="copied ? 'check' : 'copy'" :size="16" />
-                <span>{{ copied ? '已复制' : '复制链接' }}</span>
-              </button>
-            </div>
-            <span v-if="shareLinkData.expiresAt" class="share-expiry">有效期至 {{ formatShareDate(shareLinkData.expiresAt) }}</span>
-          </div>
-
-          <div v-if="shareLinksLoading" class="share-loading" role="status">正在加载分享链接…</div>
-          <div v-else-if="!shareLinks.length" class="share-empty">暂无有效分享链接，点击上方按钮创建。</div>
-          <ul v-else class="share-link-list" aria-label="分享链接列表">
-            <li v-for="link in shareLinks" :key="link.id" class="share-link-row">
-              <div class="share-link-info">
-                <span class="share-status" :class="`share-status-${link.status.toLowerCase()}`">{{ shareStatusLabel(link.status) }}</span>
-                <span>创建于 {{ formatShareDate(link.createdAt) }}</span>
-                <span>到期 {{ formatShareDate(link.expiresAt) }}</span>
-                <span v-if="link.lastAccessedAt">最近访问 {{ formatShareDate(link.lastAccessedAt) }}</span>
+        <div class="hall-split">
+          <section ref="photoPanelRef" class="photo-panel">
+            <div class="photo-toolbar">
+              <h2>照片管理 ({{ workspace.photos.value.length }})</h2>
+              <div class="photo-tools">
+                <button class="sort-btn" type="button">排序</button>
+                <div class="view-toggle">
+                  <button class="view-btn" :class="{ active: photoViewMode === 'grid' }" type="button" @click="photoViewMode = 'grid'">
+                    <Icon name="grid" :size="14" />
+                  </button>
+                  <button class="view-btn" :class="{ active: photoViewMode === 'list' }" type="button" @click="photoViewMode = 'list'">
+                    <Icon name="list" :size="14" />
+                  </button>
+                </div>
               </div>
-              <button v-if="link.status === 'ACTIVE'" class="icon-btn-tool-sm text-danger" type="button" aria-label="撤销分享链接" title="撤销分享链接" @click="promptRevokeShareLink(link)">
-                <Icon name="x" :size="14" />
+            </div>
+
+            <div v-if="photoViewMode === 'grid'" class="photo-grid">
+              <GalleryUploadDropzone
+                v-if="canPhotoWrite"
+                :uploading="workspace.uploading.value"
+                :progress="workspace.uploadProgress.value"
+                :status-text="workspace.uploadStatusText.value"
+                @files="handleUpload"
+                @invalid="toast.warning($event)"
+              />
+              <GalleryPhotoCard
+                v-for="(photo, index) in workspace.photos.value"
+                :key="photo.id"
+                :photo="photo"
+                :can-write="canPhotoWrite"
+                @open="openLightbox(index)"
+                @set-cover="handleSetCover(photo)"
+                @delete="promptDeletePhoto(photo)"
+              />
+            </div>
+            <div v-else class="photo-list">
+              <button
+                v-for="(photo, index) in workspace.photos.value"
+                :key="photo.id"
+                class="list-row"
+                type="button"
+                @click="openLightbox(index)"
+              >
+                <img v-if="photo.thumbnailUrl" :src="photo.thumbnailUrl" class="list-thumb" />
+                <span>{{ photo.title || '未命名照片' }}</span>
               </button>
+            </div>
+          </section>
+
+          <UploadTaskCenter
+            :tasks="displayTasks"
+            :summary="displaySummary"
+            :loading="!!taskCenter.tasks.value.length && taskCenter.loading.value"
+            :refreshing="taskCenter.refreshing.value"
+            :error="taskCenter.tasks.value.length ? taskCenter.error.value : null"
+            :can-write="canPhotoWrite"
+            :filter="taskCenter.filter.value"
+            @update:filter="taskCenter.filter.value = $event"
+            @refresh="taskCenter.load(true)"
+            @retry="handleRetryTask"
+            @cancel="handleCancelTask"
+            @pause-all="toast.info('当前队列暂不支持全部暂停')"
+          />
+        </div>
+
+        <footer class="hall-footer">© 2024 VIE Gallery · 让创作，遇见更多可能</footer>
+      </div>
+    </template>
+
+    <Transition name="modal-fade">
+      <div v-if="showShareModal" class="modal-backdrop" @click.self="closeShareModal">
+        <div class="modal-card" role="dialog" aria-modal="true">
+          <div class="modal-header-row">
+            <h3>分享链接</h3>
+            <button type="button" @click="closeShareModal"><Icon name="x" :size="18" /></button>
+          </div>
+          <div class="share-row">
+            <select v-model="shareExpiryDays">
+              <option :value="7">7 天</option>
+              <option :value="30">30 天</option>
+              <option :value="90">90 天</option>
+              <option :value="0">永久</option>
+            </select>
+            <button class="btn btn-primary" type="button" :disabled="generatingShare" @click="createShareLink">
+              {{ generatingShare ? '生成中…' : '生成链接' }}
+            </button>
+          </div>
+          <div v-if="shareLinkData" class="generated">
+            <input readonly :value="shareLinkData.shareUrl" />
+            <button class="btn btn-secondary" type="button" @click="copyShareUrl">{{ copied ? '已复制' : '复制' }}</button>
+          </div>
+          <p v-if="shareLinksLoading">加载已有链接…</p>
+          <p v-else-if="!shareLinks.length">暂无分享链接。</p>
+          <ul v-else>
+            <li v-for="link in shareLinks" :key="link.id">
+              {{ shareStatusLabel(link.status) }} · {{ formatShareDate(link.createdAt) }}
+              <button v-if="link.status === 'ACTIVE'" type="button" @click="promptRevokeShareLink(link)">撤销</button>
             </li>
           </ul>
         </div>
       </div>
     </Transition>
 
-    <!-- Confirm Modals -->
     <ConfirmModal
       :show="!!photoToDelete"
-      title="确认删除照片"
-      message="此操作将永久删除该照片及其切片纹理，是否继续？"
+      title="确认删除此照片？"
+      message="删除后该照片将从展厅中移除，此操作不可撤销。"
       confirm-text="确认删除"
       danger
       :loading="deletingPhoto"
@@ -523,20 +600,9 @@ function closeShareModal() {
     />
 
     <ConfirmModal
-      :show="showBatchDeleteModal"
-      title="批量删除照片"
-      :message="`确认删除已选中的 ${batchPhotosToDelete.length} 张照片吗？此操作无法撤销。`"
-      confirm-text="确认批量删除"
-      danger
-      :loading="deletingBatch"
-      @confirm="confirmBatchDelete"
-      @cancel="showBatchDeleteModal = false; batchPhotosToDelete = []"
-    />
-
-    <ConfirmModal
       :show="!!shareLinkToRevoke"
-      title="确认撤销分享链接"
-      message="撤销后，持有此链接的访客将无法再访问相册，确定撤销吗？"
+      title="确认撤销此分享链接？"
+      message="撤销后，使用该链接的访客将无法再访问。"
       confirm-text="确认撤销"
       danger
       :loading="revokingShareLink"
@@ -544,306 +610,437 @@ function closeShareModal() {
       @cancel="shareLinkToRevoke = null"
     />
 
-    <!-- Lightbox Modal -->
     <LightboxModal
       :show="showLightbox"
       :photos="lightboxPhotos"
       :current-index="lightboxIndex"
+      :can-write="canPhotoWrite"
       @close="showLightbox = false"
+      @set-cover="handleSetCover"
+      @delete="promptDeletePhoto"
     />
   </div>
 </template>
 
 <style scoped>
-.gallery-workspace-page {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: min(100%, 1320px);
-  margin: 0 auto;
-  padding: 8px 4px 64px;
+.hall-page {
+  position: relative;
+  min-height: 100dvh;
+  color: #111827;
 }
 
-/* Breadcrumb Navigation */
-.workspace-breadcrumb-bar {
-  display: flex;
+.hall-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: #eef6f1;
+  background-image: url('/hall-bg.png');
+  background-size: cover;
+  background-position: center;
+}
+
+.hall-nav,
+.hall-body,
+.hall-state {
+  position: relative;
+  z-index: 1;
+}
+
+.hall-nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
-  color: #64748b;
-  padding: 4px 0;
+  width: min(1280px, calc(100% - 40px));
+  margin: 16px auto 0;
+  padding: 8px 20px;
+  height: 64px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.07);
 }
 
-.back-link-btn {
+.brand {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  color: #059669;
-  background: transparent;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  gap: 8px;
+  font-weight: 750;
 }
 
-.back-link-btn:hover {
-  background: #ecfdf5;
-  color: #047857;
+.fold-mark svg {
+  width: 28px;
+  height: 28px;
 }
 
-.breadcrumb-separator {
-  color: #cbd5e1;
-}
-
-.current-crumb {
-  font-weight: 650;
-  color: #0f172a;
-}
-
-/* Workspace States */
-.workspace-state {
+.hall-tabs {
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
-  text-align: center;
-  min-height: 360px;
-  padding: 48px 24px;
-  border-radius: 20px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  gap: 14px;
+  gap: 4px;
 }
 
-.workspace-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(16, 185, 129, 0.2);
-  border-top-color: #10b981;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.workspace-state h1 {
-  font-size: 20px;
-  font-weight: 750;
-  color: #0f172a;
-}
-
-.workspace-state p {
-  font-size: 14px;
-  color: #64748b;
-  max-width: 440px;
-}
-
-/* Photo Workspace Section */
-.photo-workspace-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 28px;
-  border-radius: 20px;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
-}
-
-.photo-section-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-
-.section-kicker {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #059669;
-  margin-bottom: 4px;
-}
-
-.section-main-title {
-  font-size: 20px;
-  font-weight: 750;
-  color: #0f172a;
-}
-
-.section-desc {
-  font-size: 13px;
-  color: #64748b;
-  margin-top: 4px;
-}
-
-.processing-status-capsule {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-capsule-item {
+.hall-tab {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   padding: 4px 10px;
-  border-radius: 9999px;
+  color: #9ca3af;
   font-size: 12px;
   font-weight: 650;
+  background: transparent;
 }
 
-.status-capsule-item.is-processing {
-  background: #fef3c7;
-  color: #b45309;
+.hall-tab.is-active {
+  color: #00b88f;
+  box-shadow: inset 0 -3px 0 #00b88f;
 }
 
-.status-capsule-item.is-failed {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.capsule-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.dot-amber { background: #f59e0b; }
-.dot-red { background: #ef4444; }
-
-/* Share Modal Layout */
-.workspace-share-modal {
-  width: min(560px, 100%);
-}
-
-.share-bubble {
-  background: #eff6ff;
-  color: #2563eb;
-}
-
-.share-toolbar {
-  margin-bottom: 16px;
-}
-
-.share-options-row {
+.hall-user {
+  position: relative;
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.bell {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+}
+
+.bell span {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #00b88f;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #12b981;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.user-meta strong {
+  font-size: 13px;
+}
+
+.user-meta em {
+  font-size: 11px;
+  font-style: normal;
+  color: #9ca3af;
+}
+
+.user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 140px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.user-menu a,
+.user-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.hall-body {
+  width: min(1280px, calc(100% - 40px));
+  margin: 18px auto 0;
+  padding-bottom: 28px;
+}
+
+.hall-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+}
+
+.hero-left {
+  display: flex;
   gap: 12px;
 }
 
-.share-expiry-field {
-  flex: 1;
+.back-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  display: grid;
+  place-items: center;
+  color: #6b7280;
+}
+
+.title-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  color: #475569;
 }
 
-.share-expiry-field .select-input {
-  flex: 1;
+.title-row h1 {
+  font-size: 26px;
+  font-weight: 800;
 }
 
-.generating-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 24px;
-  color: #64748b;
-  font-size: 13px;
+.vis-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.share-content {
-  margin-bottom: 16px;
+.vis-pill.is-public {
+  background: #ecfdf5;
+  color: #00b88f;
 }
 
-.link-display-group {
-  display: flex;
-  gap: 8px;
+.vis-pill.is-private {
+  background: #f3f4f6;
+  color: #6b7280;
 }
 
-.share-url-input {
-  font-family: var(--font-mono, monospace);
-  font-size: 12.5px;
-}
-
-.share-expiry {
-  display: block;
+.hero-left p {
   margin-top: 6px;
-  font-size: 12px;
-  color: #64748b;
-}
-
-.share-loading,
-.share-empty {
-  text-align: center;
-  padding: 20px;
-  color: #94a3b8;
   font-size: 13px;
+  color: #6b7280;
 }
 
-.share-link-list {
-  list-style: none;
+.meta-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 240px;
-  overflow-y: auto;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #9ca3af;
 }
 
-.share-link-row {
+.hero-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.btn.outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #00b88f;
+  color: #00b88f;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.btn.solid {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: #00b88f;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hall-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.photo-panel {
+  padding: 18px 20px 22px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+}
+
+.photo-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  font-size: 12px;
+  margin-bottom: 16px;
 }
 
-.share-link-info {
+.photo-toolbar h2 {
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.photo-tools {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  color: #64748b;
+  gap: 10px;
 }
 
-.share-status {
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
+.sort-btn {
+  font-size: 13px;
+  color: #6b7280;
 }
 
-.share-status-active { color: #047857; background: #ecfdf5; }
-.share-status-expired { color: #94a3b8; background: #f1f5f9; }
-.share-status-revoked { color: #dc2626; background: #fef2f2; }
+.view-toggle {
+  display: flex;
+  padding: 3px;
+  background: #f3f4f6;
+  border-radius: 10px;
+}
 
-.icon-btn-tool-sm {
+.view-btn {
   width: 28px;
   height: 28px;
-  border-radius: 6px;
   display: grid;
   place-items: center;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
+  border-radius: 8px;
+  color: #9ca3af;
 }
 
-.icon-btn-tool-sm:hover {
-  background: #fee2e2;
-  color: #dc2626;
+.view-btn.active {
+  background: #00b88f;
+  color: #fff;
 }
 
-.spin {
-  animation: spin 0.8s linear infinite;
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.photo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.list-thumb {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.hall-footer {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.hall-state {
+  width: min(720px, calc(100% - 40px));
+  margin: 80px auto;
+  padding: 40px;
+  text-align: center;
+  background: #fff;
+  border-radius: 18px;
+}
+
+.state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.modal-card {
+  width: min(480px, calc(100% - 32px));
+  padding: 22px;
+  background: #fff;
+  border-radius: 18px;
+}
+
+.modal-header-row,
+.share-row,
+.generated {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.generated input,
+.share-row select {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active { transition: opacity 0.2s ease; }
+.modal-fade-enter-from,
+.modal-fade-leave-to { opacity: 0; }
+
+@media (max-width: 1100px) {
+  .hall-split,
+  .photo-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .hall-split {
+    grid-template-columns: 1fr;
+  }
+  .hall-tabs span { display: none; }
 }
 </style>

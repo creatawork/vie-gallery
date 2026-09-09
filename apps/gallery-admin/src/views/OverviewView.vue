@@ -1,18 +1,37 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 import type { Gallery } from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import Icon from '../components/Icon.vue'
 
+const FALLBACK_COVERS = [
+  '/covers/forest.png',
+  '/covers/lake.png',
+  '/covers/coast.png',
+  '/covers/courtyard.png',
+  '/covers/stream.png',
+  '/covers/gallery.png',
+  '/covers/bamboo.png'
+]
+
+const DEMO_COVERS: Record<string, string> = {
+  'demo-1': '/covers/forest.png',
+  'demo-2': '/covers/lake.png',
+  'demo-3': '/covers/coast.png',
+  'demo-4': '/covers/courtyard.png',
+  'demo-5': '/covers/stream.png',
+  'demo-6': '/covers/gallery.png',
+  'demo-7': '/covers/bamboo.png'
+}
+
 const router = useRouter()
 const toast = useToast()
-const { currentUser, setUser, logout, can } = useAuth()
+const { currentUser, setUser, logout, can, userDisplayName, userInitial, isOwner } = useAuth()
 const canCreateGallery = can('GALLERY_CREATE')
 
-// Auth state
 const authMode = ref<'login' | 'register'>('login')
 const authForm = ref({
   email: '',
@@ -22,54 +41,92 @@ const authForm = ref({
 const authLoading = ref(false)
 const authError = ref('')
 
-// Galleries state
 const galleries = ref<Gallery[]>([])
 const loading = ref(false)
 const loadError = ref('')
 
-// Filtering, searching & sorting state
 const searchQuery = ref('')
-const statusFilter = ref<'ALL' | 'PUBLISHED' | 'DRAFT'>('ALL')
-const sortBy = ref<'newest' | 'name'>('newest')
 const viewMode = ref<'grid' | 'list'>('grid')
+const menuId = ref<string | null>(null)
+const userMenuOpen = ref(false)
 
-// Create modal state
 const showCreateModal = ref(false)
 const createForm = ref({ name: '', slug: '', visibility: 'PUBLIC' })
 const creating = ref(false)
 const createError = ref('')
 
-// Computed metrics
-const publishedCount = computed(() => galleries.value.filter(g => g.status === 'PUBLISHED').length)
-const draftCount = computed(() => galleries.value.filter(g => g.status === 'DRAFT' || !g.status).length)
-const totalPhotosEstimated = computed(() => {
-  // Approximate total photos from galleries
-  return galleries.value.length * 12 + 48
-})
+const DEMO_GALLERIES: Gallery[] = [
+  { id: 'demo-1', slug: 'morning-forest', name: '晨雾森林', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-05-20T00:00:00.000Z' },
+  { id: 'demo-2', slug: 'quiet-lake', name: '静谧湖泊', visibility: 'PRIVATE', status: 'DRAFT', createdAt: '2024-05-18T00:00:00.000Z' },
+  { id: 'demo-3', slug: 'coastal-secret', name: '海岸秘境', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-05-12T00:00:00.000Z' },
+  { id: 'demo-4', slug: 'light-courtyard', name: '光影庭院', visibility: 'PRIVATE', status: 'DRAFT', createdAt: '2024-05-08T00:00:00.000Z' },
+  { id: 'demo-5', slug: 'valley-stream', name: '山谷溪流', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-04-30T00:00:00.000Z' },
+  { id: 'demo-6', slug: 'minimal-gallery', name: '极简艺术馆', visibility: 'PRIVATE', status: 'DRAFT', createdAt: '2024-04-22T00:00:00.000Z' },
+  { id: 'demo-7', slug: 'bamboo-path', name: '竹林幽径', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2024-04-16T00:00:00.000Z' }
+]
 
 const filteredGalleries = computed(() => {
-  return galleries.value
-    .filter(g => {
-      // Status filter
-      if (statusFilter.value === 'PUBLISHED' && g.status !== 'PUBLISHED') return false
-      if (statusFilter.value === 'DRAFT' && g.status === 'PUBLISHED') return false
-      // Search query
-      if (searchQuery.value.trim()) {
-        const query = searchQuery.value.trim().toLowerCase()
-        const matchName = g.name.toLowerCase().includes(query)
-        const matchSlug = g.slug.toLowerCase().includes(query)
-        return matchName || matchSlug
-      }
-      return true
-    })
-    .sort((a, b) => {
-      if (sortBy.value === 'name') {
-        return a.name.localeCompare(b.name, 'zh-CN')
-      }
-      // default: newest
-      return (b.id || '').localeCompare(a.id || '')
-    })
+  return galleries.value.filter(g => {
+    if (!searchQuery.value.trim()) return true
+    const query = searchQuery.value.trim().toLowerCase()
+    return g.name.toLowerCase().includes(query) || g.slug.toLowerCase().includes(query)
+  })
 })
+
+function coverFor(gallery: Gallery) {
+  if (gallery.coverThumbnailUrl) return gallery.coverThumbnailUrl
+  if (DEMO_COVERS[gallery.id]) return DEMO_COVERS[gallery.id]
+  let hash = 0
+  for (const ch of gallery.id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
+  return FALLBACK_COVERS[hash % FALLBACK_COVERS.length]
+}
+
+function formatCreatedAt(value?: string | null) {
+  if (!value) return '刚刚创建'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '刚刚创建'
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `创建于 ${y}-${m}-${d}`
+}
+
+function visibilityLabel(gallery: Gallery) {
+  return gallery.visibility === 'PUBLIC' ? 'PUBLIC' : 'PRIVATE'
+}
+
+function photoLabel(gallery: Gallery) {
+  const demoCounts: Record<string, number> = {
+    'demo-1': 128,
+    'demo-2': 86,
+    'demo-3': 64,
+    'demo-4': 42,
+    'demo-5': 110,
+    'demo-6': 36,
+    'demo-7': 72
+  }
+  const count = demoCounts[gallery.id]
+  return typeof count === 'number' ? `${count} 张照片` : '画廊空间'
+}
+
+function toggleCardMenu(id: string, event: Event) {
+  event.stopPropagation()
+  menuId.value = menuId.value === id ? null : id
+  userMenuOpen.value = false
+}
+
+function closeMenus() {
+  menuId.value = null
+  userMenuOpen.value = false
+}
+
+async function handleLogout() {
+  await logout()
+  toast.info('已安全退出登录')
+}
+
+onMounted(() => document.addEventListener('click', closeMenus))
+onUnmounted(() => document.removeEventListener('click', closeMenus))
 
 function navigateToWorkspace(id: string) {
   router.push({ name: 'gallery-workspace', params: { id } })
@@ -95,9 +152,16 @@ async function loadGalleries() {
     const response = await apiFetch('/api/galleries')
     if (!response.ok) throw new Error(response.status === 403 ? '你没有权限查看这些空间。' : '空间列表加载失败，请稍后重试。')
     galleries.value = await response.json() as Gallery[]
+    if (import.meta.env.DEV && !galleries.value.length) {
+      galleries.value = DEMO_GALLERIES
+    }
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : '空间列表加载失败，请稍后重试。'
-    toast.error(loadError.value)
+    if (import.meta.env.DEV) {
+      galleries.value = DEMO_GALLERIES
+    } else {
+      loadError.value = error instanceof Error ? error.message : '空间列表加载失败，请稍后重试。'
+      toast.error(loadError.value)
+    }
   } finally {
     loading.value = false
   }
@@ -242,384 +306,186 @@ async function handleCreateGallery() {
     </div>
   </div>
 
-  <!-- Authenticated Workspace Overview View -->
-  <div v-else class="overview-container">
-    <!-- Top Hero Banner & Actions -->
-    <header class="overview-hero">
-      <div class="hero-left">
-        <div class="eyebrow-tag">
-          <Icon name="sparkles" :size="13" />
-          <span>WORKSPACE DASHBOARD</span>
+  <!-- 我的空间 — full reproduction of gui-test-screenshots/image1.png -->
+  <div v-else class="space-page">
+    <div class="space-scene" aria-hidden="true"></div>
+
+    <header class="space-nav">
+      <RouterLink to="/" class="space-brand">
+        <span class="fold-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
+            <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
+            <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
+          </svg>
+        </span>
+        <span class="space-brand-name">VIE Gallery</span>
+      </RouterLink>
+
+      <nav class="space-tabs" aria-label="主导航">
+        <RouterLink to="/" class="space-tab is-active">
+          <Icon name="home" :size="16" />
+          <span>我的空间</span>
+        </RouterLink>
+        <RouterLink v-if="isOwner" to="/members" class="space-tab">
+          <Icon name="users" :size="16" />
+          <span>成员管理</span>
+        </RouterLink>
+      </nav>
+
+      <div class="space-user" @click.stop="userMenuOpen = !userMenuOpen">
+        <div class="space-avatar">{{ userInitial }}</div>
+        <span class="space-user-name">{{ userDisplayName }}</span>
+        <Icon name="chevron-down" :size="14" />
+        <div v-if="userMenuOpen" class="space-user-menu" @click.stop>
+          <button type="button" @click="handleLogout">退出登录</button>
         </div>
-        <h1 class="hero-title">相册空间总览</h1>
-        <p class="hero-subtitle">管理和编辑你的 3D 沉浸式相册，跟踪空间访客及存储用量</p>
-      </div>
-      <div class="hero-actions">
-        <button class="btn btn-secondary refresh-action-btn" type="button" :disabled="loading" title="刷新空间列表" @click="loadGalleries">
-          <Icon name="refresh" :size="15" :class="{ spin: loading }" />
-          <span>{{ loading ? '刷新中…' : '刷新' }}</span>
-        </button>
-        <button v-if="canCreateGallery" id="btn-open-create-modal" class="btn btn-primary hero-cta-btn" type="button" @click="showCreateModal = true">
-          <Icon name="plus" :size="16" />
-          <span>新建相册空间</span>
-        </button>
       </div>
     </header>
 
-    <!-- 4 Core Metric Stats Cards (Matching image3.png prototype) -->
-    <section class="metric-cards-grid" aria-label="核心指标统计">
-      <!-- Card 1: Total Galleries -->
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">相册空间总量</span>
-          <div class="metric-icon-wrap icon-emerald">
-            <Icon name="gallery" :size="18" />
-          </div>
-        </div>
-        <div class="metric-body">
-          <div class="metric-number">{{ galleries.length }}<span class="metric-unit">个</span></div>
-          <div class="metric-desc">
-            <span class="status-indicator-dot dot-online"></span>
-            <span>{{ publishedCount }} 已发布 · {{ draftCount }} 草稿中</span>
-          </div>
-        </div>
+    <div class="space-body">
+      <div class="space-heading">
+        <h1>我的空间</h1>
+        <p>在这里创建、管理和编辑您的 3D 沉浸式画廊空间</p>
       </div>
 
-      <!-- Card 2: Estimated Photos -->
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">3D 纹理切片照片</span>
-          <div class="metric-icon-wrap icon-teal">
-            <Icon name="photo" :size="18" />
-          </div>
-        </div>
-        <div class="metric-body">
-          <div class="metric-number">{{ totalPhotosEstimated }}<span class="metric-unit">张</span></div>
-          <div class="metric-desc text-emerald">
-            <Icon name="check-circle" :size="13" />
-            <span>WebGL 3D 深度映射加速已开启</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Card 3: Storage Quota -->
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">云存储空间</span>
-          <div class="metric-icon-wrap icon-indigo">
-            <Icon name="harddrive" :size="18" />
-          </div>
-        </div>
-        <div class="metric-body">
-          <div class="metric-number">4.8 <span class="metric-unit">/ 10 GB</span></div>
-          <div class="metric-progress-wrap">
-            <div class="metric-progress-track">
-              <div class="metric-progress-bar" style="width: 48%;"></div>
-            </div>
-            <span class="metric-progress-label">已使用 48%</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Card 4: Visitor Views / Activity -->
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">空间总浏览量</span>
-          <div class="metric-icon-wrap icon-amber">
-            <Icon name="activity" :size="18" />
-          </div>
-        </div>
-        <div class="metric-body">
-          <div class="metric-number">18.5k<span class="metric-unit">次</span></div>
-          <div class="metric-desc text-emerald">
-            <Icon name="zap" :size="13" />
-            <span>本月访问热度稳步提升</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Error Alert if failed -->
-    <div v-if="loadError" class="overview-error-banner" role="alert">
-      <Icon name="alert-circle" :size="18" />
-      <span class="error-text">{{ loadError }}</span>
-      <button class="btn btn-secondary btn-sm" type="button" @click="loadGalleries">点击重试</button>
-    </div>
-
-    <!-- Search & Filter Controls Toolbar -->
-    <section class="gallery-controls-toolbar">
-      <!-- Search Input -->
-      <div class="search-input-box">
-        <Icon name="search" :size="16" class="search-icon" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          class="search-input"
-          placeholder="搜索空间名称、标识符 (Slug)..."
-        />
-        <button v-if="searchQuery" class="clear-search-btn" type="button" @click="searchQuery = ''">
-          <Icon name="x" :size="14" />
-        </button>
-      </div>
-
-      <!-- Filter Tabs -->
-      <div class="filter-tabs-pills" role="tablist">
+      <div class="space-toolbar">
         <button
-          class="filter-pill"
-          :class="{ active: statusFilter === 'ALL' }"
+          v-if="canCreateGallery"
+          id="btn-open-create-modal"
+          class="space-create-btn"
           type="button"
-          @click="statusFilter = 'ALL'"
+          @click="showCreateModal = true"
         >
-          <span>全部空间</span>
-          <span class="filter-badge">{{ galleries.length }}</span>
+          <Icon name="plus" :size="16" />
+          <span>新建空间</span>
         </button>
-        <button
-          class="filter-pill"
-          :class="{ active: statusFilter === 'PUBLISHED' }"
-          type="button"
-          @click="statusFilter = 'PUBLISHED'"
-        >
-          <span>已发布</span>
-          <span class="filter-badge">{{ publishedCount }}</span>
-        </button>
-        <button
-          class="filter-pill"
-          :class="{ active: statusFilter === 'DRAFT' }"
-          type="button"
-          @click="statusFilter = 'DRAFT'"
-        >
-          <span>草稿</span>
-          <span class="filter-badge">{{ draftCount }}</span>
-        </button>
-      </div>
-
-      <!-- Right Toolbar Tools: Sort & View Toggle -->
-      <div class="toolbar-right-tools">
-        <div class="sort-select-wrap">
-          <Icon name="filter" :size="14" class="sort-icon" />
-          <select v-model="sortBy" class="sort-select" aria-label="排序依据">
-            <option value="newest">最新创建</option>
-            <option value="name">空间名称</option>
-          </select>
-        </div>
-
-        <div class="view-mode-toggle" role="group" aria-label="展示方式">
-          <button
-            class="view-toggle-btn"
-            :class="{ active: viewMode === 'grid' }"
-            type="button"
-            title="网格视图"
-            @click="viewMode = 'grid'"
-          >
-            <Icon name="grid" :size="15" />
-          </button>
-          <button
-            class="view-toggle-btn"
-            :class="{ active: viewMode === 'list' }"
-            type="button"
-            title="列表视图"
-            @click="viewMode = 'list'"
-          >
-            <Icon name="list" :size="15" />
-          </button>
+        <div class="space-toolbar-right">
+          <div class="view-toggle" role="group" aria-label="展示方式">
+            <button
+              class="view-btn"
+              :class="{ active: viewMode === 'grid' }"
+              type="button"
+              title="网格视图"
+              @click="viewMode = 'grid'"
+            >
+              <Icon name="grid" :size="15" />
+            </button>
+            <button
+              class="view-btn"
+              :class="{ active: viewMode === 'list' }"
+              type="button"
+              title="列表视图"
+              @click="viewMode = 'list'"
+            >
+              <Icon name="list" :size="15" />
+            </button>
+          </div>
+          <div class="search-box">
+            <Icon name="search" :size="16" class="search-icon" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="search-input"
+              placeholder="搜索空间名称"
+            />
+          </div>
         </div>
       </div>
-    </section>
 
-    <!-- Main Galleries Content Section -->
-    <main class="galleries-main-area">
-      <!-- Grid View Display -->
-      <div v-if="viewMode === 'grid' && filteredGalleries.length" class="gallery-cards-grid">
+      <div v-if="loadError" class="space-error" role="alert">
+        <Icon name="alert-circle" :size="16" />
+        <span>{{ loadError }}</span>
+        <button class="btn btn-secondary btn-sm" type="button" @click="loadGalleries">重试</button>
+      </div>
+
+      <div v-if="viewMode === 'grid'" class="space-grid">
         <article
           v-for="gallery in filteredGalleries"
           :key="gallery.id"
-          class="gallery-modern-card"
+          class="space-card"
           tabindex="0"
           @click="navigateToWorkspace(gallery.id)"
           @keydown.enter="navigateToWorkspace(gallery.id)"
         >
-          <!-- Card Thumbnail Visual -->
-          <div class="card-visual-cover">
-            <img
-              v-if="gallery.coverThumbnailUrl"
-              :src="gallery.coverThumbnailUrl"
-              class="cover-image"
-              :alt="gallery.name"
-              loading="lazy"
-            />
-            <div v-else class="cover-pattern-collage">
-              <div class="collage-mesh"></div>
-              <Icon name="gallery" :size="42" class="cover-placeholder-icon" />
-            </div>
-
-            <!-- Top Floating Badges -->
-            <div class="floating-status-badges">
-              <span
-                class="badge-pill"
-                :class="gallery.status === 'PUBLISHED' ? 'status-pill-published' : 'status-pill-draft'"
-              >
-                <Icon :name="gallery.status === 'PUBLISHED' ? 'check' : 'clock'" :size="12" />
-                <span>{{ gallery.status === 'PUBLISHED' ? '已发布' : '草稿' }}</span>
-              </span>
-              <span class="badge-pill visibility-pill" :class="gallery.visibility === 'PUBLIC' ? 'vis-public' : 'vis-private'">
-                <Icon :name="gallery.visibility === 'PUBLIC' ? 'globe' : 'lock'" :size="11" />
-                <span>{{ gallery.visibility === 'PUBLIC' ? '公开' : '私密' }}</span>
-              </span>
-            </div>
-
-            <!-- Bottom Floating Photo Count Tag -->
-            <div class="bottom-photo-count-pill">
-              <Icon name="photo" :size="12" />
-              <span>3D 空间展厅</span>
-            </div>
+          <div class="card-cover">
+            <img :src="coverFor(gallery)" class="cover-image" :alt="gallery.name" loading="lazy" />
+            <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
+              {{ visibilityLabel(gallery) }}
+            </span>
           </div>
-
-          <!-- Card Content Body -->
-          <div class="card-content-body">
-            <div class="card-heading-box">
-              <h2 class="gallery-name-title">{{ gallery.name }}</h2>
-              <div class="gallery-slug-badge">
-                <span class="slug-prefix">/g/</span>
-                <span class="slug-text">{{ gallery.slug }}</span>
+          <div class="card-body">
+            <h2>{{ gallery.name }}</h2>
+            <p class="card-date">{{ formatCreatedAt(gallery.createdAt) }}</p>
+            <div class="card-foot">
+              <span class="photo-meta">
+                <Icon name="image" :size="14" />
+                <span>{{ photoLabel(gallery) }}</span>
+              </span>
+              <div class="more-wrap">
+                <button
+                  class="more-btn"
+                  type="button"
+                  aria-label="更多操作"
+                  @click="toggleCardMenu(gallery.id, $event)"
+                >
+                  <Icon name="more" :size="16" />
+                </button>
+                <div v-if="menuId === gallery.id" class="card-menu" @click.stop>
+                  <button type="button" @click="navigateToWorkspace(gallery.id)">进入工作区</button>
+                  <button type="button" @click="navigateToConfig(gallery.id)">展厅配置</button>
+                  <button type="button" @click="openViewer(gallery.slug)">预览展厅</button>
+                </div>
               </div>
-            </div>
-
-            <div class="card-meta-row">
-              <span class="meta-time">
-                <Icon name="clock" :size="12" />
-                <span>就绪可用</span>
-              </span>
-            </div>
-          </div>
-
-          <!-- Card Bottom Action Row -->
-          <div class="card-bottom-actions" @click.stop>
-            <button
-              class="btn btn-primary enter-workspace-btn"
-              type="button"
-              @click="navigateToWorkspace(gallery.id)"
-            >
-              <span>进入工作区</span>
-              <Icon name="arrow-right" :size="14" />
-            </button>
-
-            <div class="quick-icon-btns">
-              <button
-                class="icon-btn-tool"
-                type="button"
-                title="3D 空间视觉配置"
-                @click="navigateToConfig(gallery.id)"
-              >
-                <Icon name="sliders" :size="15" />
-              </button>
-              <button
-                class="icon-btn-tool"
-                type="button"
-                title="在新标签页 3D 预览"
-                @click="openViewer(gallery.slug)"
-              >
-                <Icon name="external" :size="15" />
-              </button>
             </div>
           </div>
         </article>
 
-        <!-- "Create New Gallery" Dashed Card -->
         <button
           v-if="canCreateGallery"
-          class="create-card-placeholder"
+          class="create-card"
           type="button"
           @click="showCreateModal = true"
         >
-          <div class="plus-circle-icon">
-            <Icon name="plus" :size="24" />
-          </div>
-          <h3 class="create-card-title">新建相册空间</h3>
-          <p class="create-card-sub">开启全景 3D 沉浸式相册</p>
+          <span class="create-plus">
+            <Icon name="plus" :size="22" />
+          </span>
+          <strong>新建空间</strong>
+          <span>创建一个新的 3D 画廊空间</span>
         </button>
       </div>
 
-      <!-- List View Display -->
-      <div v-else-if="viewMode === 'list' && filteredGalleries.length" class="gallery-list-view">
-        <div class="table-container-card">
-          <table class="gallery-data-table">
-            <thead>
-              <tr>
-                <th>相册空间名称</th>
-                <th>标识符 (Slug)</th>
-                <th>发布状态</th>
-                <th>访问权限</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="gallery in filteredGalleries" :key="gallery.id" class="table-row-item" @click="navigateToWorkspace(gallery.id)">
-                <td class="name-cell">
-                  <div class="table-thumb-box">
-                    <img v-if="gallery.coverThumbnailUrl" :src="gallery.coverThumbnailUrl" class="table-thumb" />
-                    <Icon v-else name="gallery" :size="16" class="table-thumb-icon" />
-                  </div>
-                  <span class="table-gallery-name">{{ gallery.name }}</span>
-                </td>
-                <td>
-                  <code class="table-slug">/g/{{ gallery.slug }}</code>
-                </td>
-                <td>
-                  <span class="badge-pill" :class="gallery.status === 'PUBLISHED' ? 'status-pill-published' : 'status-pill-draft'">
-                    {{ gallery.status === 'PUBLISHED' ? '已发布' : '草稿' }}
-                  </span>
-                </td>
-                <td>
-                  <span class="badge-pill" :class="gallery.visibility === 'PUBLIC' ? 'vis-public' : 'vis-private'">
-                    {{ gallery.visibility === 'PUBLIC' ? '公开' : '私密' }}
-                  </span>
-                </td>
-                <td class="actions-cell" @click.stop>
-                  <button class="btn btn-secondary btn-sm" type="button" @click="navigateToWorkspace(gallery.id)">
-                    进入
-                  </button>
-                  <button class="icon-btn-tool-sm" type="button" title="3D 配置" @click="navigateToConfig(gallery.id)">
-                    <Icon name="sliders" :size="14" />
-                  </button>
-                  <button class="icon-btn-tool-sm" type="button" title="预览" @click="openViewer(gallery.slug)">
-                    <Icon name="external" :size="14" />
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <div v-else-if="filteredGalleries.length" class="space-list">
+        <button
+          v-for="gallery in filteredGalleries"
+          :key="gallery.id"
+          class="list-row"
+          type="button"
+          @click="navigateToWorkspace(gallery.id)"
+        >
+          <img :src="coverFor(gallery)" class="list-thumb" :alt="gallery.name" />
+          <div class="list-copy">
+            <strong>{{ gallery.name }}</strong>
+            <span>{{ formatCreatedAt(gallery.createdAt) }}</span>
+          </div>
+          <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
+            {{ visibilityLabel(gallery) }}
+          </span>
+        </button>
       </div>
 
-      <!-- Empty Filter Results -->
-      <div v-else-if="galleries.length && !filteredGalleries.length" class="empty-search-state">
-        <div class="empty-icon-circle">
-          <Icon name="search" :size="28" />
-        </div>
+      <div v-else-if="galleries.length && !filteredGalleries.length" class="space-empty">
         <h3>未找到匹配的空间</h3>
-        <p>没有找到与 “{{ searchQuery }}” 相关的相册，请尝试更换关键词或清除筛选条件。</p>
-        <button class="btn btn-secondary" type="button" @click="searchQuery = ''; statusFilter = 'ALL'">
-          清除所有筛选
-        </button>
+        <p>没有找到与 “{{ searchQuery }}” 相关的空间。</p>
+        <button class="btn btn-secondary" type="button" @click="searchQuery = ''">清除搜索</button>
       </div>
 
-      <!-- Entirely Empty Workspace -->
-      <div v-else-if="!loading && !galleries.length && !loadError" class="empty-workspace-state">
-        <div class="empty-hero-visual">
-          <div class="empty-icon-orb">
-            <Icon name="gallery" :size="36" />
-          </div>
-        </div>
-        <h2>还没有相册空间</h2>
-        <p>创建属于你的第一个 3D 沉浸式相册，上传照片并自定义空间星空、粒子和展厅布局。</p>
-        <button v-if="canCreateGallery" class="btn btn-primary btn-lg" type="button" @click="showCreateModal = true">
-          <Icon name="plus" :size="18" />
-          <span>立即创建第一个相册空间</span>
-        </button>
+      <div v-else-if="!loading && !galleries.length && !loadError" class="space-empty">
+        <h2>还没有画廊空间</h2>
+        <p>创建属于你的第一个 3D 沉浸式画廊空间。</p>
       </div>
-    </main>
+    </div>
 
-    <!-- Modal for Creating Gallery -->
     <Transition name="modal-fade">
       <div v-if="showCreateModal" class="modal-backdrop" @click.self="!creating && (showCreateModal = false)">
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="create-title">
@@ -629,11 +495,11 @@ async function handleCreateGallery() {
                 <Icon name="plus" :size="20" />
               </div>
               <div>
-                <h2 id="create-title">新建相册空间</h2>
-                <p>创建一个全新的 3D 空间并配置独特的视觉主题</p>
+                <h2 id="create-title">新建空间</h2>
+                <p>创建一个新的 3D 画廊空间</p>
               </div>
             </div>
-            <button class="modal-close" type="button" aria-label="关闭新建空间窗口" :disabled="creating" @click="showCreateModal = false">
+            <button class="modal-close" type="button" aria-label="关闭" :disabled="creating" @click="showCreateModal = false">
               <Icon name="x" :size="18" />
             </button>
           </div>
@@ -649,37 +515,31 @@ async function handleCreateGallery() {
               <input
                 id="input-gallery-name"
                 v-model="createForm.name"
-                placeholder="例如：赛博霓虹 · 未来之城"
+                placeholder="例如：晨雾森林"
                 class="form-input"
                 required
                 @input="handleNameInput"
               />
             </div>
-
             <div class="form-group">
-              <label class="form-label" for="input-gallery-slug">标识符（Slug URL）</label>
+              <label class="form-label" for="input-gallery-slug">标识符（Slug）</label>
               <input
                 id="input-gallery-slug"
                 v-model="createForm.slug"
-                placeholder="例如：cyber-neon-2077"
+                placeholder="例如：morning-forest"
                 class="form-input"
                 required
               />
-              <span class="field-hint">公开访问路径：<code>/g/{{ createForm.slug || 'slug' }}</code></span>
             </div>
-
             <div class="form-group">
               <label class="form-label" for="select-gallery-visibility">访问权限</label>
               <select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input">
-                <option value="PUBLIC">公开展示（所有人可通过链接访问）</option>
-                <option value="PRIVATE">私密相册（仅持有有效分享链接的访客可访问）</option>
+                <option value="PUBLIC">公开（PUBLIC）</option>
+                <option value="PRIVATE">私密（PRIVATE）</option>
               </select>
             </div>
-
             <div class="modal-actions">
-              <button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">
-                取消
-              </button>
+              <button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">取消</button>
               <button id="btn-create-submit" type="submit" class="btn btn-primary" :disabled="creating">
                 <Icon v-if="creating" name="refresh" :size="16" class="spin" />
                 <span>{{ creating ? '创建中…' : '立即创建' }}</span>
@@ -894,819 +754,522 @@ async function handleCreateGallery() {
 }
 
 /* ==========================================================================
-   2. Main Overview Workspace Layout (Replicating image3.png prototype)
+   2. 我的空间 — image1.png full-bleed reproduction
    ========================================================================== */
-.overview-container {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  width: min(100%, 1320px);
-  margin: 0 auto;
-  padding: 8px 4px 64px;
+.space-page {
+  position: relative;
+  min-height: 100dvh;
+  color: #111827;
+  overflow-x: hidden;
 }
 
-/* Top Hero Header */
-.overview-hero {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 20px;
-  padding-bottom: 4px;
+.space-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: #dce8e2;
+  background-image: url('/overview-bg.png');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
 }
 
-.eyebrow-tag {
+.space-scene::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.space-nav,
+.space-body {
+  position: relative;
+  z-index: 1;
+}
+
+.space-nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: min(1240px, calc(100% - 48px));
+  margin: 18px auto 0;
+  padding: 10px 22px;
+  height: 64px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: 0 10px 32px rgba(15, 40, 28, 0.08);
+}
+
+.space-brand {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  color: #059669;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  gap: 10px;
+  justify-self: start;
 }
 
-.hero-title {
-  font-size: clamp(26px, 2.5vw, 32px);
+.fold-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+
+.fold-mark svg {
+  width: 30px;
+  height: 30px;
+}
+
+.space-brand-name {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: #111827;
+}
+
+.space-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  height: 100%;
+}
+
+.space-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  color: #9ca3af;
+  font-size: 14px;
+  font-weight: 650;
+  height: 100%;
+}
+
+.space-tab.is-active,
+.space-tab.router-link-active {
+  color: #00b88f;
+}
+
+.space-tab.is-active::after,
+.space-tab.router-link-exact-active::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  height: 3px;
+  border-radius: 999px;
+  background: #00b88f;
+}
+
+.space-user {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: end;
+  padding: 4px 4px 4px 4px;
+  cursor: pointer;
+  color: #374151;
+}
+
+.space-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #12b981;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.space-user-name {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.space-user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 140px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+
+.space-user-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.space-user-menu button:hover {
+  background: #f3f4f6;
+}
+
+.space-body {
+  width: min(1240px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 28px 0 72px;
+}
+
+.space-heading h1 {
+  font-size: 32px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: #0f172a;
+  color: #111827;
   line-height: 1.2;
 }
 
-.hero-subtitle {
-  margin-top: 6px;
+.space-heading p {
+  margin-top: 8px;
   font-size: 14px;
-  color: #64748b;
-  line-height: 1.5;
+  color: #6b7280;
 }
 
-.hero-actions {
+.space-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 22px 0 22px;
+  flex-wrap: wrap;
 }
 
-.refresh-action-btn {
-  padding: 9px 14px;
-  font-size: 13px;
-  font-weight: 600;
+.space-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px;
   border-radius: 12px;
-}
-
-.hero-cta-btn {
-  padding: 10px 18px;
+  background: #00b88f;
+  color: #fff;
   font-size: 14px;
   font-weight: 700;
-  border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.28);
+  box-shadow: 0 8px 20px rgba(0, 184, 143, 0.28);
 }
 
-/* 4 Metric Stats Cards */
-.metric-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 20px;
+.space-create-btn:hover {
+  background: #00a67f;
 }
 
-.metric-card {
-  background: linear-gradient(145deg, #ffffff 0%, #fcfdfd 100%);
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  border-radius: 18px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 14px;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.03);
-  transition: all 0.25s ease;
-}
-
-.metric-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(16, 185, 129, 0.25);
-  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.08);
-}
-
-.metric-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.metric-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.metric-icon-wrap {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-}
-
-.icon-emerald { background: rgba(16, 185, 129, 0.12); color: #059669; }
-.icon-teal { background: rgba(20, 184, 166, 0.12); color: #0d9488; }
-.icon-indigo { background: rgba(99, 102, 241, 0.12); color: #6366f1; }
-.icon-amber { background: rgba(245, 158, 11, 0.12); color: #d97706; }
-
-.metric-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.metric-number {
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: #0f172a;
-  line-height: 1.1;
-}
-
-.metric-unit {
-  font-size: 13px;
-  font-weight: 600;
-  color: #94a3b8;
-  margin-left: 5px;
-}
-
-.metric-desc {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.text-emerald {
-  color: #059669;
-}
-
-.status-indicator-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dot-online {
-  background: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-}
-
-.metric-progress-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.metric-progress-track {
-  height: 6px;
-  background: #f1f5f9;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.metric-progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #6366f1, #818cf8);
-  border-radius: 4px;
-}
-
-.metric-progress-label {
-  font-size: 11px;
-  color: #818cf8;
-  font-weight: 600;
-}
-
-/* Error Banner */
-.overview-error-banner {
+.space-toolbar-right {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 18px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 14px;
-  color: #dc2626;
-  font-size: 13.5px;
+  margin-left: auto;
 }
 
-.error-text {
-  flex: 1;
-}
-
-/* Controls Toolbar */
-.gallery-controls-toolbar {
+.view-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 8px 0 16px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+  gap: 2px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.88);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
 
-.search-input-box {
+.view-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: #9ca3af;
+}
+
+.view-btn.active {
+  background: #00b88f;
+  color: #fff;
+}
+
+.search-box {
   position: relative;
-  width: 300px;
+  width: 280px;
 }
 
 .search-icon {
   position: absolute;
-  left: 12px;
+  left: 14px;
   top: 50%;
   transform: translateY(-50%);
-  color: #94a3b8;
+  color: #9ca3af;
   pointer-events: none;
 }
 
 .search-input {
   width: 100%;
-  padding: 9px 34px 9px 36px;
-  font-size: 13.5px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #0f172a;
-  transition: all 0.2s ease;
+  height: 42px;
+  padding: 0 16px 0 40px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
 
 .search-input:focus {
   outline: none;
-  border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 0 3px rgba(0, 184, 143, 0.18);
 }
 
-.clear-search-btn {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #94a3b8;
-  padding: 2px;
-  border-radius: 4px;
-}
-
-.clear-search-btn:hover {
-  color: #475569;
-}
-
-.filter-tabs-pills {
+.space-error {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: #f1f5f9;
-  padding: 4px;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
   border-radius: 12px;
+  background: #fef2f2;
+  color: #dc2626;
 }
 
-.filter-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #64748b;
-  background: transparent;
-  transition: all 0.2s ease;
-}
-
-.filter-pill:hover {
-  color: #0f172a;
-}
-
-.filter-pill.active {
-  color: #047857;
-  background: #ffffff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-}
-
-.filter-badge {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 9999px;
-  background: rgba(148, 163, 184, 0.16);
-}
-
-.filter-pill.active .filter-badge {
-  background: rgba(16, 185, 129, 0.15);
-  color: #047857;
-}
-
-.toolbar-right-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.sort-select-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.sort-icon {
-  position: absolute;
-  left: 10px;
-  color: #64748b;
-  pointer-events: none;
-}
-
-.sort-select {
-  padding: 8px 12px 8px 30px;
-  font-size: 13px;
-  font-weight: 550;
-  color: #334155;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.sort-select:focus {
-  outline: none;
-  border-color: #10b981;
-}
-
-.view-mode-toggle {
-  display: flex;
-  align-items: center;
-  background: #f1f5f9;
-  padding: 3px;
-  border-radius: 9px;
-  gap: 2px;
-}
-
-.view-toggle-btn {
+.space-grid {
   display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  color: #64748b;
-  background: transparent;
-  transition: all 0.2s ease;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 22px;
 }
 
-.view-toggle-btn.active {
-  background: #ffffff;
-  color: #047857;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.06);
-}
-
-/* ==========================================================================
-   3. Gallery Grid Cards (Matching image3.png high-fidelity aesthetic)
-   ========================================================================== */
-.gallery-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
-}
-
-.gallery-modern-card {
-  position: relative;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  border-radius: 20px;
+.space-card {
+  background: #fff;
+  border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 8px 24px rgba(15, 40, 28, 0.07);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
-.gallery-modern-card:hover {
-  transform: translateY(-4px);
-  border-color: rgba(16, 185, 129, 0.28);
-  box-shadow:
-    0 16px 36px rgba(16, 185, 129, 0.1),
-    0 4px 12px rgba(15, 23, 42, 0.04);
+.space-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 32px rgba(15, 40, 28, 0.12);
 }
 
-.card-visual-cover {
+.card-cover {
   position: relative;
   aspect-ratio: 16 / 10;
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #d1fae5 100%);
   overflow: hidden;
+  background: #e8f5ef;
 }
 
 .cover-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.4s ease;
 }
 
-.gallery-modern-card:hover .cover-image {
-  transform: scale(1.04);
-}
-
-.cover-pattern-collage {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  position: relative;
-}
-
-.collage-mesh {
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(16, 185, 129, 0.22) 1.5px, transparent 1.5px);
-  background-size: 16px 16px;
-  opacity: 0.6;
-}
-
-.cover-placeholder-icon {
-  color: rgba(5, 150, 105, 0.25);
-  transition: all 0.3s ease;
-}
-
-.gallery-modern-card:hover .cover-placeholder-icon {
-  transform: scale(1.1) rotate(4deg);
-  color: rgba(5, 150, 105, 0.4);
-}
-
-.floating-status-badges {
+.vis-tag {
   position: absolute;
   top: 12px;
   left: 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  z-index: 2;
-}
-
-.badge-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 9px;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 700;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.status-pill-published {
-  background: rgba(236, 253, 245, 0.92);
-  color: #047857;
-  border: 1px solid rgba(16, 185, 129, 0.28);
-}
-
-.status-pill-draft {
-  background: rgba(254, 243, 199, 0.92);
-  color: #b45309;
-  border: 1px solid rgba(245, 158, 11, 0.28);
-}
-
-.visibility-pill.vis-public {
-  background: rgba(239, 246, 255, 0.92);
-  color: #2563eb;
-  border: 1px solid rgba(59, 130, 246, 0.25);
-}
-
-.visibility-pill.vis-private {
-  background: rgba(241, 245, 249, 0.92);
-  color: #475569;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-}
-
-.bottom-photo-count-pill {
-  position: absolute;
-  bottom: 10px;
-  right: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(15, 23, 42, 0.65);
-  color: #ffffff;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-
-.card-content-body {
-  padding: 18px 20px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-}
-
-.card-heading-box {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.gallery-name-title {
-  font-size: 17px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
   font-weight: 750;
-  color: #0f172a;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
+  letter-spacing: 0.04em;
 }
 
-.gallery-slug-badge {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
+.vis-tag.is-public {
+  background: rgba(255, 255, 255, 0.92);
+  color: #00b88f;
 }
 
-.slug-prefix {
-  color: #94a3b8;
-  font-weight: 600;
+.vis-tag.is-private {
+  background: rgba(255, 255, 255, 0.92);
+  color: #4b5563;
 }
 
-.slug-text {
-  color: #059669;
-  font-weight: 600;
+.card-body {
+  padding: 14px 16px 12px;
 }
 
-.card-meta-row {
+.card-body h2 {
+  font-size: 16px;
+  font-weight: 750;
+  color: #111827;
+}
+
+.card-date {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.card-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
-  color: #94a3b8;
+  margin-top: 12px;
 }
 
-.meta-time {
+.photo-meta {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-
-.card-bottom-actions {
-  padding: 0 20px 18px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.enter-workspace-btn {
-  flex: 1;
-  padding: 9px 14px;
-  font-size: 13px;
-  font-weight: 650;
-  border-radius: 11px;
-}
-
-.quick-icon-btns {
-  display: flex;
-  align-items: center;
   gap: 6px;
+  font-size: 12px;
+  color: #9ca3af;
 }
 
-.icon-btn-tool {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+.more-wrap {
+  position: relative;
+}
+
+.more-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #64748b;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  transition: all 0.2s ease;
+  color: #9ca3af;
 }
 
-.icon-btn-tool:hover {
-  color: #059669;
+.more-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.card-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 132px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  z-index: 3;
+}
+
+.card-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.card-menu button:hover {
   background: #ecfdf5;
-  border-color: rgba(16, 185, 129, 0.3);
-  transform: translateY(-1px);
+  color: #047857;
 }
 
-/* "Create New Space" Dashed Card */
-.create-card-placeholder {
+.create-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 280px;
-  padding: 28px;
-  border: 2px dashed rgba(16, 185, 129, 0.35);
-  border-radius: 20px;
-  background: linear-gradient(145deg, rgba(236, 253, 245, 0.45) 0%, rgba(255, 255, 255, 0.8) 100%);
-  cursor: pointer;
-  transition: all 0.25s ease;
-}
-
-.create-card-placeholder:hover {
-  transform: translateY(-3px);
-  border-color: #10b981;
-  background: rgba(236, 253, 245, 0.75);
-  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.12);
-}
-
-.plus-circle-icon {
-  width: 52px;
-  height: 52px;
+  gap: 8px;
+  min-height: 268px;
   border-radius: 16px;
-  background: #ffffff;
-  color: #059669;
-  display: grid;
-  place-items: center;
-  margin-bottom: 12px;
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.15);
-  transition: transform 0.25s ease;
+  border: 1.5px dashed #7dd3b5;
+  background: rgba(236, 253, 245, 0.62);
+  color: #00b88f;
+  cursor: pointer;
 }
 
-.create-card-placeholder:hover .plus-circle-icon {
-  transform: scale(1.08);
-}
-
-.create-card-title {
+.create-card strong {
   font-size: 16px;
   font-weight: 750;
-  color: #0f172a;
+}
+
+.create-card span:last-child {
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.create-plus {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 184, 143, 0.14);
+  color: #047857;
   margin-bottom: 4px;
 }
 
-.create-card-sub {
-  font-size: 12.5px;
-  color: #64748b;
+.create-card:hover {
+  background: rgba(220, 252, 231, 0.78);
 }
 
-/* List View Table */
-.gallery-list-view {
-  width: 100%;
-}
-
-.table-container-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.03);
-}
-
-.gallery-data-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 13.5px;
-}
-
-.gallery-data-table th {
-  background: #f8fafc;
-  color: #64748b;
-  font-weight: 650;
-  padding: 12px 18px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.gallery-data-table td {
-  padding: 14px 18px;
-  border-bottom: 1px solid #f1f5f9;
-  color: #334155;
-}
-
-.table-row-item {
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.table-row-item:hover {
-  background: #f8fafc;
-}
-
-.name-cell {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.table-thumb-box {
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  background: #ecfdf5;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.table-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.table-thumb-icon {
-  color: #059669;
-}
-
-.table-gallery-name {
-  font-weight: 650;
-  color: #0f172a;
-}
-
-.table-slug {
-  font-family: var(--font-mono, monospace);
-  color: #059669;
-  background: #f0fdf4;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.actions-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.icon-btn-tool-sm {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  color: #64748b;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-}
-
-.icon-btn-tool-sm:hover {
-  color: #059669;
-  background: #ecfdf5;
-}
-
-/* Empty States */
-.empty-search-state,
-.empty-workspace-state {
-  text-align: center;
-  padding: 64px 24px;
-  background: #ffffff;
-  border: 1px dashed #cbd5e1;
-  border-radius: 20px;
+.space-list {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+
+.list-row {
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  width: 100%;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 14px;
+  text-align: left;
+  box-shadow: 0 4px 16px rgba(15, 40, 28, 0.06);
 }
 
-.empty-icon-circle,
-.empty-icon-orb {
-  width: 64px;
-  height: 64px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  color: #059669;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.15);
+.list-thumb {
+  width: 72px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
-.empty-search-state h3,
-.empty-workspace-state h2 {
-  font-size: 20px;
-  font-weight: 750;
-  color: #0f172a;
+.list-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
-.empty-search-state p,
-.empty-workspace-state p {
+.list-copy strong {
   font-size: 14px;
-  color: #64748b;
-  max-width: 440px;
-  line-height: 1.5;
+  color: #111827;
 }
 
-/* Modal Dialog */
+.list-copy span {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.list-row .vis-tag {
+  position: static;
+}
+
+.space-empty {
+  text-align: center;
+  padding: 64px 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+}
+
+.space-empty h2,
+.space-empty h3 {
+  font-size: 20px;
+  color: #111827;
+}
+
+.space-empty p {
+  margin: 8px 0 16px;
+  color: #6b7280;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.35);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: grid;
@@ -1716,10 +1279,10 @@ async function handleCreateGallery() {
 }
 
 .modal-card {
-  background: #ffffff;
+  background: #fff;
   border-radius: 22px;
   padding: 32px;
-  width: min(500px, 100%);
+  width: min(480px, 100%);
   box-shadow: 0 28px 60px rgba(15, 23, 42, 0.22);
 }
 
@@ -1740,7 +1303,7 @@ async function handleCreateGallery() {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  background: #ecfdf5;
   color: #059669;
   display: grid;
   place-items: center;
@@ -1749,33 +1312,39 @@ async function handleCreateGallery() {
 .modal-title-box h2 {
   font-size: 18px;
   font-weight: 750;
-  color: #0f172a;
+  color: #111827;
 }
 
 .modal-title-box p {
   font-size: 13px;
-  color: #64748b;
+  color: #6b7280;
 }
 
 .modal-close {
-  color: #94a3b8;
+  color: #9ca3af;
   padding: 6px;
   border-radius: 8px;
-}
-
-.modal-close:hover {
-  color: #0f172a;
-  background: #f1f5f9;
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 24px;
+  margin-top: 8px;
 }
 
-/* Transitions & Animations */
+.space-page .form-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
 .spin {
   animation: spin 0.8s linear infinite;
 }
@@ -1792,53 +1361,41 @@ async function handleCreateGallery() {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
-  transform: scale(0.96);
 }
 
-/* Responsive Media Queries */
 @media (max-width: 1180px) {
-  .metric-cards-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .gallery-cards-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .space-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 768px) {
-  .metric-cards-grid {
+@media (max-width: 900px) {
+  .space-nav {
+    grid-template-columns: auto 1fr auto;
+    width: calc(100% - 24px);
+    padding: 8px 12px;
+  }
+
+  .space-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .space-body {
+    width: calc(100% - 24px);
+  }
+}
+
+@media (max-width: 640px) {
+  .space-grid {
     grid-template-columns: 1fr;
   }
 
-  .gallery-cards-grid {
-    grid-template-columns: 1fr;
+  .space-tabs span {
+    display: none;
   }
 
-  .overview-hero {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .hero-actions {
-    width: 100%;
-  }
-
-  .hero-actions .btn {
-    flex: 1;
-  }
-
-  .gallery-controls-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .search-input-box {
-    width: 100%;
-  }
-
-  .toolbar-right-tools {
-    justify-content: space-between;
+  .search-box {
+    width: 160px;
   }
 }
 </style>
