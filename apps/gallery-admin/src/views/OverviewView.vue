@@ -27,7 +27,7 @@ const toast = useToast()
 const { currentUser, setUser, logout, can, userDisplayName, userInitial, isOwner } = useAuth()
 const canCreateGallery = can('GALLERY_CREATE')
 
-const authMode = ref<'login' | 'register'>('login')
+const authMode = ref<'login' | 'register' | 'forgot'>('login')
 const authForm = ref({
   email: '',
   password: '',
@@ -35,6 +35,9 @@ const authForm = ref({
 })
 const authLoading = ref(false)
 const authError = ref('')
+const forgotEmail = ref('')
+const forgotLoading = ref(false)
+const forgotSuccess = ref(false)
 
 const galleries = ref<Gallery[]>([])
 const loading = ref(false)
@@ -230,6 +233,31 @@ async function handleAuthSubmit() {
   }
 }
 
+async function handleForgotPassword() {
+  const email = forgotEmail.value.trim()
+  if (!email) return
+  forgotLoading.value = true
+  authError.value = ''
+  try {
+    const response = await apiFetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    })
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({})) as { message?: string }
+      throw new Error(data.message || '请求发送重置邮件失败。')
+    }
+    forgotSuccess.value = true
+    toast.success('若该邮箱已注册，系统已向您的邮箱发送重置链接。')
+  } catch (error) {
+    authError.value = error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
+    toast.error(authError.value)
+  } finally {
+    forgotLoading.value = false
+  }
+}
+
 function handleNameInput() {
   const previous = slugify(createForm.value.name.slice(0, -1))
   if (!createForm.value.slug || createForm.value.slug === previous) {
@@ -307,14 +335,45 @@ async function handleCreateGallery() {
       <div class="auth-header">
         <div class="brand-badge"><Icon name="gallery" :size="22" /></div>
         <h2>VIE GALLERY</h2>
-        <p>{{ authMode === 'register' ? '注册新创作者工作区，开启沉浸式相册' : '登录你的创作者管理后台' }}</p>
+        <p>{{ authMode === 'register' ? '注册新创作者工作区，开启沉浸式相册' : authMode === 'forgot' ? '输入注册邮箱，获取重置密码链接' : '登录你的创作者管理后台' }}</p>
       </div>
-      <div class="auth-tabs">
+      <div v-if="authMode !== 'forgot'" class="auth-tabs">
         <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'; authError = ''">账号登录</button>
         <button :class="{ active: authMode === 'register' }" type="button" @click="authMode = 'register'; authError = ''">注册账户</button>
       </div>
       <div v-if="authError" class="form-error"><Icon name="alert-circle" :size="16" /><span>{{ authError }}</span></div>
-      <form @submit.prevent="handleAuthSubmit">
+
+      <!-- Forgot Password Form -->
+      <template v-if="authMode === 'forgot'">
+        <div v-if="forgotSuccess" class="forgot-success-banner">
+          <Icon name="check" :size="20" />
+          <div>
+            <strong>重置邮件已发送</strong>
+            <p>若该邮箱已注册，系统已向您的邮箱发送重置链接。请查收邮件或日志中的重置令牌完成密码重置。</p>
+          </div>
+        </div>
+        <form v-else @submit.prevent="handleForgotPassword">
+          <div class="form-group auth-field">
+            <label class="form-label" for="forgot-email">注册电子邮箱</label>
+            <div class="auth-input-wrap">
+              <Icon name="users" :size="16" class="auth-input-icon" />
+              <input id="forgot-email" v-model="forgotEmail" type="email" placeholder="name@example.com" class="form-input" required />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary auth-submit" :disabled="forgotLoading">
+            <Icon v-if="forgotLoading" name="refresh" :size="16" class="spin" />
+            <span>{{ forgotLoading ? '正在发送…' : '发送重置密码邮件' }}</span>
+          </button>
+        </form>
+        <div class="forgot-footer">
+          <button class="link-btn" type="button" @click="authMode = 'login'; forgotSuccess = false; authError = ''">
+            想起密码了？返回登录
+          </button>
+        </div>
+      </template>
+
+      <!-- Login / Register Form -->
+      <form v-else @submit.prevent="handleAuthSubmit">
         <div v-if="authMode === 'register'" class="form-group auth-field">
           <label class="form-label" for="auth-display-name">用户名称</label>
           <div class="auth-input-wrap">
@@ -330,7 +389,17 @@ async function handleCreateGallery() {
           </div>
         </div>
         <div class="form-group auth-field">
-          <label class="form-label" for="auth-password">密码（至少 12 位）</label>
+          <div class="field-label-row">
+            <label class="form-label" for="auth-password">密码（至少 12 位）</label>
+            <button
+              v-if="authMode === 'login'"
+              type="button"
+              class="forgot-link-btn"
+              @click="authMode = 'forgot'; authError = ''; forgotSuccess = false"
+            >
+              忘记密码？
+            </button>
+          </div>
           <div class="auth-input-wrap">
             <Icon name="lock" :size="16" class="auth-input-icon" />
             <input id="auth-password" v-model="authForm.password" type="password" placeholder="至少 12 位密码" class="form-input" minlength="12" required />
@@ -832,6 +901,68 @@ async function handleCreateGallery() {
 
 .auth-card .form-label {
   color: rgba(220, 252, 231, 0.82);
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.forgot-link-btn {
+  background: none;
+  border: none;
+  color: #6ee7b7;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.forgot-link-btn:hover {
+  text-decoration: underline;
+}
+
+.forgot-success-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #d1fae5;
+  margin-bottom: 16px;
+}
+
+.forgot-success-banner strong {
+  display: block;
+  font-size: 14px;
+  color: #6ee7b7;
+  margin-bottom: 4px;
+}
+
+.forgot-success-banner p {
+  font-size: 12.5px;
+  color: #a7f3d0;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.forgot-footer {
+  text-align: center;
+  margin-top: 16px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #6ee7b7;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
 }
 
 .auth-input-wrap {

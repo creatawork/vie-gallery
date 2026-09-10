@@ -16,6 +16,7 @@ interface Props {
   show: boolean
   photos: PhotoItem[]
   currentIndex: number
+  allowDownload?: boolean
 }
 
 const props = defineProps<Props>()
@@ -51,9 +52,24 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           <span class="index-total">{{ photos.length }}</span>
         </div>
 
-        <button class="close-btn" title="关闭 (Esc)" @click="emit('close')">
-          <Icon name="x" :size="20" />
-        </button>
+        <div class="topbar-actions">
+          <a
+            v-if="allowDownload && photos[currentIndex].mediumUrl"
+            :href="photos[currentIndex].mediumUrl || undefined"
+            :download="photos[currentIndex].title || 'photo'"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="download-action-btn"
+            title="下载照片"
+          >
+            <Icon name="download" :size="15" />
+            <span>下载</span>
+          </a>
+
+          <button class="close-btn" title="关闭 (Esc)" @click="emit('close')">
+            <Icon name="x" :size="20" />
+          </button>
+        </div>
       </div>
 
       <!-- Main Stage -->
@@ -139,6 +155,33 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 .index-divider {
   margin: 0 4px;
   opacity: 0.4;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.download-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.download-action-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 .close-btn {

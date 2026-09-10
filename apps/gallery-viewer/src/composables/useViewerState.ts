@@ -34,6 +34,7 @@ export function useViewerState(slug: string) {
   const pageSize = ref(50)
   const total = ref(0)
   const loadingMore = ref(false)
+  const viewerConfig = ref<Record<string, unknown> | null>(null)
   let requestVersion = 0
 
   const isReady = computed(() => state.value === 'ready')
@@ -45,6 +46,18 @@ export function useViewerState(slug: string) {
   const isEmpty = computed(() => state.value === 'empty')
   const hasError = computed(() => state.value === 'error' || state.value === 'not_found')
   const hasMore = computed(() => photos.value.length < total.value)
+  const allowDownload = computed(() => viewerConfig.value?.visitorAllowDownload === true)
+
+  async function loadConfig() {
+    try {
+      const cfg = await client.getViewerConfig(slug)
+      if (cfg?.configJson) {
+        viewerConfig.value = JSON.parse(cfg.configJson)
+      }
+    } catch {
+      // Configuration is optional or falls back to defaults
+    }
+  }
 
   async function initialize() {
     const version = ++requestVersion
@@ -58,6 +71,7 @@ export function useViewerState(slug: string) {
       const nextGallery = await client.getGallery(slug)
       if (version !== requestVersion) return
       gallery.value = nextGallery
+      void loadConfig()
 
       switch (nextGallery.accessState) {
         case 'READY':
@@ -174,6 +188,8 @@ export function useViewerState(slug: string) {
     isEmpty,
     hasError,
     hasMore,
+    viewerConfig,
+    allowDownload,
     initialize,
     unlock,
     loadPhotos,

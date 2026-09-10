@@ -20,12 +20,20 @@ public class PhotoController {
     private final StorageObjectRepository objects;
     private final ObjectStoragePort storage;
     private final TenantContextResolver context;
+    private final GalleryMetrics metrics;
 
     public PhotoController(PhotoFacade facade, StorageObjectRepository objects, ObjectStoragePort storage, TenantContextResolver context) {
+        this(facade, objects, storage, context, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PhotoController(PhotoFacade facade, StorageObjectRepository objects, ObjectStoragePort storage,
+                           TenantContextResolver context, GalleryMetrics metrics) {
         this.facade = facade;
         this.objects = objects;
         this.storage = storage;
         this.context = context;
+        this.metrics = metrics;
     }
 
     @PostMapping(value = "/galleries/{galleryId}/photos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -39,6 +47,8 @@ public class PhotoController {
         }
         String batchId = clientBatchId == null || clientBatchId.isBlank() ? UUID.randomUUID().toString() : clientBatchId;
         List<UploadItem> items = new ArrayList<>();
+        int acceptedCount = 0;
+        int rejectedCount = 0;
         for (int index = 0; index < files.size(); index++) {
             MultipartFile file = files.get(index);
             try {
@@ -49,11 +59,18 @@ public class PhotoController {
                         new PhotoUpload(file.getOriginalFilename(), file.getContentType(), file.getSize(), file.getInputStream()),
                         batchId, itemKey, (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE));
                 items.add(UploadItem.accepted(file.getOriginalFilename(), result));
+                acceptedCount++;
             } catch (DomainException exception) {
                 items.add(UploadItem.rejected(file.getOriginalFilename(), exception.code(), exception.getMessage()));
+                rejectedCount++;
             } catch (IOException exception) {
                 items.add(UploadItem.rejected(file.getOriginalFilename(), "FILE_INVALID", "Unable to read file"));
+                rejectedCount++;
             }
+        }
+        if (metrics != null) {
+            metrics.recordUploadAccepted(acceptedCount);
+            metrics.recordUploadRejected(rejectedCount);
         }
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new UploadResponse(batchId, items));
     }

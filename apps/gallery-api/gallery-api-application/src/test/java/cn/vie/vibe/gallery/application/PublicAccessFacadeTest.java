@@ -11,6 +11,9 @@ import cn.vie.vibe.gallery.domain.PublicAccessState;
 import cn.vie.vibe.gallery.domain.ShareLink;
 import cn.vie.vibe.gallery.domain.StorageObject;
 import cn.vie.vibe.gallery.domain.StorageObjectStatus;
+import cn.vie.vibe.gallery.domain.PhotoAssetVariant;
+import cn.vie.vibe.gallery.domain.VariantKind;
+import cn.vie.vibe.gallery.domain.ViewerConfigVersion;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
@@ -298,6 +301,42 @@ class PublicAccessFacadeTest {
         assertEquals(720, result.items().get(0).height());
     }
 
+    @Test
+    void parseVisitorAllowDownloadReadsBooleanFromConfigJson() {
+        assertFalse(PublicAccessFacade.parseVisitorAllowDownload(null));
+        assertFalse(PublicAccessFacade.parseVisitorAllowDownload("{}"));
+        assertFalse(PublicAccessFacade.parseVisitorAllowDownload("{\"visitorAllowDownload\":false}"));
+        assertTrue(PublicAccessFacade.parseVisitorAllowDownload("{\"visitorAllowDownload\": true}"));
+        assertTrue(PublicAccessFacade.parseVisitorAllowDownload("{\"layout\":\"ring\",\"visitorAllowDownload\":true}"));
+    }
+
+    @Test
+    void mediumUrlOmittedWhenVisitorDownloadDisabled() {
+        DownloadFixture fixture = new DownloadFixture(false);
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PUBLIC, null, "public-gallery");
+        Photo photo = fixture.addReadyPhoto(gallery, "photo");
+        fixture.addMediumVariant(photo);
+
+        PublicPhotoPage result = fixture.facade.listPublicPhotos(gallery.slug(), null, null, 0, 10);
+
+        assertEquals(1, result.items().size());
+        assertNull(result.items().get(0).mediumUrl());
+        assertNotNull(result.items().get(0).thumbnailUrl());
+    }
+
+    @Test
+    void mediumUrlReturnedWhenVisitorDownloadEnabled() {
+        DownloadFixture fixture = new DownloadFixture(true);
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PUBLIC, null, "public-gallery");
+        Photo photo = fixture.addReadyPhoto(gallery, "photo");
+        fixture.addMediumVariant(photo);
+
+        PublicPhotoPage result = fixture.facade.listPublicPhotos(gallery.slug(), null, null, 0, 10);
+
+        assertEquals(1, result.items().size());
+        assertEquals("https://cdn.test/medium/" + photo.id(), result.items().get(0).mediumUrl());
+    }
+
     private static List<String> titles(PublicPhotoPage page) {
         return page.items().stream().map(PublicPhotoView::title).toList();
     }
@@ -573,6 +612,79 @@ class PublicAccessFacadeTest {
 
         public boolean verifyToken(String rawToken, String tokenHash) {
             return hashToken(rawToken).equals(tokenHash);
+        }
+    }
+
+    private static final class DownloadFixture {
+        final UUID tenantId = UUID.randomUUID();
+        final GalleryStore galleries = new GalleryStore();
+        final ShareLinkStore shareLinks = new ShareLinkStore();
+        final PhotoStore photos = new PhotoStore();
+        final StorageStore storage = new StorageStore();
+        final Map<String, PhotoAssetVariant> variants = new HashMap<>();
+        final Map<UUID, ViewerConfigVersion> published = new HashMap<>();
+        final PublicAccessFacade facade;
+
+        DownloadFixture(boolean allowDownload) {
+            PhotoAssetVariantRepository assetVariants = new PhotoAssetVariantRepository() {
+                public PhotoAssetVariant upsert(PhotoAssetVariant variant) { return variant; }
+                public List<PhotoAssetVariant> findByPhoto(UUID tenantId, UUID photoId) { return List.of(); }
+                public Optional<PhotoAssetVariant> findReadyByPhotoAndKind(UUID tenantId, UUID photoId, VariantKind kind) {
+                    return Optional.ofNullable(variants.get(photoId + ":" + kind.name()));
+                }
+                public int markFailed(UUID tenantId, UUID photoId, VariantKind kind) { return 0; }
+                public int softDelete(UUID tenantId, UUID photoId, VariantKind kind) { return 0; }
+            };
+            ViewerConfigVersionRepository versions = new ViewerConfigVersionRepository() {
+                public void save(ViewerConfigVersion version) {}
+                public List<ViewerConfigVersion> findByGallery(UUID tenantId, UUID galleryId, int offset, int limit) {
+                    return List.of();
+                }
+                public long countByGallery(UUID tenantId, UUID galleryId) { return 0; }
+                public Optional<ViewerConfigVersion> findById(UUID tenantId, UUID galleryId, UUID versionId) {
+                    return Optional.empty();
+                }
+                public Optional<ViewerConfigVersion> findPublishedByGallery(UUID tenantId, UUID galleryId) {
+                    return Optional.ofNullable(published.get(galleryId));
+                }
+                public int publish(UUID tenantId, UUID galleryId, UUID versionId, Instant publishedAt) { return 0; }
+                public int clearPublished(UUID tenantId, UUID galleryId) { return 0; }
+            };
+            this.facade = new PublicAccessFacade(
+                    galleries, shareLinks, photos, storage, new FixedObjectStorage(),
+                    new FixedPasswordHasher(), new FixedTokenGenerator(), assetVariants, null, versions);
+            this.allowDownloadDefault = allowDownload;
+        }
+
+        private final boolean allowDownloadDefault;
+
+        Gallery addGallery(GalleryVisibility visibility, String passwordHash, String slug) {
+            Gallery gallery = new Gallery(UUID.randomUUID(), tenantId, slug, slug + " title", visibility,
+                    passwordHash, null, false, CREATED_AT);
+            galleries.values.put(gallery.id(), gallery);
+            published.put(gallery.id(), new ViewerConfigVersion(
+                    UUID.randomUUID(), tenantId, gallery.id(),
+                    "{\"visitorAllowDownload\":" + allowDownloadDefault + "}",
+                    "minimal", 1, CREATED_AT, null));
+            return gallery;
+        }
+
+        Photo addReadyPhoto(Gallery gallery, String title) {
+            UUID objectId = UUID.randomUUID();
+            storage.values.put(objectId, new StorageObject(
+                    objectId, tenantId, "bucket", "object/" + title, "thumb/" + title,
+                    "image/jpeg", 100, 1200, 800, "sha-" + title, StorageObjectStatus.READY, CREATED_AT));
+            UUID photoId = UUID.randomUUID();
+            Photo photo = new Photo(photoId, tenantId, gallery.id(), objectId, title,
+                    1, false, PhotoStatus.READY, CREATED_AT);
+            photos.values.put(photoId, photo);
+            return photo;
+        }
+
+        void addMediumVariant(Photo photo) {
+            variants.put(photo.id() + ":" + VariantKind.MEDIUM.name(), PhotoAssetVariant.ready(
+                    tenantId, photo.id(), photo.storageObjectId(), VariantKind.MEDIUM,
+                    "medium/" + photo.id(), "image/jpeg", 50, 800, 600, "sha-medium"));
         }
     }
 }

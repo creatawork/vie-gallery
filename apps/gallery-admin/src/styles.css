@@ -30,6 +30,8 @@
 
   --brand-primary: #0e2920;
   --brand-accent: #10b981;
+  /* 总览/工作区 Tab、创建按钮等页面级高亮；新代码优先 --brand-accent，逐步收敛 */
+  --brand-accent-ui: #00b88f;
   --brand-accent-subtle: #ecfdf5;
   --brand-lime: #d9f99d;
   --brand-deep: #047857;

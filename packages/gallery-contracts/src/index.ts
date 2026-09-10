@@ -2,6 +2,24 @@ export type GalleryVisibility = 'PUBLIC' | 'PRIVATE' | 'PASSWORD'
 export type GalleryStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
 export type ShareLinkStatus = 'ACTIVE' | 'EXPIRED' | 'REVOKED'
 
+export interface ShareLink {
+  id: string
+  galleryId: string
+  token?: string
+  rawToken?: string
+  shareUrl?: string
+  status: ShareLinkStatus | string
+  expiresAt?: string | null
+  createdAt?: string | null
+  lastAccessedAt?: string | null
+}
+
+export interface UpdatePhotoRequest {
+  title?: string | null
+  sortOrder?: number
+  cover?: boolean
+}
+
 export type MembershipRole = 'OWNER' | 'EDITOR' | 'VIEWER'
 
 export type Capability =

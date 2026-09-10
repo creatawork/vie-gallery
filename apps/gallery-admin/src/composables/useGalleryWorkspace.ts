@@ -223,6 +223,62 @@ export function useGalleryWorkspace(
     await reload()
   }
 
+  async function deletePhotos(photoIds: string[]): Promise<{ succeeded: number; failed: number }> {
+    if (!photoIds.length) return { succeeded: 0, failed: 0 }
+    const results = await Promise.allSettled(
+      photoIds.map(id => apiFetch(`/api/photos/${id}`, { method: 'DELETE' }))
+    )
+    let succeeded = 0
+    let failed = 0
+    results.forEach(res => {
+      if (res.status === 'fulfilled' && res.value.ok) succeeded++
+      else failed++
+    })
+    await reload()
+    return { succeeded, failed }
+  }
+
+  async function updatePhotoTitle(photoId: string, title: string) {
+    const response = await apiFetch(`/api/photos/${photoId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title })
+    })
+    if (!response.ok) throw await responseError(response, '更新标题失败，请重试。')
+    await reload()
+  }
+
+  async function movePhoto(photoId: string, direction: 'up' | 'down') {
+    const previous = photos.value
+    const currentList = [...previous]
+    const index = currentList.findIndex(p => p.id === photoId)
+    if (index === -1) return
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= currentList.length) return
+
+    const [moved] = currentList.splice(index, 1)
+    currentList.splice(targetIndex, 0, moved)
+
+    const updates = currentList.map((p, idx) => ({ id: p.id, sortOrder: idx }))
+    photos.value = currentList.map((p, idx) => ({ ...p, sortOrder: idx }))
+
+    const results = await Promise.all(
+      updates.map(u =>
+        apiFetch(`/api/photos/${u.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sortOrder: u.sortOrder })
+        })
+      )
+    )
+    const failed = results.find(response => !response.ok)
+    if (failed) {
+      photos.value = previous
+      throw await responseError(failed, '调整照片排序失败，请重试。')
+    }
+    await reload()
+  }
+
   async function setPublished(publish: boolean) {
     const galleryIdValue = id.value
     if (!galleryIdValue || publishing.value) return
@@ -267,6 +323,9 @@ export function useGalleryWorkspace(
     reload,
     uploadFiles,
     setCover,
-    deletePhoto
+    deletePhoto,
+    deletePhotos,
+    updatePhotoTitle,
+    movePhoto
   }
 }

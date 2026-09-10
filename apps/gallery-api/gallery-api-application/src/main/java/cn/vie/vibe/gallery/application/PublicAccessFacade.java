@@ -24,6 +24,7 @@ public class PublicAccessFacade {
     private final PhotoAssetVariantRepository assetVariants;
     private final TokenGenerator tokenGenerator;
     private final CreatorPreviewTokens previewTokens;
+    private final ViewerConfigVersionRepository configVersions;
 
     public PublicAccessFacade(
             GalleryRepository galleryRepository,
@@ -35,7 +36,7 @@ public class PublicAccessFacade {
             TokenGenerator tokenGenerator
     ) {
         this(galleryRepository, shareLinkRepository, photoRepository, storageObjectRepository,
-                objectStoragePort, passwordHasher, tokenGenerator, null, null);
+                objectStoragePort, passwordHasher, tokenGenerator, null, null, null);
     }
 
     public PublicAccessFacade(
@@ -49,7 +50,7 @@ public class PublicAccessFacade {
             PhotoAssetVariantRepository assetVariants
     ) {
         this(galleryRepository, shareLinkRepository, photoRepository, storageObjectRepository,
-                objectStoragePort, passwordHasher, tokenGenerator, assetVariants, null);
+                objectStoragePort, passwordHasher, tokenGenerator, assetVariants, null, null);
     }
 
     public PublicAccessFacade(
@@ -63,6 +64,22 @@ public class PublicAccessFacade {
             PhotoAssetVariantRepository assetVariants,
             CreatorPreviewTokens previewTokens
     ) {
+        this(galleryRepository, shareLinkRepository, photoRepository, storageObjectRepository,
+                objectStoragePort, passwordHasher, tokenGenerator, assetVariants, previewTokens, null);
+    }
+
+    public PublicAccessFacade(
+            GalleryRepository galleryRepository,
+            ShareLinkRepository shareLinkRepository,
+            PhotoRepository photoRepository,
+            StorageObjectRepository storageObjectRepository,
+            ObjectStoragePort objectStoragePort,
+            PasswordHasher passwordHasher,
+            TokenGenerator tokenGenerator,
+            PhotoAssetVariantRepository assetVariants,
+            CreatorPreviewTokens previewTokens,
+            ViewerConfigVersionRepository configVersions
+    ) {
         this.galleryRepository = galleryRepository;
         this.shareLinkRepository = shareLinkRepository;
         this.photoRepository = photoRepository;
@@ -72,6 +89,7 @@ public class PublicAccessFacade {
         this.tokenGenerator = tokenGenerator;
         this.assetVariants = assetVariants;
         this.previewTokens = previewTokens;
+        this.configVersions = configVersions;
     }
 
     /**
@@ -190,11 +208,32 @@ public class PublicAccessFacade {
         );
 
         List<PublicPhotoView> items = photos.stream()
-                .map(photo -> toPublicPhoto(gallery, photo))
+                .map(photo -> toPublicPhoto(gallery, photo, allowVisitorDownload(gallery)))
                 .flatMap(Optional::stream)
                 .toList();
 
         return new PublicPhotoPage(items, page, pageSize, total);
+    }
+
+    private boolean allowVisitorDownload(Gallery gallery) {
+        if (configVersions == null) return false;
+        return configVersions.findPublishedByGallery(gallery.tenantId(), gallery.id())
+                .map(version -> parseVisitorAllowDownload(version.configJson()))
+                .orElse(false);
+    }
+
+    static boolean parseVisitorAllowDownload(String configJson) {
+        if (configJson == null || configJson.isBlank()) return false;
+        String marker = "\"visitorAllowDownload\"";
+        int keyIndex = configJson.indexOf(marker);
+        if (keyIndex < 0) return false;
+        int colon = configJson.indexOf(':', keyIndex + marker.length());
+        if (colon < 0) return false;
+        int cursor = colon + 1;
+        while (cursor < configJson.length() && Character.isWhitespace(configJson.charAt(cursor))) {
+            cursor++;
+        }
+        return configJson.regionMatches(true, cursor, "true", 0, 4);
     }
 
     private Gallery findGallery(String slug, String previewToken) {
@@ -241,15 +280,19 @@ public class PublicAccessFacade {
                 });
     }
 
-    private Optional<PublicPhotoView> toPublicPhoto(Gallery gallery, Photo photo) {
+    private Optional<PublicPhotoView> toPublicPhoto(Gallery gallery, Photo photo, boolean allowDownload) {
         return storageObjectRepository.findById(gallery.tenantId(), photo.storageObjectId())
                 .filter(object -> object.status() == StorageObjectStatus.READY)
                 .map(object -> {
                     String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
-                    String mediumUrl = assetVariants == null ? null : assetVariants.findReadyByPhotoAndKind(
-                            gallery.tenantId(), photo.id(), VariantKind.MEDIUM)
-                            .map(variant -> objectStoragePort.createReadUrl(variant.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())
-                            .orElse(null);
+                    String mediumUrl = null;
+                    if (allowDownload && assetVariants != null) {
+                        mediumUrl = assetVariants.findReadyByPhotoAndKind(
+                                        gallery.tenantId(), photo.id(), VariantKind.MEDIUM)
+                                .map(variant -> objectStoragePort.createReadUrl(
+                                        variant.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())
+                                .orElse(null);
+                    }
                     String textureUrl = assetVariants == null ? null : assetVariants.findReadyByPhotoAndKind(
                             gallery.tenantId(), photo.id(), VariantKind.TEXTURE)
                             .map(variant -> objectStoragePort.createReadUrl(variant.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())

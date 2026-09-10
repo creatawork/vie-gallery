@@ -28,6 +28,11 @@ const router = createRouter({
       component: () => import('./views/GalleryConfigPanel.vue')
     },
     {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('./views/ResetPasswordView.vue')
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }
@@ -37,7 +42,7 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuth()
   if (!auth.authChecked.value) await auth.checkAuth()
-  if (to.name !== 'overview' && !auth.isAuthenticated.value) {
+  if (to.name !== 'overview' && to.name !== 'reset-password' && !auth.isAuthenticated.value) {
     return { name: 'overview' }
   }
   if (to.name === 'members' && !auth.isOwner.value) {

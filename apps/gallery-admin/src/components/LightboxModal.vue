@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 
 interface PhotoItem {
@@ -28,10 +28,65 @@ const emit = defineEmits<{
   (e: 'select', index: number): void
   (e: 'set-cover', photo: PhotoItem): void
   (e: 'delete', photo: PhotoItem): void
+  (e: 'update-title', payload: { photo: PhotoItem; title: string }): void
+  (e: 'move-up', photo: PhotoItem): void
+  (e: 'move-down', photo: PhotoItem): void
 }>()
+
+const isEditingTitle = ref(false)
+const titleInput = ref('')
+const titleInputRef = ref<HTMLInputElement | null>(null)
+
+const currentPhoto = computed(() => props.photos[props.currentIndex])
+
+watch(() => props.currentIndex, () => {
+  isEditingTitle.value = false
+  titleInput.value = currentPhoto.value?.title || ''
+})
+
+watch(() => props.show, (shown) => {
+  if (shown) {
+    isEditingTitle.value = false
+    titleInput.value = currentPhoto.value?.title || ''
+  }
+})
+
+function startEditTitle() {
+  if (!props.canWrite || !currentPhoto.value) return
+  titleInput.value = currentPhoto.value.title || ''
+  isEditingTitle.value = true
+  nextTick(() => {
+    titleInputRef.value?.focus()
+    titleInputRef.value?.select()
+  })
+}
+
+function saveTitle() {
+  if (!isEditingTitle.value || !currentPhoto.value) return
+  const trimmed = titleInput.value.trim()
+  isEditingTitle.value = false
+  if (trimmed !== (currentPhoto.value.title || '')) {
+    emit('update-title', { photo: currentPhoto.value, title: trimmed })
+  }
+}
+
+function cancelEditTitle() {
+  isEditingTitle.value = false
+  titleInput.value = currentPhoto.value?.title || ''
+}
 
 function handleKeyDown(e: KeyboardEvent) {
   if (!props.show) return
+  if (isEditingTitle.value) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      saveTitle()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelEditTitle()
+    }
+    return
+  }
   if (e.key === 'Escape') emit('close')
   if (e.key === 'ArrowLeft' && props.currentIndex > 0) {
     emit('select', props.currentIndex - 1)
@@ -72,12 +127,31 @@ function statusLabel(status?: string) {
 
         <div class="topbar-actions">
           <button
+            v-if="canWrite && currentIndex > 0"
+            class="action-btn"
+            title="前移排序"
+            @click="emit('move-up', photos[currentIndex])"
+          >
+            <Icon name="arrow-left" :size="14" />
+            <span>前移</span>
+          </button>
+          <button
+            v-if="canWrite && currentIndex < photos.length - 1"
+            class="action-btn"
+            title="后移排序"
+            @click="emit('move-down', photos[currentIndex])"
+          >
+            <span>后移</span>
+            <Icon name="arrow-right" :size="14" />
+          </button>
+
+          <button
             v-if="canWrite && !photos[currentIndex].cover"
             class="action-btn"
             title="设为相册封面"
             @click="emit('set-cover', photos[currentIndex])"
           >
-            <Icon name="star" :size="16" />
+            <Icon name="star" :size="15" />
             <span>设为封面</span>
           </button>
           <span v-else class="cover-badge">
@@ -91,12 +165,12 @@ function statusLabel(status?: string) {
             title="删除照片"
             @click="emit('delete', photos[currentIndex])"
           >
-            <Icon name="trash" :size="16" />
+            <Icon name="trash" :size="15" />
             <span>删除</span>
           </button>
 
           <button class="action-btn close-btn" title="关闭 (Esc)" @click="emit('close')">
-            <Icon name="x" :size="20" />
+            <Icon name="x" :size="18" />
           </button>
         </div>
       </div>
@@ -136,7 +210,33 @@ function statusLabel(status?: string) {
       <!-- Bottom Info Bar -->
       <div class="lightbox-bottombar">
         <div class="photo-info">
-          <h3 class="photo-title">{{ photos[currentIndex].title || '未命名照片' }}</h3>
+          <!-- Editable Title Row -->
+          <div class="title-edit-container">
+            <template v-if="isEditingTitle">
+              <input
+                ref="titleInputRef"
+                v-model="titleInput"
+                class="title-input-field"
+                type="text"
+                maxlength="160"
+                placeholder="输入照片标题（按 Enter 保存）"
+                @blur="saveTitle"
+              />
+              <button class="title-save-btn" type="button" @click="saveTitle">保存</button>
+            </template>
+            <template v-else>
+              <h3
+                class="photo-title"
+                :class="{ 'can-edit': canWrite }"
+                :title="canWrite ? '点击修改标题' : ''"
+                @click="startEditTitle"
+              >
+                {{ photos[currentIndex].title || '未命名照片' }}
+                <Icon v-if="canWrite" name="edit" :size="14" class="edit-hint-icon" />
+              </h3>
+            </template>
+          </div>
+
           <div class="photo-meta-tags">
             <span v-if="photos[currentIndex].width && photos[currentIndex].height" class="meta-tag">
               {{ photos[currentIndex].width }} × {{ photos[currentIndex].height }} px
@@ -164,6 +264,7 @@ function statusLabel(status?: string) {
   flex-direction: column;
   color: #ffffff;
   user-select: none;
+  font-family: var(--font-family, 'Plus Jakarta Sans', system-ui, sans-serif);
 }
 
 .lightbox-topbar {
@@ -176,15 +277,15 @@ function statusLabel(status?: string) {
 }
 
 .photo-indicator {
-  font-family: 'Inter', monospace, sans-serif;
-  font-size: 14px;
-  font-weight: 500;
+  font-family: var(--font-family, 'Plus Jakarta Sans', system-ui, sans-serif);
+  font-size: 13.5px;
+  font-weight: 600;
   color: #94a3b8;
 }
 
 .index-current {
   color: #f8fafc;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .index-divider {
@@ -195,20 +296,20 @@ function statusLabel(status?: string) {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .action-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px;
+  padding: 6px 12px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   color: #f1f5f9;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -230,20 +331,20 @@ function statusLabel(status?: string) {
 }
 
 .cover-badge {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 7px 14px;
+  padding: 6px 12px;
   background: rgba(16, 185, 129, 0.2);
   border: 1px solid rgba(16, 185, 129, 0.4);
   color: #6ee7b7;
   border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
 .close-btn {
-  padding: 8px;
+  padding: 6px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
 }
@@ -290,8 +391,8 @@ function statusLabel(status?: string) {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -327,13 +428,65 @@ function statusLabel(status?: string) {
 
 .photo-info {
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.title-edit-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .photo-title {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 700;
   color: #f8fafc;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.photo-title.can-edit {
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.photo-title.can-edit:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.edit-hint-icon {
+  opacity: 0.6;
+}
+
+.title-input-field {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--brand-accent, #10b981);
+  background: rgba(15, 23, 42, 0.85);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  min-width: 240px;
+  text-align: center;
+}
+
+.title-save-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--brand-accent, #10b981);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .photo-meta-tags {

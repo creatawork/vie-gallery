@@ -40,7 +40,8 @@ public class M3ShareLinkConfig {
             PasswordHasher passwordHasher,
             TokenGenerator tokenGenerator,
             PhotoAssetVariantRepository assetVariants,
-            CreatorPreviewTokens previewTokens
+            CreatorPreviewTokens previewTokens,
+            ViewerConfigVersionRepository viewerConfigVersionRepository
     ) {
         return new PublicAccessFacade(
                 galleryRepository,
@@ -51,7 +52,8 @@ public class M3ShareLinkConfig {
                 passwordHasher,
                 tokenGenerator,
                 assetVariants,
-                previewTokens
+                previewTokens,
+                viewerConfigVersionRepository
         );
     }
 

@@ -137,6 +137,7 @@ async function handlePostMessage(event: MessageEvent) {
   } else if (type === 'VIE_PRESET_CHANGE' && typeof presetName === 'string') {
     selectPreset(presetName)
   } else if (type === 'VIE_CONFIG_UPDATE' && config && typeof config === 'object') {
+    viewer.viewerConfig.value = config
     if (!engine && isEmbedPreview()) {
       await nextTick()
       await init3DEngine()
@@ -741,6 +742,7 @@ async function selectPreset(presetName: string) {
         :show="showLightbox"
         :photos="viewer.photos.value"
         :current-index="lightboxIndex"
+        :allow-download="viewer.allowDownload.value"
         @close="showLightbox = false"
         @select="idx => lightboxIndex = idx"
       />

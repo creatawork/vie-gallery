@@ -33,15 +33,27 @@ public class PublicGalleryController {
     private final PublicAccessFacade publicAccessFacade;
     private final GalleryViewerConfigFacade configFacade;
     private final RedisRateLimiter rateLimiter;
+    private final GalleryMetrics metrics;
 
     public PublicGalleryController(
             PublicAccessFacade publicAccessFacade,
             GalleryViewerConfigFacade configFacade,
             RedisRateLimiter rateLimiter
     ) {
+        this(publicAccessFacade, configFacade, rateLimiter, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PublicGalleryController(
+            PublicAccessFacade publicAccessFacade,
+            GalleryViewerConfigFacade configFacade,
+            RedisRateLimiter rateLimiter,
+            GalleryMetrics metrics
+    ) {
         this.publicAccessFacade = publicAccessFacade;
         this.configFacade = configFacade;
         this.rateLimiter = rateLimiter;
+        this.metrics = metrics;
     }
 
     /**
@@ -55,6 +67,9 @@ public class PublicGalleryController {
             @RequestParam(value = "preview", required = false) String previewQuery,
             HttpSession session
     ) {
+        if (metrics != null) {
+            metrics.recordPublicAccess(slug);
+        }
         PublicGalleryView view = publicAccessFacade.resolvePublicGallery(
                 slug, shareToken, readSessionGalleryId(session), previewToken(previewHeader, previewQuery));
 

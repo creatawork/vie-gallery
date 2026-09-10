@@ -148,6 +148,7 @@ function formatHistoryTime(value?: string) {
 function getCleanConfig() {
   return {
     presetName: config.presetName || 'custom',
+    visitorAllowDownload: !!config.visitorAllowDownload,
     layout: {
       mode: config.layout?.mode || 'sphere'
     },
@@ -307,6 +308,7 @@ async function retryEmbedPreview() {
 
 const config = reactive({
   presetName: 'custom' as string | null,
+  visitorAllowDownload: false,
   layout: { mode: 'sphere' },
   background: {
     type: 'sky',
@@ -957,6 +959,26 @@ onUnmounted(() => {
           </div>
         </section>
 
+        <section v-show="configTab === 'basics'" class="side-block">
+          <h2>
+            <Icon name="download" :size="15" />
+            访客下载权限
+          </h2>
+          <label class="download-toggle-card">
+            <div class="toggle-info">
+              <strong>允许访客下载照片</strong>
+              <p>开启后访客在浏览展厅时可下载中等画质原片；默认关闭。</p>
+            </div>
+            <input
+              v-model="config.visitorAllowDownload"
+              type="checkbox"
+              class="download-checkbox"
+              :disabled="!canConfigWrite"
+              @change="scheduleAutoSave"
+            />
+          </label>
+        </section>
+
         <section v-show="configTab === 'atmosphere'" class="side-block">
           <h2>
             <Icon name="sparkles" :size="15" />
@@ -1509,6 +1531,44 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.download-toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #eef0f2;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.download-toggle-card:hover {
+  background: #f1f5f9;
+}
+
+.toggle-info strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.toggle-info p {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.download-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand-accent, #10b981);
+  cursor: pointer;
 }
 
 .preset-mini {

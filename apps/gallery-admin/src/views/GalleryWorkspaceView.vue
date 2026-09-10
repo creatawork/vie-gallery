@@ -14,9 +14,11 @@ import Icon from '../components/Icon.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import LightboxModal from '../components/LightboxModal.vue'
 import GalleryUploadDropzone from '../components/gallery-workspace/GalleryUploadDropzone.vue'
+import GalleryPhotoGrid from '../components/gallery-workspace/GalleryPhotoGrid.vue'
 import GalleryPhotoCard from '../components/gallery-workspace/GalleryPhotoCard.vue'
 import UploadTaskCenter from '../components/gallery-workspace/UploadTaskCenter.vue'
 import PublishCenterPanel from '../components/gallery-workspace/PublishCenterPanel.vue'
+import ShareDeliveryPanel from '../components/gallery-workspace/ShareDeliveryPanel.vue'
 
 type LightboxPhoto = Omit<WorkspacePhoto, 'title'> & { title?: string }
 
@@ -41,31 +43,19 @@ const publishCenter = usePublishCenter(
 )
 
 const photoViewMode = ref<'grid' | 'list'>('grid')
+const photoGridRef = ref<{ clearSelection: () => void } | null>(null)
 const userMenuOpen = ref(false)
 const showLightbox = ref(false)
 const lightboxIndex = ref(0)
 const photoToDelete = ref<Pick<WorkspacePhoto, 'id'> | null>(null)
 const deletingPhoto = ref(false)
+const batchPhotoIdsToDelete = ref<string[]>([])
+const showBatchDeleteModal = ref(false)
+const deletingBatch = ref(false)
 const showUnpublishModal = ref(false)
 const showShareModal = ref(false)
-const generatingShare = ref(false)
-const shareLinkData = ref<{ shareUrl: string; expiresAt?: string } | null>(null)
-const shareExpiryDays = ref(30)
-const shareLinks = ref<ShareLink[]>([])
-const shareLinksLoading = ref(false)
-const shareLinkToRevoke = ref<ShareLink | null>(null)
-const revokingShareLink = ref(false)
-const copied = ref(false)
+const visitorAllowDownload = ref(false)
 const previewOpening = ref(false)
-const { root: shareModalRoot } = useModalFocus(showShareModal, { onEscape: closeShareModal })
-
-type ShareLink = {
-  id: string
-  status: ShareLinkStatus | string
-  expiresAt?: string | null
-  createdAt?: string | null
-  lastAccessedAt?: string | null
-}
 
 const lightboxPhotos = computed<LightboxPhoto[]>(() => workspace.photos.value.map(photo => ({
   ...photo,
@@ -245,6 +235,76 @@ function promptDeletePhoto(photo: Pick<WorkspacePhoto, 'id'>) {
   photoToDelete.value = photo
 }
 
+function promptBatchDelete(ids: string[]) {
+  if (!canPhotoWrite.value || !ids.length) return
+  batchPhotoIdsToDelete.value = ids
+  showBatchDeleteModal.value = true
+}
+
+async function confirmBatchDelete() {
+  if (!batchPhotoIdsToDelete.value.length || deletingBatch.value) return
+  deletingBatch.value = true
+  try {
+    const { succeeded, failed } = await workspace.deletePhotos(batchPhotoIdsToDelete.value)
+    showBatchDeleteModal.value = false
+    photoGridRef.value?.clearSelection()
+    if (failed === 0) {
+      toast.success(`成功从展厅移除 ${succeeded} 张照片。`)
+    } else {
+      toast.warning(`已移除 ${succeeded} 张照片，${failed} 张操作失败。`)
+    }
+    batchPhotoIdsToDelete.value = []
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '批量删除失败。')
+  } finally {
+    deletingBatch.value = false
+  }
+}
+
+async function handleUpdatePhotoTitle(payload: { photo: { id: string }; title: string }) {
+  if (!canPhotoWrite.value) return
+  try {
+    await workspace.updatePhotoTitle(payload.photo.id, payload.title)
+    toast.success('照片标题已更新。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '更新照片标题失败。')
+  }
+}
+
+async function handleMovePhoto(payload: { id: string; direction: 'up' | 'down' }) {
+  if (!canPhotoWrite.value) return
+  try {
+    await workspace.movePhoto(payload.id, payload.direction)
+    toast.success('照片排序已更新。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '调整照片排序失败。')
+  }
+}
+
+async function handleRetryFailedGrid() {
+  if (!canPhotoWrite.value) return
+  // Find failed tasks or retryable tasks in taskCenter
+  const failedTasks = taskCenter.tasks.value.filter(t => t.status === 'FAILED' && t.retryable)
+  if (!failedTasks.length) {
+    toast.info('暂无可重试的后台处理任务。')
+    return
+  }
+  let successCount = 0
+  for (const task of failedTasks) {
+    try {
+      await taskCenter.retry(task)
+      successCount++
+    } catch {
+      // Continue retrying others
+    }
+  }
+  if (successCount > 0) {
+    toast.success(`已为 ${successCount} 个失败项重新排队。`)
+  } else {
+    toast.error('重试失败项失败，请检查网络后重试。')
+  }
+}
+
 async function confirmDeletePhoto() {
   if (!photoToDelete.value) return
   deletingPhoto.value = true
@@ -260,19 +320,39 @@ async function confirmDeletePhoto() {
   }
 }
 
-async function loadShareLinks() {
-  if (!canShareManage.value) return
-  const gallery = workspace.gallery.value
-  if (!gallery || gallery.status !== 'PUBLISHED') return
-  shareLinksLoading.value = true
+async function loadGalleryConfig() {
+  const gId = galleryId.value
+  if (!gId) return
+  visitorAllowDownload.value = false
   try {
-    const response = await apiFetch(`/api/galleries/${gallery.id}/share-links`)
-    if (!response.ok) throw new Error('分享链接加载失败。')
-    shareLinks.value = await response.json() as ShareLink[]
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : '分享链接加载失败。')
-  } finally {
-    shareLinksLoading.value = false
+    const res = await apiFetch(`/api/galleries/${gId}/viewer-config`)
+    if (!res.ok) return
+    const data = await res.json() as {
+      configJson?: string
+      publishedVersionId?: string | null
+      publishedConfigJson?: string | null
+    }
+    // Prefer published snapshot so share panel matches what visitors see
+    if (data.publishedConfigJson) {
+      const parsed = JSON.parse(data.publishedConfigJson) as { visitorAllowDownload?: boolean }
+      visitorAllowDownload.value = !!parsed.visitorAllowDownload
+      return
+    }
+    if (data.publishedVersionId) {
+      const versionsRes = await apiFetch(`/api/galleries/${gId}/viewer-config/versions?page=0&pageSize=50`)
+      if (!versionsRes.ok) return
+      const versions = await versionsRes.json() as { items?: Array<{ id: string; configJson?: string }> }
+      const published = (versions.items || []).find(item => item.id === data.publishedVersionId)
+      if (published?.configJson) {
+        const parsed = JSON.parse(published.configJson) as { visitorAllowDownload?: boolean }
+        visitorAllowDownload.value = !!parsed.visitorAllowDownload
+      }
+      return
+    }
+    // No published config yet — visitors do not get download
+    visitorAllowDownload.value = false
+  } catch {
+    visitorAllowDownload.value = false
   }
 }
 
@@ -280,88 +360,8 @@ async function openShareModal() {
   if (!canShareManage.value) return
   const gallery = workspace.gallery.value
   if (!gallery || gallery.status !== 'PUBLISHED') return
+  await loadGalleryConfig()
   showShareModal.value = true
-  generatingShare.value = false
-  shareLinkData.value = null
-  copied.value = false
-  shareExpiryDays.value = 30
-  await loadShareLinks()
-}
-
-async function createShareLink() {
-  if (!canShareManage.value) return
-  const gallery = workspace.gallery.value
-  if (!gallery || gallery.status !== 'PUBLISHED' || generatingShare.value) return
-  generatingShare.value = true
-  try {
-    const requestBody: Record<string, string> = {}
-    if (shareExpiryDays.value > 0) {
-      requestBody.expiresAt = new Date(Date.now() + shareExpiryDays.value * 86_400_000).toISOString()
-    }
-    const response = await apiFetch(`/api/galleries/${gallery.id}/share-links`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    })
-    if (!response.ok) throw new Error('生成分享链接失败。')
-    const data = await response.json() as { shareUrl?: string; rawToken?: string; expiresAt?: string }
-    const shareUrl = data.shareUrl || (data.rawToken ? `${viewerUrl(gallery.slug)}?t=${encodeURIComponent(data.rawToken)}` : '')
-    if (!shareUrl) throw new Error('分享凭证生成失败。')
-    shareLinkData.value = { shareUrl: normalizeViewerShareUrl(shareUrl), expiresAt: data.expiresAt }
-    await loadShareLinks()
-    toast.success('分享链接已创建。')
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : '生成分享链接失败。')
-  } finally {
-    generatingShare.value = false
-  }
-}
-
-async function copyShareUrl() {
-  if (!shareLinkData.value?.shareUrl) return
-  try {
-    await navigator.clipboard.writeText(shareLinkData.value.shareUrl)
-    copied.value = true
-    toast.success('链接已复制。')
-    window.setTimeout(() => { copied.value = false }, 2500)
-  } catch {
-    toast.error('复制失败，请手动选择链接。')
-  }
-}
-
-function closeShareModal() {
-  if (!generatingShare.value) showShareModal.value = false
-}
-
-function promptRevokeShareLink(link: ShareLink) {
-  shareLinkToRevoke.value = link
-}
-
-async function confirmRevokeShareLink() {
-  const link = shareLinkToRevoke.value
-  if (!link || revokingShareLink.value) return
-  revokingShareLink.value = true
-  try {
-    const response = await apiFetch(`/api/share-links/${link.id}`, { method: 'DELETE' })
-    if (!response.ok) throw new Error('撤销失败。')
-    toast.success('分享链接已撤销。')
-    shareLinkToRevoke.value = null
-    await loadShareLinks()
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : '撤销失败。')
-  } finally {
-    revokingShareLink.value = false
-  }
-}
-
-function formatShareDate(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
-}
-
-function shareStatusLabel(status: string) {
-  return status === 'ACTIVE' ? '有效' : status === 'EXPIRED' ? '已过期' : status === 'REVOKED' ? '已撤销' : status
 }
 </script>
 
@@ -513,24 +513,29 @@ function shareStatusLabel(status: string) {
               </div>
             </div>
 
-            <div v-if="photoViewMode === 'grid'" class="photo-grid">
-              <GalleryUploadDropzone
-                v-if="canPhotoWrite"
-                :uploading="workspace.uploading.value"
-                :progress="workspace.uploadProgress.value"
-                :status-text="workspace.uploadStatusText.value"
-                @files="handleUpload"
-                @invalid="toast.warning($event)"
-              />
-              <GalleryPhotoCard
-                v-for="(photo, index) in workspace.photos.value"
-                :key="photo.id"
-                :photo="photo"
+            <div v-if="photoViewMode === 'grid'" class="photo-grid-wrapper">
+              <GalleryPhotoGrid
+                ref="photoGridRef"
+                :photos="workspace.photos.value"
                 :can-write="canPhotoWrite"
-                @open="openLightbox(index)"
-                @set-cover="handleSetCover(photo)"
-                @delete="promptDeletePhoto(photo)"
-              />
+                @open="openLightbox"
+                @set-cover="handleSetCover"
+                @delete="promptDeletePhoto"
+                @batch-delete="promptBatchDelete"
+                @move-photo="handleMovePhoto"
+                @retry-failed="handleRetryFailedGrid"
+              >
+                <template #dropzone>
+                  <GalleryUploadDropzone
+                    v-if="canPhotoWrite"
+                    :uploading="workspace.uploading.value"
+                    :progress="workspace.uploadProgress.value"
+                    :status-text="workspace.uploadStatusText.value"
+                    @files="handleUpload"
+                    @invalid="toast.warning($event)"
+                  />
+                </template>
+              </GalleryPhotoGrid>
             </div>
             <div v-else class="photo-list">
               <GalleryUploadDropzone
@@ -593,39 +598,16 @@ function shareStatusLabel(status: string) {
       </div>
     </template>
 
-    <Transition name="modal-fade">
-      <div v-if="showShareModal" class="modal-backdrop" @click.self="closeShareModal">
-        <div ref="shareModalRoot" class="modal-card" role="dialog" aria-modal="true" tabindex="-1">
-          <div class="modal-header-row">
-            <h3>分享链接</h3>
-            <button type="button" @click="closeShareModal"><Icon name="x" :size="18" /></button>
-          </div>
-          <div class="share-row">
-            <select v-model="shareExpiryDays">
-              <option :value="7">7 天</option>
-              <option :value="30">30 天</option>
-              <option :value="90">90 天</option>
-              <option :value="0">永久</option>
-            </select>
-            <button class="btn btn-primary" type="button" :disabled="generatingShare" @click="createShareLink">
-              {{ generatingShare ? '生成中…' : '生成链接' }}
-            </button>
-          </div>
-          <div v-if="shareLinkData" class="generated">
-            <input readonly :value="shareLinkData.shareUrl" />
-            <button class="btn btn-secondary" type="button" @click="copyShareUrl">{{ copied ? '已复制' : '复制' }}</button>
-          </div>
-          <p v-if="shareLinksLoading">加载已有链接…</p>
-          <p v-else-if="!shareLinks.length">暂无分享链接。</p>
-          <ul v-else>
-            <li v-for="link in shareLinks" :key="link.id">
-              {{ shareStatusLabel(link.status) }} · {{ formatShareDate(link.createdAt) }}
-              <button v-if="link.status === 'ACTIVE'" type="button" @click="promptRevokeShareLink(link)">撤销</button>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </Transition>
+    <ShareDeliveryPanel
+      :show="showShareModal"
+      :gallery="workspace.gallery.value"
+      :is-owner="isOwner"
+      :can-manage="canShareManage"
+      :visitor-allow-download="visitorAllowDownload"
+      @close="showShareModal = false"
+      @open-config="goToConfig"
+      @gallery-updated="workspace.reload"
+    />
 
     <ConfirmModal
       :show="showUnpublishModal"
@@ -650,14 +632,14 @@ function shareStatusLabel(status: string) {
     />
 
     <ConfirmModal
-      :show="!!shareLinkToRevoke"
-      title="确认撤销此分享链接？"
-      message="撤销后，使用该链接的访客将无法再访问。"
-      confirm-text="确认撤销"
+      :show="showBatchDeleteModal"
+      title="确认批量删除选中的照片？"
+      :message="`将从展厅移除选中的 ${batchPhotoIdsToDelete.length} 张照片，此操作不可撤销。`"
+      confirm-text="确认删除"
       danger
-      :loading="revokingShareLink"
-      @confirm="confirmRevokeShareLink"
-      @cancel="shareLinkToRevoke = null"
+      :loading="deletingBatch"
+      @confirm="confirmBatchDelete"
+      @cancel="showBatchDeleteModal = false"
     />
 
     <LightboxModal
@@ -669,6 +651,9 @@ function shareStatusLabel(status: string) {
       @select="lightboxIndex = $event"
       @set-cover="handleSetCover"
       @delete="promptDeletePhoto"
+      @update-title="handleUpdatePhotoTitle"
+      @move-up="handleMovePhoto({ id: $event.id, direction: 'up' })"
+      @move-down="handleMovePhoto({ id: $event.id, direction: 'down' })"
     />
   </div>
 </template>
