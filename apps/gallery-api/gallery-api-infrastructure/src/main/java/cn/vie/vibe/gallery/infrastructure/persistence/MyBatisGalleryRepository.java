@@ -98,6 +98,8 @@ public class MyBatisGalleryRepository implements GalleryRepository {
     }
 
     private static Gallery toDomain(java.util.Map<String, Object> row) {
+        Instant createdAt = instant(row, "createdAt");
+        Instant updatedAt = instant(row, "updatedAt");
         return new Gallery(
                 uuid(row, "id"),
                 uuid(row, "tenantId"),
@@ -107,9 +109,10 @@ public class MyBatisGalleryRepository implements GalleryRepository {
                 (String) row.get("passwordHash"),
                 uuid(row, "coverPhotoId"),
                 Boolean.TRUE.equals(row.get("deleted")),
-                instant(row, "createdAt"),
+                createdAt,
                 row.get("status") == null ? GalleryStatus.PUBLISHED : GalleryStatus.valueOf((String) row.get("status")),
-                instant(row, "publishedAt")
+                instant(row, "publishedAt"),
+                updatedAt != null ? updatedAt : createdAt
         );
     }
 }

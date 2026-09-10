@@ -40,11 +40,6 @@ interface UploadItem {
   error?: { code?: string | null; message?: string | null } | null
 }
 
-interface TaskState {
-  status: string
-  errorMessage?: string | null
-}
-
 class StatusError extends Error {
   status?: number
   constructor(message: string, status?: number) {
@@ -54,12 +49,12 @@ class StatusError extends Error {
 }
 
 function errorMessageFor(status: number, fallback: string) {
-  if (status === 401) return '????????????'
-  if (status === 403) return '???????????'
-  if (status === 404) return '???????????'
-  if (status === 409) return '???????????'
-  if (status === 413) return '????????????'
-  if (status >= 500) return '??????????????'
+  if (status === 401) return '登录状态已过期，请重新登录。'
+  if (status === 403) return '您没有权限操作此展厅。'
+  if (status === 404) return '展厅不存在或已被删除。'
+  if (status === 409) return '操作冲突，请刷新后重试。'
+  if (status === 413) return '上传文件超出大小限制。'
+  if (status >= 500) return '服务暂时不可用，请稍后重试。'
   return fallback
 }
 
@@ -77,11 +72,11 @@ async function responseError(response: Response, fallback: string): Promise<Stat
 function classifyError(error: unknown, fallback: string): WorkspaceError {
   const message = error instanceof Error ? error.message : fallback
   const status = error instanceof StatusError ? error.status : undefined
-  if (status === 401 || message.includes('?????')) return { kind: 'unauthorized', message, status: 401 }
-  if (status === 403 || message.includes('????')) return { kind: 'forbidden', message, status: 403 }
-  if (status === 404 || message.includes('???')) return { kind: 'not-found', message, status: 404 }
+  if (status === 401 || message.includes('登录')) return { kind: 'unauthorized', message, status: 401 }
+  if (status === 403 || message.includes('权限')) return { kind: 'forbidden', message, status: 403 }
+  if (status === 404 || message.includes('不存在')) return { kind: 'not-found', message, status: 404 }
   if (error instanceof TypeError || message.includes('Failed to fetch') || message.includes('Network')) {
-    return { kind: 'network', message: '?????????????' }
+    return { kind: 'network', message: '网络连接异常，请检查网络。' }
   }
   return { kind: 'unknown', message }
 }
@@ -110,7 +105,7 @@ export function useGalleryWorkspace(
 
   async function loadPhotos(galleryIdValue: string, version: number) {
     const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos`)
-    if (!response.ok) throw await responseError(response, '???????????????')
+    if (!response.ok) throw await responseError(response, '照片列表加载失败，请稍后重试。')
     const data = await response.json() as WorkspacePhoto[]
     if (isCurrent(version)) {
       photos.value = data.map(photo => ({
@@ -137,7 +132,7 @@ export function useGalleryWorkspace(
       gallery.value = null
       photos.value = []
       loading.value = false
-      error.value = { kind: 'not-found', message: '????????', status: 404 }
+      error.value = { kind: 'not-found', message: '展厅未找到', status: 404 }
       return
     }
 
@@ -145,7 +140,7 @@ export function useGalleryWorkspace(
     error.value = null
     try {
       const response = await apiFetch(`/api/galleries/${galleryIdValue}`)
-      if (!response.ok) throw await responseError(response, '?????????????')
+      if (!response.ok) throw await responseError(response, '展厅信息加载失败，请稍后重试。')
       const found = await response.json() as Gallery
       if (isCurrent(version)) gallery.value = found
       await loadPhotos(galleryIdValue, version)
@@ -153,46 +148,28 @@ export function useGalleryWorkspace(
       if (isCurrent(version)) {
         gallery.value = null
         photos.value = []
-        error.value = classifyError(cause, '?????????????')
+        error.value = classifyError(cause, '展厅信息加载失败，请稍后重试。')
       }
     } finally {
       if (isCurrent(version)) loading.value = false
     }
   }
 
-  async function pollTask(taskId: string, version: number): Promise<'succeeded' | 'failed' | 'timedOut'> {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 800))
-      if (version !== uploadVersion) return 'timedOut'
-      let response: Response
-      try {
-        response = await apiFetch(`/api/photos/tasks/${taskId}`)
-      } catch {
-        return 'timedOut'
-      }
-      if (!response.ok) return response.status >= 500 || response.status === 429 ? 'timedOut' : 'failed'
-      const task = await response.json() as TaskState
-      if (task.status === 'SUCCEEDED') return 'succeeded'
-      if (task.status === 'FAILED' || task.status === 'CANCELLED') return 'failed'
-    }
-    return 'timedOut'
-  }
-
   async function uploadFiles(
     files: FileList | File[],
-    options: { onQueued?: () => void | Promise<void> } = {}
+    options: { onQueued?: () => void | Promise<void>; batchId?: string } = {}
   ): Promise<UploadSummary> {
     const galleryIdValue = id.value
     if (!galleryIdValue || !files.length) return { succeeded: 0, failed: 0, timedOut: 0, rejected: 0 }
 
     const version = ++uploadVersion
     uploading.value = true
-    uploadProgress.value = 8
-    uploadStatusText.value = `???? ${files.length} ???`
+    uploadProgress.value = 20
+    uploadStatusText.value = `正在上传 ${files.length} 张照片…`
     try {
       const form = new FormData()
       Array.from(files).forEach(file => form.append('files', file))
-      const batchId = crypto.randomUUID()
+      const batchId = options.batchId ?? crypto.randomUUID()
       const idempotencyKey = crypto.randomUUID()
       const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos`, {
         method: 'POST',
@@ -202,28 +179,20 @@ export function useGalleryWorkspace(
         },
         body: form
       })
-      if (!response.ok) throw await responseError(response, '?????????????')
+      if (!response.ok) throw await responseError(response, '照片上传失败，请重试。')
 
       const result = await response.json() as { items?: UploadItem[] }
       const items = Array.isArray(result.items) ? result.items : []
       const acceptedItems = items.filter(item => item.accepted !== false && typeof item.taskId === 'string' && item.taskId)
       const rejected = Math.max(0, files.length - acceptedItems.length)
-      uploadProgress.value = acceptedItems.length ? 35 : 100
-      uploadStatusText.value = acceptedItems.length ? '???? 3D ??' : '????????'
-      await options.onQueued?.()
-      const outcomes = await Promise.all(acceptedItems.map(item => pollTask(item.taskId as string, version)))
-      const summary = outcomes.reduce<UploadSummary>((resultValue, outcome) => {
-        resultValue[outcome === 'succeeded' ? 'succeeded' : outcome === 'failed' ? 'failed' : 'timedOut'] += 1
-        return resultValue
-      }, { succeeded: 0, failed: 0, timedOut: 0, rejected })
       uploadProgress.value = 100
-      uploadStatusText.value = summary.failed || summary.timedOut || summary.rejected ? '????????' : '????'
-      await reload()
+      uploadStatusText.value = acceptedItems.length ? '已加入处理队列' : '无有效图片'
+
       await options.onQueued?.()
-      return summary
+      return { succeeded: acceptedItems.length, failed: 0, timedOut: 0, rejected }
     } finally {
       if (version === uploadVersion) {
-        await new Promise(resolve => setTimeout(resolve, 450))
+        await new Promise(resolve => setTimeout(resolve, 300))
         uploading.value = false
         uploadProgress.value = 0
         uploadStatusText.value = ''
@@ -240,7 +209,7 @@ export function useGalleryWorkspace(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cover: true })
       })
-      if (!response.ok) throw await responseError(response, '?????????????')
+      if (!response.ok) throw await responseError(response, '设置封面失败，请重试。')
       await reload()
     } catch (cause) {
       photos.value = previous
@@ -250,7 +219,7 @@ export function useGalleryWorkspace(
 
   async function deletePhoto(photoId: string) {
     const response = await apiFetch(`/api/photos/${photoId}`, { method: 'DELETE' })
-    if (!response.ok) throw await responseError(response, '?????????????')
+    if (!response.ok) throw await responseError(response, '删除照片失败，请重试。')
     await reload()
   }
 
@@ -260,7 +229,7 @@ export function useGalleryWorkspace(
     publishing.value = true
     try {
       const response = await apiFetch(`/api/galleries/${galleryIdValue}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST' })
-      if (!response.ok) throw await responseError(response, publish ? '???????????' : '?????????????')
+      if (!response.ok) throw await responseError(response, publish ? '发布展厅失败，请重试。' : '撤回发布失败，请重试。')
       const updated = response.status === 204 ? null : await response.json().catch(() => null) as Gallery | null
       if (updated && gallery.value?.id === galleryIdValue) gallery.value = updated
       await reload()

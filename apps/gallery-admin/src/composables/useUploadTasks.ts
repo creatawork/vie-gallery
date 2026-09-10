@@ -1,56 +1,22 @@
 import { computed, onMounted, onUnmounted, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import type {
+  UploadTask,
+  UploadTaskError,
+  UploadTaskPage,
+  UploadTaskStatus,
+  UploadTaskSummary
+} from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
 
-export type UploadTaskStatus =
-  | 'QUEUED'
-  | 'PROCESSING'
-  | 'SUCCEEDED'
-  | 'FAILED'
-  | 'CANCEL_REQUESTED'
-  | 'CANCELLED'
-  | string
-
-export interface UploadTaskError {
-  code?: string | null
-  message?: string | null
-  requestId?: string | null
-}
-
-export interface UploadTask {
-  id: string
-  galleryId?: string
-  photoId?: string | null
-  filename?: string | null
-  thumbnailUrl?: string | null
-  photoThumbnailUrl?: string | null
-  status: UploadTaskStatus
-  progress: number
-  stage?: string | null
-  attempts: number
-  maxAttempts: number
-  retryable: boolean
-  error?: UploadTaskError | null
-  errorCode?: string | null
-  errorMessage?: string | null
-  requestId?: string | null
-  createdAt?: string | null
-  startedAt?: string | null
-  updatedAt?: string | null
-  finishedAt?: string | null
-}
-
-export interface UploadTaskSummary {
-  queued: number
-  processing: number
-  succeeded: number
-  failed: number
-  cancelRequested: number
-  cancelled: number
-}
+export type { UploadTask, UploadTaskError, UploadTaskPage, UploadTaskStatus, UploadTaskSummary }
 
 export type TaskFilter = 'ALL' | 'ACTIVE' | 'FAILED' | 'COMPLETED'
 
 const ACTIVE_STATUSES: UploadTaskStatus[] = ['QUEUED', 'PROCESSING', 'CANCEL_REQUESTED']
+
+export interface UseUploadTasksOptions {
+  onIdle?: () => void | Promise<void>
+}
 
 function emptySummary(): UploadTaskSummary {
   return { queued: 0, processing: 0, succeeded: 0, failed: 0, cancelRequested: 0, cancelled: 0 }
@@ -114,11 +80,13 @@ async function responseError(response: Response, fallback: string): Promise<Erro
 
 export function useUploadTasks(
   galleryId: MaybeRefOrGetter<string>,
-  enabled: MaybeRefOrGetter<boolean> = true
+  enabled: MaybeRefOrGetter<boolean> = true,
+  options: UseUploadTasksOptions = {}
 ) {
   const id = computed(() => toValue(galleryId))
   const isEnabled = computed(() => toValue(enabled))
   const tasks = ref<UploadTask[]>([])
+  const localPlaceholders = ref<UploadTask[]>([])
   const summary = ref<UploadTaskSummary>(emptySummary())
   const filter = ref<TaskFilter>('ALL')
   const loading = ref(true)
@@ -129,6 +97,7 @@ export function useUploadTasks(
   let requestVersion = 0
   let pollTimer: number | undefined
   let pollInFlight = false
+  let hadActiveTasks = false
 
   const activeTasks = computed(() => tasks.value.filter(task => ACTIVE_STATUSES.includes(task.status)))
   const filteredTasks = computed(() => tasks.value.filter(task => {
@@ -161,10 +130,12 @@ export function useUploadTasks(
     if (!isEnabled.value || !galleryIdValue) {
       clearPoll()
       tasks.value = []
+      localPlaceholders.value = []
       summary.value = emptySummary()
       loading.value = false
       refreshing.value = false
       error.value = null
+      hadActiveTasks = false
       return
     }
     if (pollInFlight) return
@@ -183,15 +154,39 @@ export function useUploadTasks(
       const data = await response.json() as { items?: unknown[]; summary?: Partial<UploadTaskSummary> } | unknown[]
       if (version !== requestVersion) return
       const items = Array.isArray(data) ? data : data.items || []
-      tasks.value = items.map(normalizeTask).filter(task => task.id)
+      const remoteTasks = items.map(normalizeTask).filter(task => task.id)
+
+      // Prune local placeholders that match remote tasks by filename or are older than 60s
+      const now = Date.now()
+      localPlaceholders.value = localPlaceholders.value.filter(local => {
+        const matchingRemote = remoteTasks.some(remote => remote.filename === local.filename)
+        const ageMs = local.createdAt ? now - new Date(local.createdAt).getTime() : 0
+        return !matchingRemote && ageMs < 60000
+      })
+
+      tasks.value = [...localPlaceholders.value, ...remoteTasks]
+
       const remoteSummary = Array.isArray(data) ? undefined : data.summary
+      const pendingLocalsCount = localPlaceholders.value.length
       summary.value = {
-        queued: Number(remoteSummary?.queued ?? tasks.value.filter(task => task.status === 'QUEUED').length),
-        processing: Number(remoteSummary?.processing ?? tasks.value.filter(task => task.status === 'PROCESSING').length),
-        succeeded: Number(remoteSummary?.succeeded ?? tasks.value.filter(task => task.status === 'SUCCEEDED').length),
-        failed: Number(remoteSummary?.failed ?? tasks.value.filter(task => task.status === 'FAILED').length),
-        cancelRequested: Number(remoteSummary?.cancelRequested ?? tasks.value.filter(task => task.status === 'CANCEL_REQUESTED').length),
-        cancelled: Number(remoteSummary?.cancelled ?? tasks.value.filter(task => task.status === 'CANCELLED').length)
+        queued: Number(remoteSummary?.queued ?? remoteTasks.filter(task => task.status === 'QUEUED').length) + pendingLocalsCount,
+        processing: Number(remoteSummary?.processing ?? remoteTasks.filter(task => task.status === 'PROCESSING').length),
+        succeeded: Number(remoteSummary?.succeeded ?? remoteTasks.filter(task => task.status === 'SUCCEEDED').length),
+        failed: Number(remoteSummary?.failed ?? remoteTasks.filter(task => task.status === 'FAILED').length),
+        cancelRequested: Number(remoteSummary?.cancelRequested ?? remoteTasks.filter(task => task.status === 'CANCEL_REQUESTED').length),
+        cancelled: Number(remoteSummary?.cancelled ?? remoteTasks.filter(task => task.status === 'CANCELLED').length)
+      }
+
+      const currentActiveCount = activeTasks.value.length
+      if (hadActiveTasks && currentActiveCount === 0) {
+        hadActiveTasks = false
+        try {
+          await options.onIdle?.()
+        } catch {
+          // Ignore error from onIdle callback
+        }
+      } else if (currentActiveCount > 0) {
+        hadActiveTasks = true
       }
     } catch (cause) {
       if (version === requestVersion) error.value = cause instanceof Error ? cause : new Error('任务列表加载失败，请稍后重试。')
@@ -232,24 +227,43 @@ export function useUploadTasks(
     document.removeEventListener('visibilitychange', handleVisibilityChange)
   })
 
-  function rememberLocal(files: File[]) {
-    const locals = files.map(file => ({
-      id: `local:${crypto.randomUUID()}`,
+  function rememberLocal(files: File[], batchId = crypto.randomUUID()) {
+    const locals: UploadTask[] = files.map((file, index) => ({
+      id: `local:${batchId}:${index}`,
       filename: file.name,
       status: 'QUEUED' as UploadTaskStatus,
-      progress: 8,
+      progress: 5,
       attempts: 0,
       maxAttempts: 3,
       retryable: false,
       createdAt: new Date().toISOString()
     }))
-    tasks.value = [...locals, ...tasks.value.filter(task => !String(task.id).startsWith('local:'))]
+    localPlaceholders.value = [...localPlaceholders.value, ...locals]
+    tasks.value = [...localPlaceholders.value, ...tasks.value.filter(task => !String(task.id).startsWith('local:'))]
     summary.value = {
       ...summary.value,
       queued: summary.value.queued + locals.length
     }
     loading.value = false
     error.value = null
+    hadActiveTasks = true
+    return batchId
+  }
+
+  function forgetLocalBatch(batchId: string) {
+    const prefix = `local:${batchId}:`
+    const removed = localPlaceholders.value.filter(task => String(task.id).startsWith(prefix)).length
+    localPlaceholders.value = localPlaceholders.value.filter(task => !String(task.id).startsWith(prefix))
+    tasks.value = tasks.value.filter(task => !String(task.id).startsWith(prefix))
+    if (removed > 0) {
+      summary.value = {
+        ...summary.value,
+        queued: Math.max(0, summary.value.queued - removed)
+      }
+    }
+    if (!activeTasks.value.length) {
+      hadActiveTasks = false
+    }
   }
 
   return {
@@ -265,6 +279,8 @@ export function useUploadTasks(
     load,
     retry,
     cancel,
-    rememberLocal
+    rememberLocal,
+    forgetLocalBatch
   }
 }
+

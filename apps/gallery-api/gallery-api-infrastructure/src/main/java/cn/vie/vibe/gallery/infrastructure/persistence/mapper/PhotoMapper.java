@@ -35,6 +35,9 @@ public interface PhotoMapper {
     @Select("SELECT COUNT(*) FROM photo WHERE tenant_id=UUID_TO_BIN(#{tenantId}) AND gallery_id=UUID_TO_BIN(#{galleryId}) AND deleted_at IS NULL AND status='READY'")
     int countPublicReadyByGallery(@Param("tenantId") String tenantId, @Param("galleryId") String galleryId);
 
+    @Select("SELECT COUNT(*) FROM photo WHERE tenant_id=UUID_TO_BIN(#{tenantId}) AND gallery_id=UUID_TO_BIN(#{galleryId}) AND deleted_at IS NULL AND status='FAILED'")
+    int countFailedByGallery(@Param("tenantId") String tenantId, @Param("galleryId") String galleryId);
+
     @Update("UPDATE photo SET status=#{status},updated_at=UTC_TIMESTAMP(6) WHERE tenant_id=UUID_TO_BIN(#{tenantId}) AND id=UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
     int status(@Param("tenantId") String tenantId, @Param("id") String id, @Param("status") String status);
 

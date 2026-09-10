@@ -4,8 +4,8 @@ import Icon from '../Icon.vue'
 
 defineProps<{
   uploading: boolean
-  progress: number
-  statusText: string
+  progress?: number
+  statusText?: string
 }>()
 
 const emit = defineEmits<{
@@ -83,9 +83,11 @@ function handleDrop(event: DragEvent) {
       <small>单张不超过 50MB</small>
     </template>
     <div v-else class="upload-progress" role="status" @click.stop>
-      <strong>{{ statusText || '正在上传…' }}</strong>
-      <div class="track"><div class="fill" :style="{ width: `${progress}%` }"></div></div>
-      <span>{{ progress }}%</span>
+      <span class="upload-icon spinning-icon">
+        <Icon name="refresh" :size="24" />
+      </span>
+      <strong>{{ statusText || '已加入队列，正在上传…' }}</strong>
+      <small>处理进度请查看右侧任务中心</small>
     </div>
     <input ref="input" type="file" multiple accept="image/jpeg,image/png,image/webp" hidden @change="handleInput" />
   </section>
@@ -106,6 +108,7 @@ function handleDrop(event: DragEvent) {
   color: #00b88f;
   cursor: pointer;
   text-align: center;
+  transition: all 0.2s ease;
 }
 
 .upload-tile:hover,
@@ -130,6 +133,15 @@ function handleDrop(event: DragEvent) {
   margin-bottom: 4px;
 }
 
+.spinning-icon {
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .upload-tile strong {
   font-size: 15px;
   font-weight: 750;
@@ -146,19 +158,8 @@ function handleDrop(event: DragEvent) {
   width: 100%;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
   color: #047857;
-}
-
-.track {
-  height: 6px;
-  border-radius: 999px;
-  background: #d1fae5;
-  overflow: hidden;
-}
-
-.fill {
-  height: 100%;
-  background: #00b88f;
 }
 </style>

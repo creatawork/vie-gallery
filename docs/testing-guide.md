@@ -16,8 +16,12 @@
 - M7.1 Viewer 配置草稿、发布、版本历史、schema 校验和回滚。
 - M7.2 3D Gallery 生成 WebP TEXTURE，2D Gallery 跳过 TEXTURE。
 - 创作者内部草稿预览：`POST /api/galleries/{id}/preview-token`，公开端接受 `X-Preview-Token` 或 `?preview=`；无令牌时未发布相册仍 404。
-- **P0-01 基础质量门禁**：文档链接检查、前端类型检查、前端构建和后端单元测试已纳入 GitHub Actions CI。
+- **P0-01 基础质量与集成测试门禁**：文档链接检查、前端类型检查、前端构建、后端单元测试与 Testcontainers 真实依赖集成测试，Playwright smoke 测试套件。
 - **P0-03 账户密码恢复与 Gallery 密码设置**：忘记密码/重置密码和 Gallery PASSWORD 设置/清除已完成。
+- **P0-04 生产安全与部署基线**：配置分环境（`application-prod.yml`）、生产弱口令校验器、健康检查探针（`DependencyHealthIndicator`）、Nginx 安全响应头与 multi-stage Dockerfile 镜像。
+- **P1-01 统一上传状态与任务中心**：移除独立轮询，任务中心成为唯一事实来源，支持本地占位与远端合并、汇总条与状态过滤。
+- **P1-02 完善相册总览与管理摘要**：`GallerySummary` 聚合照片数、处理中数、失败数与待发布配置，总览支持状态筛选与排序。
+- **P1-04 统一发布中心**：`GET /api/galleries/{id}/publish-readiness` 发布前就绪检查，三阶段统一发布面板，一键发布与撤回发布。
 
 ### 部分完成或待验收
 
@@ -78,34 +82,33 @@ docker compose -f infra/docker-compose.yml down
 
 ### CI 质量门禁
 
-GitHub Actions 在每次 push/PR 时自动执行：
+GitHub Actions workflow（`.github/workflows/quality.yml`）已配置，但**暂不绑定 push/PR 自动触发**（尚无生产服务器与域名）。需要时在仓库 **Actions → Quality → Run workflow** 手动执行。
+
+日常开发在本地跑：
 
 ```bash
-# 文档链接检查
-npm run check:docs
-
-# 前端类型检查
-npm run typecheck
-
-# 前端构建
-npm run build
-
-# 后端单元测试
-mvn -B -ntp -f apps/gallery-api/pom.xml test
+# 全仓全量验证（文档链接 + 前端类型检查 + 前端构建 + 后端单元/集成测试）
+npm run verify:full
 ```
 
-CI 当前覆盖单元测试、类型安全、构建和文档链接；真实 MySQL/Redis/MinIO 集成测试属于 P0-01 后续工作。
-
-### 本地后端测试
+### 本地全量验证与测试
 
 ```bash
-cd apps/gallery-api
+# 本地快速前端与文档验证
+npm run verify
+
+# 本地完整验证（含后端 23 个测试套件）
+npm run verify:full
+
+# 运行后端单元测试与集成测试
 mvn test
-mvn -DskipTests verify
 ```
 
-重点测试公开访问、分享 Token、创作者预览令牌、密码 Session、READY 过滤、任务状态和配置版本：
+重点测试公开访问、分享 Token、创作者预览令牌、密码 Session、发布就绪检查、任务状态和配置版本：
 
+- `GalleryLifecycleIntegrationTest`（集成测试：注册、登录 Session、创建相册、发布就绪阻断、预览令牌公开隔离与鉴权）
+- `GalleryControllerTest`（相册摘要、多状态任务统计与待发布配置、发布就绪检查）
+- `ProductionConfigValidatorTest`（生产环境弱口令拦截校验）
 - `PublicAccessFacadeTest`（含未发布相册 + 有效预览令牌可见、无令牌仍 404）
 - `PublicGalleryControllerTest`
 - `ShareLinkFacadeTest`
@@ -113,9 +116,7 @@ mvn -DskipTests verify
 - `GalleryViewerConfigVersioningTest`
 - `RedisRateLimiterTest`
 
-当前后端测试是单元测试为主；真实 MySQL、Redis、MinIO 集成测试属于本期上线前交付物。
-
-### 本地前端检查
+### 本地前端检查与 E2E Smoke
 
 ```bash
 # 安装依赖（首次或依赖更新后）
@@ -129,9 +130,10 @@ npm run build
 
 # 统一验证（文档链接 + 类型检查 + 构建）
 npm run verify
-```
 
-前端构建包含 TypeScript 类型检查；单元测试和浏览器 E2E 在本期上线前纳入 CI。
+# 运行 Playwright smoke 测试（需启动本地前端环境）
+npm --workspace apps/gallery-admin run test:e2e
+```
 
 ### CLI 主流程
 

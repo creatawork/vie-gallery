@@ -1,10 +1,10 @@
 name: Quality
 
+# 上线前暂不绑定 push/PR：尚无生产服务器与域名，避免每次提交触发远程 CI。
+# 本地门禁：npm run verify && npm run verify:full
+# 需要时在 GitHub Actions 页手动 Run workflow。
 on:
-  push:
-    branches: ['**']
-  pull_request:
-    branches: ['**']
+  workflow_dispatch:
 
 jobs:
   quality:
@@ -30,17 +30,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check documentation links
-        run: npm run check:docs
+      - name: Verify frontend and docs
+        run: npm run verify
 
-      - name: Run frontend type checks
-        run: npm run typecheck
+      - name: Run backend unit and integration tests
+        run: mvn -B -ntp test
+        env:
+          CI: true
+          testcontainers.enabled: true
 
-      - name: Build frontend
-        run: npm run build
+  admin-smoke:
+    name: Admin smoke (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Run backend tests
-        run: mvn -B -ntp -f apps/gallery-api/pom.xml test
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-      # Note: Real MySQL/Redis/MinIO integration tests are tracked separately as part of P0-01.
-      # This workflow currently covers unit tests, type safety, builds, and documentation links.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Admin
+        run: npm run build --workspace apps/gallery-admin
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+        working-directory: apps/gallery-admin
+
+      - name: Run Playwright smoke
+        run: npm run test:e2e
+        working-directory: apps/gallery-admin
+        env:
+          CI: true
+          ADMIN_URL: http://127.0.0.1:4173

@@ -6,6 +6,7 @@ import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import { useGalleryWorkspace, type WorkspacePhoto } from '../composables/useGalleryWorkspace'
 import { useUploadTasks, type UploadTask } from '../composables/useUploadTasks'
+import { usePublishCenter } from '../composables/usePublishCenter'
 import { apiFetch } from '../api'
 import { openCreatorPreview } from '../lib/preview'
 import { useModalFocus } from '../composables/useModalFocus'
@@ -15,6 +16,7 @@ import LightboxModal from '../components/LightboxModal.vue'
 import GalleryUploadDropzone from '../components/gallery-workspace/GalleryUploadDropzone.vue'
 import GalleryPhotoCard from '../components/gallery-workspace/GalleryPhotoCard.vue'
 import UploadTaskCenter from '../components/gallery-workspace/UploadTaskCenter.vue'
+import PublishCenterPanel from '../components/gallery-workspace/PublishCenterPanel.vue'
 
 type LightboxPhoto = Omit<WorkspacePhoto, 'title'> & { title?: string }
 
@@ -28,7 +30,15 @@ const canShareManage = can('SHARE_MANAGE')
 const canConfig = can('CONFIG_WRITE')
 const galleryId = computed(() => String(route.params.id || ''))
 const workspace = useGalleryWorkspace(galleryId, computed(() => !!currentUser.value && !authLoading.value))
-const taskCenter = useUploadTasks(galleryId, computed(() => !!currentUser.value && !authLoading.value && !!workspace.gallery.value))
+const taskCenter = useUploadTasks(
+  galleryId,
+  computed(() => !!currentUser.value && !authLoading.value && !!workspace.gallery.value),
+  { onIdle: () => workspace.reload() }
+)
+const publishCenter = usePublishCenter(
+  galleryId,
+  computed(() => !!currentUser.value && !authLoading.value && !!workspace.gallery.value)
+)
 
 const photoViewMode = ref<'grid' | 'list'>('grid')
 const userMenuOpen = ref(false)
@@ -36,6 +46,7 @@ const showLightbox = ref(false)
 const lightboxIndex = ref(0)
 const photoToDelete = ref<Pick<WorkspacePhoto, 'id'> | null>(null)
 const deletingPhoto = ref(false)
+const showUnpublishModal = ref(false)
 const showShareModal = ref(false)
 const generatingShare = ref(false)
 const shareLinkData = ref<{ shareUrl: string; expiresAt?: string } | null>(null)
@@ -147,28 +158,55 @@ async function handleLogout() {
 
 async function handlePublish() {
   if (!canPublish.value) return
+  await handlePublishAll()
+}
+
+async function handlePublishAll() {
+  if (!canPublish.value) return
   try {
-    await workspace.publish()
-    toast.success('展厅已发布，访客现在可以访问。')
+    await publishCenter.publishAll()
+    await workspace.reload()
+    toast.success('展厅及配置已成功发布至访客端！')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '发布失败，请重试。')
   }
 }
 
+function promptUnpublish() {
+  if (!isOwner.value) return
+  showUnpublishModal.value = true
+}
+
+async function confirmUnpublish() {
+  showUnpublishModal.value = false
+  try {
+    await publishCenter.unpublish()
+    await workspace.reload()
+    toast.success('已撤回发布，展厅已恢复为草稿状态。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '撤回发布失败。')
+  }
+}
+
 async function handleUpload(files: FileList | File[]) {
   if (!canPhotoWrite.value) return
-  taskCenter.rememberLocal(Array.from(files))
+  const selected = Array.from(files)
+  const batchId = taskCenter.rememberLocal(selected)
   try {
-    const summary = await workspace.uploadFiles(files, { onQueued: () => taskCenter.load(true) })
+    const summary = await workspace.uploadFiles(files, {
+      batchId,
+      onQueued: () => taskCenter.load(true)
+    })
     await taskCenter.load(true)
-    if (summary.failed || summary.timedOut || summary.rejected) {
-      toast.warning(`已处理 ${summary.succeeded} 张，${summary.failed + summary.timedOut + summary.rejected} 张仍需检查。`)
+    if (summary.rejected > 0) {
+      toast.warning(`已加入队列 ${summary.succeeded} 张，${summary.rejected} 张文件未通过格式校验。`)
     } else {
-      toast.success(`成功上传 ${summary.succeeded} 张照片。`)
+      toast.success(`已加入队列 ${summary.succeeded} 张照片，正在后台处理。`)
     }
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '照片上传失败，请重试。')
+    taskCenter.forgetLocalBatch(batchId)
     await taskCenter.load(true)
+    toast.error(error instanceof Error ? error.message : '照片上传失败，请重试。')
   }
 }
 
@@ -518,19 +556,37 @@ function shareStatusLabel(status: string) {
             </div>
           </section>
 
-          <UploadTaskCenter
-            :tasks="taskCenter.tasks.value"
-            :summary="taskCenter.summary.value"
-            :loading="taskCenter.loading.value"
-            :refreshing="taskCenter.refreshing.value"
-            :error="taskCenter.error.value"
-            :can-write="canPhotoWrite"
-            :filter="taskCenter.filter.value"
-            @update:filter="taskCenter.filter.value = $event"
-            @refresh="taskCenter.load(true)"
-            @retry="handleRetryTask"
-            @cancel="handleCancelTask"
-          />
+          <div class="workspace-sidebar">
+            <PublishCenterPanel
+              :gallery="workspace.gallery.value"
+              :readiness="publishCenter.readiness.value"
+              :loading="publishCenter.loading.value"
+              :publishing="publishCenter.publishing.value"
+              :unpublishing="publishCenter.unpublishing.value"
+              :can-publish="canPublish"
+              :can-config="canConfig"
+              :is-owner="isOwner"
+              @publish="handlePublishAll"
+              @unpublish="promptUnpublish"
+              @preview="openViewer"
+              @open-config="goToConfig"
+              @refresh="publishCenter.loadReadiness"
+            />
+
+            <UploadTaskCenter
+              :tasks="taskCenter.tasks.value"
+              :summary="taskCenter.summary.value"
+              :loading="taskCenter.loading.value"
+              :refreshing="taskCenter.refreshing.value"
+              :error="taskCenter.error.value"
+              :can-write="canPhotoWrite"
+              :filter="taskCenter.filter.value"
+              @update:filter="taskCenter.filter.value = $event"
+              @refresh="taskCenter.load(true)"
+              @retry="handleRetryTask"
+              @cancel="handleCancelTask"
+            />
+          </div>
         </div>
 
         <footer class="hall-footer">© 2026 VIE Gallery</footer>
@@ -570,6 +626,17 @@ function shareStatusLabel(status: string) {
         </div>
       </div>
     </Transition>
+
+    <ConfirmModal
+      :show="showUnpublishModal"
+      title="确认撤回展厅发布？"
+      message="撤回后，访客将无法再公开访问此展厅，已生成的公开链接将暂时失效。"
+      confirm-text="确认撤回"
+      danger
+      :loading="publishCenter.unpublishing.value"
+      @confirm="confirmUnpublish"
+      @cancel="showUnpublishModal = false"
+    />
 
     <ConfirmModal
       :show="!!photoToDelete"
@@ -900,9 +967,15 @@ function shareStatusLabel(status: string) {
 
 .hall-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 18px;
   margin-top: 18px;
+}
+
+.workspace-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .photo-panel {

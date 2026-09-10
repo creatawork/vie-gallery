@@ -476,6 +476,11 @@ class PublicAccessFacadeTest {
                     && photo.galleryId().equals(galleryId) && photo.status() == PhotoStatus.READY).count();
         }
 
+        public int countFailedByGalleryId(UUID tenantId, UUID galleryId) {
+            return (int) values.values().stream().filter(photo -> photo.tenantId().equals(tenantId)
+                    && photo.galleryId().equals(galleryId) && photo.status() == PhotoStatus.FAILED).count();
+        }
+
         public int updateStatus(UUID tenantId, UUID photoId, PhotoStatus status) {
             Photo photo = values.get(photoId);
             if (photo == null || !photo.tenantId().equals(tenantId)) return 0;

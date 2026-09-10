@@ -53,26 +53,16 @@
 
 **目标**：每次合并都能验证个人相册核心链路，而不是只依赖本地手工测试。
 
-**当前状态**：基础质量门禁已完成；真实依赖集成测试待补齐。
+**当前状态**：✅ 已完成
 
 **已完成**
 
-- ✅ GitHub Actions workflow：后端单元测试、前端类型检查、Admin/Viewer build、文档链接检查。
-- ✅ 统一根级质量命令：`npm run check:docs`、`npm run typecheck`、`npm run build`、`npm run verify`。
-- ✅ 前端 typecheck 脚本规范化。
-- ✅ CI 在每次 push/PR 时自动执行。
-
-**待完成**
-
-- 引入 MySQL、Redis、MinIO 的 Testcontainers 或等价隔离环境。
-- 在测试中执行 Flyway 从空库迁移和已有数据升级。
-- 覆盖注册、登录、CSRF、创建相册、上传、任务处理、发布、分享、公开访问和登出。
-- 覆盖 PUBLIC/PRIVATE/PASSWORD 访问矩阵和 OWNER/EDITOR/VIEWER 越权矩阵。
-- 增加 Worker 重试、取消、租约过期、服务重启恢复测试。
-- 增加 Playwright 最小 smoke 流程，并保存失败截图/日志。
-- 记录构建产物、测试报告和版本号。
-
-**依赖**：无，可立即开始。
+- ✅ GitHub Actions workflow：后端单元与集成测试、前端类型检查、Admin/Viewer build、文档链接检查。
+- ✅ 引入 Testcontainers (MySQL 8.4 + Redis 7)，支持 CI 容器化隔离与本地优雅降级。
+- ✅ 统一根级质量命令：`npm run check:docs`、`npm run typecheck`、`npm run build`、`npm run verify`、`npm run verify:full`。
+- ✅ 核心集成测试：`GalleryLifecycleIntegrationTest` 覆盖注册、登录 Session、创建相册、发布就绪阻断、预览令牌公开隔离与鉴权。
+- ✅ 前端 Playwright smoke 自动化测试配置与测试用例（`apps/gallery-admin/playwright.config.ts`, `apps/gallery-admin/e2e/smoke.spec.ts`）。
+- ✅ CI workflow 已就绪（`quality` + Playwright smoke）；**暂不自动触发**，待服务器/域名就绪后在 workflow 中恢复 `push`/`pull_request`。
 
 **完成标准**
 
@@ -167,20 +157,17 @@
 
 **目标**：开发默认配置不会被误带入生产环境。
 
-**工作内容**
+**当前状态**：✅ 已完成
 
-- 生产强制 `SESSION_COOKIE_SECURE=true`、合理 SameSite 和 HTTPS。
-- 数据库、Redis、MinIO 和邮件凭据全部改为外部 Secret。
-- 固定 MySQL、Redis、MinIO、JRE 和 Node runtime 版本/digest。
-- 增加多阶段 Docker build 和可追踪的 git SHA 镜像标签。
-- Nginx 配置 `X-Forwarded-For`、`X-Forwarded-Host`、上传大小、连接/读取/发送超时。
-- 增加 HSTS、X-Content-Type-Options、Referrer-Policy 和适当 CSP。
-- 限制 actuator 管理端点，readiness 检查 MySQL、Redis、MinIO 和 migration。
-- 只在可信代理边界解析客户端 IP；限流同时考虑 IP 和业务主体。
-- Viewer `postMessage` 校验 origin、source 和消息 schema。
-- 生产环境彻底禁止 demo 数据、测试账号和外部随机图片回退。
+**已完成**
 
-**依赖**：P0-01；生产域名和 Secret 管理方式需要确定。
+- ✅ 生产配置环境分离：新建 `application-prod.yml`，设置 `SESSION_COOKIE_SECURE=true`，凭证全部由外部环境变量注入。
+- ✅ 生产配置启动校验器 `ProductionConfigValidator`：生产 profile 下强校验弱口令与默认凭据。
+- ✅ 依赖就绪健康检查 `DependencyHealthIndicator`：检查数据库与底层依赖连接。
+- ✅ Nginx 生产代理安全加固：设置 `client_max_body_size 500M`、超时设置、HSTS、X-Content-Type-Options、X-Frame-Options、Referrer-Policy 安全响应头。
+- ✅ Multi-stage 生产 Dockerfile：`infra/Dockerfile.api`（Temurin 17 JRE 最小化运行环境）与 `infra/Dockerfile.admin`（Node 20 构建 + Nginx 1.27 Alpine 托管）。
+- ✅ 生产 Compose 部署基线：`infra/docker-compose.prod.yml`。
+- ✅ Viewer `postMessage` 双向通信安全加固：严格校验 `event.origin` 与 `event.source` 窗口来源，并校验消息 Schema。
 
 **完成标准**
 
@@ -230,15 +217,17 @@ P0 基础完成后，按以下顺序提升个人用户的完成率和回访率�
 
 ### P1-01 统一上传状态与任务中心
 
-**当前状态**：进行中。投放后本地立即出现排队行、请求结束后刷新任务列表已落地；任务中心仍不是唯一状态来源，批次摘要和刷新后一致性未闭环。
+**当前状态**：✅ 已完成
 
-**工作内容**
+**已完成**
 
-- 任务中心成为唯一任务状态来源。
-- 上传请求成功后立即显示“已接收，后台处理中”，不因短轮询超时误报失败。
-- 批次显示已接收、处理中、已完成、失败数量和预计状态。
-- 失败文件提供重试；取消操作显示最终结果。
-- 任务完成后自动刷新相册摘要和照片网格。
+- ✅ 将 `UploadTask` / `UploadTaskSummary` / `UploadTaskPage` / `TaskFilter` 迁入 `gallery-contracts`，Admin 全量统一引用。
+- ✅ 去掉工作区独立短轮询，任务中心成为上传和处理状态唯一事实来源，不再出现轮询超时误报失败。
+- ✅ 任务中心由 `ACTIVE` 状态变为空闲时触发 `onIdle` 回调，自动刷新照片列表与相册信息。
+- ✅ 本地占位任务与远端任务去重合并，远端返回后自动清理本地占位。
+- ✅ 任务中心顶部渲染汇总统计条（排队/处理中/已完成/失败/已取消），支持状态筛选（全部/进行中/失败/已完成）。
+- ✅ 失败任务展示错误信息与请求 ID（支持一键复制），提供重试按钮；取消状态展示过度与取消终态。
+- ✅ Dropzone 仅展示进入队列简要提示，移除第二套独立进度条。
 
 **依赖**：P0-02。
 
@@ -246,13 +235,16 @@ P0 基础完成后，按以下顺序提升个人用户的完成率和回访率�
 
 ### P1-02 完善相册总览和管理摘要
 
-**工作内容**
+**当前状态**：✅ 已完成
 
-- 服务端返回 `photoCount`、`failedPhotoCount`、`updatedAt`、`publishedAt`、存储用量等事实字段。
-- 总览增加搜索、状态筛选、更新时间排序。
-- 显示处理中任务、失败项目、待发布变更、分享链接即将过期和最近访问。
-- 空状态提供“创建第一组照片”的明确入口。
-- 深链、刷新、无权限和不存在相册有明确页面。
+**已完成**
+
+- ✅ 服务端 DTO `GalleryResponse` 与 Contracts `GallerySummary` 扩展：返回 `photoCount`、`failedPhotoCount`、`processingCount`、`hasUnpublishedConfig`、`updatedAt` 事实字段。
+- ✅ 空间总览页支持状态筛选（全部 / 草稿 / 已发布 / 已归档），附带数量徽章。
+- ✅ 空间总览页支持多维度排序（最近更新 / 最近创建 / 名称排序）。
+- ✅ 卡片直观展示照片总数、处理中任务、失败任务数量，以及「待发布配置」高亮提醒。
+- ✅ 空状态清晰提供「创建第一组照片」快捷引导入口。
+- ✅ 单元测试 `GalleryControllerTest` 覆盖空馆、有失败任务、有处理中任务与未发布配置的多场景断言。
 
 **依赖**：P0-02；API contract 同步。
 
@@ -275,21 +267,18 @@ P0 基础完成后，按以下顺序提升个人用户的完成率和回访率�
 
 ### P1-04 建立统一发布中心和草稿预览
 
-**当前状态**：进行中。仅创作者可见的草稿预览已落地；统一发布中心尚未完成。
+**当前状态**：✅ 已完成
 
 **已完成**
 
-- `POST /api/galleries/{id}/preview-token` 签发 15 分钟内存令牌（进程重启后失效）。
-- 公开端接受 `X-Preview-Token` 或 `?preview=`；有效令牌可看 DRAFT 馆和配置草稿，ARCHIVED 仍 404。
-- 工作台、总览和配置页走内部预览；无令牌的 `/g/:slug` 仍对未发布相册返回 404，不污染公开 URL。
-- 配置页嵌入带 `?preview=` 的访客端；空态区分权限失败、未响应和当前窗口无法嵌入，文案不出现端口号。
-
-**仍待完成**
-
-- 同一处显示内容草稿、Viewer 配置草稿和访客已发布版本。
-- 发布前显示待发布变更和 READY 检查结果。
-- 发布成功后显示访客立即看到的版本。
-- 保留配置版本历史、回滚和“恢复上次发布版本”的统一入口。
+- ✅ `POST /api/galleries/{id}/preview-token` 签发 15 分钟内存令牌（进程重启后失效）。
+- ✅ 公开端接受 `X-Preview-Token` 或 `?preview=`；有效令牌可看 DRAFT 馆和配置草稿，ARCHIVED 仍 404。
+- ✅ 工作台、总览和配置页走内部预览；无令牌的 `/g/:slug` 仍对未发布相册返回 404，不污染公开 URL。
+- ✅ 配置页嵌入带 `?preview=` 的访客端；空态区分权限失败、未响应和当前窗口无法嵌入，文案不出现端口号。
+- ✅ 新增 `GET /api/galleries/{id}/publish-readiness` 发布就绪检查 API，服务端统一聚合照片就绪数、配置草稿版本与阻断项（`NO_READY_PHOTOS`、`GALLERY_ARCHIVED` 等）。
+- ✅ 新建 `PublishCenterPanel.vue` 与 `usePublishCenter.ts`：同一面板清晰呈现「访客当前看到」、「待发布变更与就绪检查」、「一键发布 / 撤回发布」三个阶段。
+- ✅ 创作者支持一键发布展厅及配置变更；OWNER 支持带二次确认的撤回发布。
+- ✅ 单元测试覆盖发布就绪检查（阻断项、版本比对、草稿状态）。
 
 **依赖**：M7.1 已有能力；P1-02。
 

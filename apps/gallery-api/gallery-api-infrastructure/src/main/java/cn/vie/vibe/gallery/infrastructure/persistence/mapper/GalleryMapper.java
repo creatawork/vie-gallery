@@ -15,7 +15,7 @@ import java.util.Optional;
 public interface GalleryMapper {
     String COLUMNS = "BIN_TO_UUID(id) id, BIN_TO_UUID(tenant_id) tenantId, slug, name, visibility, " +
             "password_hash passwordHash, BIN_TO_UUID(cover_photo_id) coverPhotoId, " +
-            "(deleted_at IS NOT NULL) deleted, created_at createdAt, status, published_at publishedAt";
+            "(deleted_at IS NOT NULL) deleted, created_at createdAt, updated_at updatedAt, status, published_at publishedAt";
 
     @Select("SELECT " + COLUMNS + " FROM gallery WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND deleted_at IS NULL ORDER BY created_at DESC")
     List<Map<String, Object>> findAll(@Param("tenantId") String tenantId);

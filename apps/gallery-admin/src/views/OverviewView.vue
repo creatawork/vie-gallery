@@ -19,6 +19,9 @@ const FALLBACK_COVERS = [
   '/covers/bamboo.png'
 ]
 
+type StatusFilter = 'ALL' | 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
+type SortOption = 'updated' | 'created' | 'name'
+
 const router = useRouter()
 const toast = useToast()
 const { currentUser, setUser, logout, can, userDisplayName, userInitial, isOwner } = useAuth()
@@ -38,6 +41,8 @@ const loading = ref(false)
 const loadError = ref('')
 
 const searchQuery = ref('')
+const statusFilter = ref<StatusFilter>('ALL')
+const sortBy = ref<SortOption>('updated')
 const viewMode = ref<'grid' | 'list'>('grid')
 const menuId = ref<string | null>(null)
 const userMenuOpen = ref(false)
@@ -61,11 +66,35 @@ function openCreateModal() {
   showCreateModal.value = true
 }
 
+const statusCounts = computed(() => {
+  const all = galleries.value.length
+  const draft = galleries.value.filter(g => g.status === 'DRAFT').length
+  const published = galleries.value.filter(g => g.status === 'PUBLISHED').length
+  const archived = galleries.value.filter(g => g.status === 'ARCHIVED').length
+  return { all, draft, published, archived }
+})
+
 const filteredGalleries = computed(() => {
-  return galleries.value.filter(g => {
+  const list = galleries.value.filter(g => {
+    if (statusFilter.value !== 'ALL' && g.status !== statusFilter.value) return false
     if (!searchQuery.value.trim()) return true
     const query = searchQuery.value.trim().toLowerCase()
     return g.name.toLowerCase().includes(query) || g.slug.toLowerCase().includes(query)
+  })
+
+  return list.slice().sort((a, b) => {
+    if (sortBy.value === 'name') {
+      return a.name.localeCompare(b.name, 'zh-CN')
+    }
+    if (sortBy.value === 'created') {
+      const ta = new Date(a.createdAt).getTime() || 0
+      const tb = new Date(b.createdAt).getTime() || 0
+      return tb - ta
+    }
+    // Default: 'updated'
+    const ta = new Date(a.updatedAt || a.createdAt).getTime() || 0
+    const tb = new Date(b.updatedAt || b.createdAt).getTime() || 0
+    return tb - ta
   })
 })
 
@@ -76,14 +105,20 @@ function coverFor(gallery: Gallery) {
   return FALLBACK_COVERS[hash % FALLBACK_COVERS.length]
 }
 
-function formatCreatedAt(value?: string | null) {
-  if (!value) return '刚刚创建'
+function formatTime(value?: string | null) {
+  if (!value) return '刚刚'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '刚刚创建'
+  if (Number.isNaN(date.getTime())) return '刚刚'
+  const now = Date.now()
+  const diff = now - date.getTime()
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`
+  if (diff < 86400_000 * 7) return `${Math.floor(diff / 86400_000)} 天前`
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
-  return `创建于 ${y}-${m}-${d}`
+  return `${y}-${m}-${d}`
 }
 
 function visibilityLabel(gallery: Gallery) {
@@ -91,7 +126,7 @@ function visibilityLabel(gallery: Gallery) {
 }
 
 function statusLabel(gallery: Gallery) {
-  return gallery.status === 'PUBLISHED' ? '已发布' : '草稿'
+  return gallery.status === 'PUBLISHED' ? '已发布' : gallery.status === 'ARCHIVED' ? '已归档' : '草稿'
 }
 
 function toggleCardMenu(id: string, event: Event) {
@@ -309,7 +344,7 @@ async function handleCreateGallery() {
     </div>
   </div>
 
-  <!-- 我的空间 — full reproduction of gui-test-screenshots/image1.png -->
+  <!-- 我的空间 -->
   <div v-else class="space-page">
     <div class="space-scene" aria-hidden="true"></div>
 
@@ -363,7 +398,54 @@ async function handleCreateGallery() {
           <Icon name="plus" :size="16" />
           <span>新建空间</span>
         </button>
+
+        <!-- 状态筛选 Chips -->
+        <div class="status-filter-group">
+          <button
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'ALL' }"
+            type="button"
+            @click="statusFilter = 'ALL'"
+          >
+            全部 ({{ statusCounts.all }})
+          </button>
+          <button
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'DRAFT' }"
+            type="button"
+            @click="statusFilter = 'DRAFT'"
+          >
+            草稿 ({{ statusCounts.draft }})
+          </button>
+          <button
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'PUBLISHED' }"
+            type="button"
+            @click="statusFilter = 'PUBLISHED'"
+          >
+            已发布 ({{ statusCounts.published }})
+          </button>
+          <button
+            v-if="statusCounts.archived > 0"
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'ARCHIVED' }"
+            type="button"
+            @click="statusFilter = 'ARCHIVED'"
+          >
+            已归档 ({{ statusCounts.archived }})
+          </button>
+        </div>
+
         <div class="space-toolbar-right">
+          <!-- 排序方式 -->
+          <div class="sort-selector">
+            <select v-model="sortBy" class="sort-select" aria-label="排序方式">
+              <option value="updated">最近更新</option>
+              <option value="created">最近创建</option>
+              <option value="name">名称排序</option>
+            </select>
+          </div>
+
           <div class="view-toggle" role="group" aria-label="展示方式">
             <button
               class="view-btn"
@@ -384,13 +466,14 @@ async function handleCreateGallery() {
               <Icon name="list" :size="15" />
             </button>
           </div>
+
           <div class="search-box">
             <Icon name="search" :size="16" class="search-icon" />
             <input
               v-model="searchQuery"
               type="text"
               class="search-input"
-              placeholder="搜索空间名称"
+              placeholder="搜索空间名称或地址"
             />
           </div>
         </div>
@@ -416,10 +499,28 @@ async function handleCreateGallery() {
             <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
               {{ visibilityLabel(gallery) }}
             </span>
+            <span v-if="gallery.hasUnpublishedConfig" class="badge-draft-config">
+              待发布配置
+            </span>
           </div>
           <div class="card-body">
-            <h2>{{ gallery.name }}</h2>
-            <p class="card-date">{{ formatCreatedAt(gallery.createdAt) }}</p>
+            <div class="card-title-row">
+              <h2>{{ gallery.name }}</h2>
+            </div>
+
+            <!-- 卡片 Meta 数据摘要 -->
+            <div class="card-metrics-row">
+              <span class="metric-item">{{ gallery.photoCount ?? 0 }} 张照片</span>
+              <span v-if="gallery.processingCount && gallery.processingCount > 0" class="metric-badge processing">
+                {{ gallery.processingCount }} 处理中
+              </span>
+              <span v-if="gallery.failedPhotoCount && gallery.failedPhotoCount > 0" class="metric-badge failed">
+                {{ gallery.failedPhotoCount }} 失败
+              </span>
+            </div>
+
+            <p class="card-date">更新于 {{ formatTime(gallery.updatedAt || gallery.createdAt) }}</p>
+
             <div class="card-foot">
               <span class="status-meta">
                 <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
@@ -468,9 +569,21 @@ async function handleCreateGallery() {
         >
           <img :src="coverFor(gallery)" class="list-thumb" :alt="gallery.name" />
           <div class="list-copy">
-            <strong>{{ gallery.name }}</strong>
-            <span>{{ formatCreatedAt(gallery.createdAt) }}</span>
+            <div class="list-head-row">
+              <strong>{{ gallery.name }}</strong>
+              <span v-if="gallery.hasUnpublishedConfig" class="badge-draft-config-inline">待发布配置</span>
+            </div>
+            <div class="list-meta-line">
+              <span>{{ gallery.photoCount ?? 0 }} 张照片</span>
+              <span v-if="gallery.processingCount && gallery.processingCount > 0" class="metric-badge processing-sm">{{ gallery.processingCount }} 处理中</span>
+              <span v-if="gallery.failedPhotoCount && gallery.failedPhotoCount > 0" class="metric-badge failed-sm">{{ gallery.failedPhotoCount }} 失败</span>
+              <span>更新于 {{ formatTime(gallery.updatedAt || gallery.createdAt) }}</span>
+            </div>
           </div>
+          <span class="status-meta">
+            <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
+            <span>{{ statusLabel(gallery) }}</span>
+          </span>
           <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
             {{ visibilityLabel(gallery) }}
           </span>
@@ -479,8 +592,8 @@ async function handleCreateGallery() {
 
       <div v-else-if="galleries.length && !filteredGalleries.length" class="space-empty">
         <h3>未找到匹配的空间</h3>
-        <p>没有找到与 “{{ searchQuery }}” 相关的空间。</p>
-        <button class="btn btn-secondary" type="button" @click="searchQuery = ''">清除搜索</button>
+        <p>没有找到与当前筛选或 “{{ searchQuery }}” 相关的空间。</p>
+        <button class="btn btn-secondary" type="button" @click="searchQuery = ''; statusFilter = 'ALL'">重置筛选</button>
       </div>
 
       <div v-else-if="loading" class="space-empty">
@@ -492,7 +605,7 @@ async function handleCreateGallery() {
         <p>创建第一个 3D 展厅，上传照片后即可配置氛围并分享给访客。</p>
         <button v-if="canCreateGallery" class="space-create-btn" type="button" @click="openCreateModal">
           <Icon name="plus" :size="16" />
-          <span>新建空间</span>
+          <span>创建第一组照片</span>
         </button>
       </div>
     </div>
@@ -773,7 +886,7 @@ async function handleCreateGallery() {
 }
 
 /* ==========================================================================
-   2. 我的空间 — image1.png full-bleed reproduction
+   2. 我的空间 Layout
    ========================================================================== */
 .space-page {
   position: relative;
@@ -890,7 +1003,7 @@ async function handleCreateGallery() {
   align-items: center;
   gap: 10px;
   justify-self: end;
-  padding: 4px 4px 4px 4px;
+  padding: 4px;
   cursor: pointer;
   color: #374151;
 }
@@ -961,8 +1074,8 @@ async function handleCreateGallery() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin: 22px 0 22px;
+  gap: 12px;
+  margin: 22px 0;
   flex-wrap: wrap;
 }
 
@@ -970,24 +1083,75 @@ async function handleCreateGallery() {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 20px;
+  padding: 10px 18px;
   border-radius: 12px;
   background: #00b88f;
   color: #fff;
   font-size: 14px;
   font-weight: 700;
   box-shadow: 0 8px 20px rgba(0, 184, 143, 0.28);
+  border: none;
+  cursor: pointer;
+  transition: all 0.18s ease;
 }
 
 .space-create-btn:hover {
   background: #00a67f;
 }
 
+.status-filter-group {
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 4px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+
+.status-tab-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.status-tab-btn:hover {
+  color: #00b88f;
+}
+
+.status-tab-btn.active {
+  background: #00b88f;
+  color: #fff;
+}
+
 .space-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.sort-select {
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+  cursor: pointer;
+}
+
+.sort-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #00b88f;
 }
 
 .view-toggle {
@@ -1001,12 +1165,15 @@ async function handleCreateGallery() {
 }
 
 .view-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 8px;
+  border: none;
   color: #9ca3af;
+  background: transparent;
+  cursor: pointer;
 }
 
 .view-btn.active {
@@ -1016,7 +1183,7 @@ async function handleCreateGallery() {
 
 .search-box {
   position: relative;
-  width: 280px;
+  width: 240px;
 }
 
 .search-icon {
@@ -1030,12 +1197,13 @@ async function handleCreateGallery() {
 
 .search-input {
   width: 100%;
-  height: 42px;
-  padding: 0 16px 0 40px;
+  height: 38px;
+  padding: 0 16px 0 38px;
   border: none;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.92);
   color: #111827;
+  font-size: 13px;
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
 
@@ -1109,19 +1277,79 @@ async function handleCreateGallery() {
   color: #4b5563;
 }
 
+.badge-draft-config {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  background: #fef3c7;
+  color: #b45309;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.badge-draft-config-inline {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  background: #fef3c7;
+  color: #b45309;
+}
+
 .card-body {
   padding: 14px 16px 12px;
 }
 
-.card-body h2 {
+.card-title-row h2 {
   font-size: 16px;
   font-weight: 750;
   color: #111827;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-metrics-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.metric-item {
+  font-weight: 600;
+}
+
+.metric-badge {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.metric-badge.processing,
+.metric-badge.processing-sm {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.metric-badge.failed,
+.metric-badge.failed-sm {
+  background: #fef2f2;
+  color: #dc2626;
 }
 
 .card-date {
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 6px;
+  font-size: 11px;
   color: #9ca3af;
 }
 
@@ -1129,7 +1357,9 @@ async function handleCreateGallery() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 12px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #f3f4f6;
 }
 
 .status-meta {
@@ -1167,6 +1397,9 @@ async function handleCreateGallery() {
   display: grid;
   place-items: center;
   color: #9ca3af;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .more-btn:hover {
@@ -1183,7 +1416,7 @@ async function handleCreateGallery() {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-  z-index: 3;
+  z-index: 30;
 }
 
 .card-menu button {
@@ -1193,6 +1426,9 @@ async function handleCreateGallery() {
   border-radius: 8px;
   font-size: 13px;
   color: #374151;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .card-menu button:hover {
@@ -1212,6 +1448,7 @@ async function handleCreateGallery() {
   background: rgba(236, 253, 245, 0.62);
   color: #00b88f;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .create-card strong {
@@ -1251,11 +1488,18 @@ async function handleCreateGallery() {
   align-items: center;
   gap: 14px;
   width: 100%;
-  padding: 10px;
+  padding: 12px 16px;
   background: rgba(255, 255, 255, 0.92);
   border-radius: 14px;
+  border: none;
   text-align: left;
   box-shadow: 0 4px 16px rgba(15, 40, 28, 0.06);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.list-row:hover {
+  transform: translateX(2px);
 }
 
 .list-thumb {
@@ -1269,14 +1513,24 @@ async function handleCreateGallery() {
   display: flex;
   flex-direction: column;
   flex: 1;
+  gap: 4px;
 }
 
-.list-copy strong {
+.list-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-head-row strong {
   font-size: 14px;
   color: #111827;
 }
 
-.list-copy span {
+.list-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 12px;
   color: #9ca3af;
 }
@@ -1357,17 +1611,22 @@ async function handleCreateGallery() {
   font-size: 18px;
   font-weight: 750;
   color: #111827;
+  margin: 0;
 }
 
 .modal-title-box p {
   font-size: 13px;
   color: #6b7280;
+  margin: 0;
 }
 
 .modal-close {
   color: #9ca3af;
   padding: 6px;
   border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .modal-actions {

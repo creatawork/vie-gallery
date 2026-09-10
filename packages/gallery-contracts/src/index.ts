@@ -54,6 +54,31 @@ export interface Gallery {
   coverPhotoId?: string
   coverThumbnailUrl?: string
   createdAt: string
+  updatedAt?: string | null
+  photoCount?: number
+  failedPhotoCount?: number
+  processingCount?: number
+  hasUnpublishedConfig?: boolean
+  storageUsedBytes?: number
+}
+
+export type GallerySummary = Gallery
+
+export interface PublishBlocker {
+  code: string
+  message: string
+}
+
+export interface PublishReadinessResponse {
+  galleryStatus: GalleryStatus
+  readyPhotoCount: number
+  galleryPublishable: boolean
+  configDraftChanged: boolean
+  publishedConfigVersionId?: string | null
+  draftConfigVersionId?: string | null
+  publishedAt?: string | null
+  lastConfigPublishedAt?: string | null
+  blockers: PublishBlocker[]
 }
 
 export type PublicAccessState = 'READY' | 'PASSWORD_REQUIRED' | 'SHARE_LINK_REQUIRED' | 'EMPTY'
@@ -136,3 +161,61 @@ export interface ApiError {
   requestId?: string
   details?: Record<string, unknown>
 }
+
+export type UploadTaskStatus =
+  | 'QUEUED'
+  | 'PROCESSING'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'CANCEL_REQUESTED'
+  | 'CANCELLED'
+  | string
+
+export interface UploadTaskError {
+  code?: string | null
+  message?: string | null
+  requestId?: string | null
+}
+
+export interface UploadTask {
+  id: string
+  galleryId?: string
+  photoId?: string | null
+  filename?: string | null
+  thumbnailUrl?: string | null
+  photoThumbnailUrl?: string | null
+  status: UploadTaskStatus
+  progress: number
+  stage?: string | null
+  attempts: number
+  maxAttempts: number
+  retryable: boolean
+  error?: UploadTaskError | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  requestId?: string | null
+  createdAt?: string | null
+  startedAt?: string | null
+  updatedAt?: string | null
+  finishedAt?: string | null
+}
+
+export type TaskFilter = 'ALL' | 'ACTIVE' | 'FAILED' | 'COMPLETED'
+
+export interface UploadTaskSummary {
+  queued: number
+  processing: number
+  succeeded: number
+  failed: number
+  cancelRequested: number
+  cancelled: number
+}
+
+export interface UploadTaskPage {
+  items: UploadTask[]
+  page?: number
+  pageSize?: number
+  total: number
+  summary: UploadTaskSummary
+}
+

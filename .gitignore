@@ -31,5 +31,9 @@ cookies.txt
 test_sample.jpg
 .playwright-mcp/
 current-*.png
+.impeccable/
+test-results/
+playwright-report/
+
 
 

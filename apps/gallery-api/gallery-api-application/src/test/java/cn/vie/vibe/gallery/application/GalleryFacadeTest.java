@@ -145,6 +145,7 @@ class GalleryFacadeTest {
         public List<Photo> findByGalleryIdWithPagination(UUID galleryId, int offset, int limit) { return List.of(); }
         public List<Photo> findPublicReadyByGalleryId(UUID tenantId, UUID galleryId, int offset, int limit) { return List.of(); }
         public int countPublicReadyByGalleryId(UUID tenantId, UUID galleryId) { return ready; }
+        public int countFailedByGalleryId(UUID tenantId, UUID galleryId) { return 0; }
         public int updateStatus(UUID tenantId, UUID photoId, PhotoStatus status) { return 0; }
         public int updateMetadata(UUID tenantId, UUID photoId, String title, Integer sortOrder, Boolean cover) { return 0; }
         public int clearCoverByGallery(UUID tenantId, UUID galleryId) { return 0; }

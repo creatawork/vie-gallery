@@ -93,15 +93,50 @@ function isEmbedPreview() {
   return window.parent !== window
 }
 
+function adminEmbedOrigin() {
+  const { protocol, hostname, port } = window.location
+  if (port === '5174' || port === '5175') {
+    return `${protocol}//${hostname}:5173`
+  }
+  if (document.referrer) {
+    try {
+      const referrer = new URL(document.referrer)
+      if (referrer.origin !== window.location.origin) {
+        return referrer.origin
+      }
+    } catch {
+      // Fall back to same-origin below.
+    }
+  }
+  return window.location.origin
+}
+
+function isTrustedPreviewOrigin(origin: string) {
+  if (origin === 'null') {
+    return import.meta.env.DEV && isEmbedPreview()
+  }
+  if (!origin) return false
+  try {
+    const url = new URL(origin)
+    const localHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) return true
+    return url.hostname === window.location.hostname
+  } catch {
+    return false
+  }
+}
+
 async function handlePostMessage(event: MessageEvent) {
+  if (!isTrustedPreviewOrigin(event.origin)) return
+  if (isEmbedPreview() && event.source !== window.parent && event.source !== window.opener) return
   if (!event.data || typeof event.data !== 'object') return
   const { type, mode, config, presetName } = event.data
 
-  if (type === 'VIE_LAYOUT_CHANGE' && mode && engine) {
+  if (type === 'VIE_LAYOUT_CHANGE' && typeof mode === 'string' && engine) {
     engine.getEventBus().emit('layout:change', mode)
-  } else if (type === 'VIE_PRESET_CHANGE' && presetName) {
+  } else if (type === 'VIE_PRESET_CHANGE' && typeof presetName === 'string') {
     selectPreset(presetName)
-  } else if (type === 'VIE_CONFIG_UPDATE' && config) {
+  } else if (type === 'VIE_CONFIG_UPDATE' && config && typeof config === 'object') {
     if (!engine && isEmbedPreview()) {
       await nextTick()
       await init3DEngine()
@@ -112,11 +147,12 @@ async function handlePostMessage(event: MessageEvent) {
 
 function notifyParentReady() {
   const payload = { type: 'VIE_PREVIEW_READY' }
+  const targetOrigin = adminEmbedOrigin()
   if (window.parent && window.parent !== window) {
-    window.parent.postMessage(payload, '*')
+    window.parent.postMessage(payload, targetOrigin)
   }
   if (window.opener && !window.opener.closed) {
-    window.opener.postMessage(payload, '*')
+    window.opener.postMessage(payload, targetOrigin)
   }
 }
 
