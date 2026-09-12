@@ -177,6 +177,17 @@ export function useShareDelivery(
     }
   }
 
+  async function updateGalleryVisibility(visibility: 'PUBLIC' | 'PRIVATE' | 'PASSWORD') {
+    const galleryIdValue = id.value
+    if (!galleryIdValue) return
+    const response = await apiFetch(`/api/galleries/${galleryIdValue}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility })
+    })
+    if (!response.ok) throw new Error('更新相册访问权限失败。')
+  }
+
   return {
     shareLinks,
     loading,
@@ -189,6 +200,7 @@ export function useShareDelivery(
     createShareLink,
     revokeShareLink,
     setGalleryPassword,
-    clearGalleryPassword
+    clearGalleryPassword,
+    updateGalleryVisibility
   }
 }

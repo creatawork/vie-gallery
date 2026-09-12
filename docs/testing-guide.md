@@ -4,7 +4,7 @@
 
 ## 当前验收快照
 
-> 快照日期：2026-09-09。以下状态以真实环境报告和近期提交为准，不以旧计划中的未勾选清单为准。
+> 快照日期：2026-09-12。V1 Ready 签字见 [`v1-ready-signoff.md`](v1-ready-signoff.md)。
 
 ### 已完成并有验收证据
 
@@ -16,28 +16,18 @@
 - M7.1 Viewer 配置草稿、发布、版本历史、schema 校验和回滚。
 - M7.2 3D Gallery 生成 WebP TEXTURE，2D Gallery 跳过 TEXTURE。
 - 创作者内部草稿预览：`POST /api/galleries/{id}/preview-token`，公开端接受 `X-Preview-Token` 或 `?preview=`；无令牌时未发布相册仍 404。
-- **P0-01 基础质量与集成测试门禁**：文档链接检查、前端类型检查、前端构建、后端单元测试与 Testcontainers 真实依赖集成测试，Playwright smoke 测试套件。
-- **P0-03 账户密码恢复与 Gallery 密码设置**：忘记密码/重置密码和 Gallery PASSWORD 设置/清除已完成。
-- **P0-04 生产安全与部署基线**：配置分环境（`application-prod.yml`）、生产弱口令校验器、健康检查探针（`DependencyHealthIndicator`）、Nginx 安全响应头与 multi-stage Dockerfile 镜像。
-- **P1-01 统一上传状态与任务中心**：移除独立轮询，任务中心成为唯一事实来源，支持本地占位与远端合并、汇总条与状态过滤。
-- **P1-02 完善相册总览与管理摘要**：`GallerySummary` 聚合照片数、处理中数、失败数与待发布配置，总览支持状态筛选与排序。
-- **P1-04 统一发布中心**：`GET /api/galleries/{id}/publish-readiness` 发布前就绪检查，三阶段统一发布面板，一键发布与撤回发布。
+- **P0-01 基础质量与集成测试门禁**：文档链接、前端类型检查/构建、后端单元测试；Playwright smoke 套件存在（本轮 API 真机回归补偿）。
+- **P0-03 账户密码恢复与 Gallery 密码设置**：忘记/重置密码与 Gallery PASSWORD 设置/清除已完成。
+- **P0-04 生产安全与部署基线**：`application-prod.yml`、弱口令校验、依赖健康检查、Nginx 安全头与 Dockerfile。
+- **P0-05 可观测性**：`GalleryMetrics`（含 queue.depth）、`requestId`、[`operations-recovery.md`](operations-recovery.md) + **DR-05 本机 Docker 演练**。
+- **P1-01～05 / WP-6/7**：任务中心、总览、发布中心、照片策展、分享交付（含 PASSWORD）。
+- **M7.5 / V1 Ready**：`npm run verify`、`mvn test`、`scripts/m75-regression.ps1`、`scripts/dr05-upload-recovery.ps1` 通过。
 
-### 部分完成或待验收
+### V1 后演进（不阻断 V1 Ready）
 
-- M7.3：设备能力基础判断存在；LOD、持续低 FPS 阶梯降级、WebGL 初始化失败自动回退 2D 和完整移动端证据未完成。
-- M7.4：媒体 CDN、缓存策略、社交爬虫 Meta 静态壳和真实社交平台验收未完成。
-- M7.5：需要在本期可靠性、Viewer 和分发能力完成后执行综合回归。
-- 真实 MySQL/Redis/MinIO 集成测试和备份恢复演练仍是 P0-01 后续工作。
-- CI 已覆盖文档链接、类型检查、前端构建和后端单元测试；真实依赖集成测试待补齐。
-- P0-02 上传/对象/任务/配额一致性修复待开始。
-- P0-04 生产安全配置和部署基线锁定待开始。
-- **P0-05 可观测性、指标与恢复手册**：`GalleryMetrics` 业务指标、全链路 `requestId` 追踪与 [`operations-recovery.md`](operations-recovery.md) 运维恢复手册已建立。
-
-### 待后续演进（V1 Ready 后）
-
-- 生产 SMTP 邮件服务器接入。
-- P1-06~08 Viewer 深度性能与移动端高级手势。
+- M7.3：LOD、持续低 FPS 阶梯降级、WebGL 初始化失败自动回退 2D。
+- M7.4：媒体 CDN、缓存策略、社交爬虫 Meta。
+- 生产 SMTP 实装联调（代码已具备 `SmtpEmailAdapter` + prod 校验）。
 
 ## 环境要求
 
@@ -107,6 +97,13 @@ npm run verify:full
 
 # 运行后端单元测试与集成测试
 mvn test
+
+# 本机 Docker 真机回归（API 需已 compose up，默认 :8088）
+powershell -File scripts/m75-regression.ps1
+powershell -File scripts/dr05-upload-recovery.ps1
+
+# 清理演练产生的测试账号与临时文件
+powershell -File scripts/cleanup-test-artifacts.ps1
 ```
 
 重点测试公开访问、分享 Token、创作者预览令牌、密码 Session、发布就绪检查、任务状态和配置版本：

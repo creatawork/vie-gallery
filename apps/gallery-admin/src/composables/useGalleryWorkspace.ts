@@ -259,24 +259,38 @@ export function useGalleryWorkspace(
     const [moved] = currentList.splice(index, 1)
     currentList.splice(targetIndex, 0, moved)
 
-    const updates = currentList.map((p, idx) => ({ id: p.id, sortOrder: idx }))
+    // Only persist the two swapped positions to avoid N-way partial writes.
+    const a = currentList[index]
+    const b = currentList[targetIndex]
+    const updates = [
+      { id: a.id, sortOrder: index },
+      { id: b.id, sortOrder: targetIndex }
+    ]
     photos.value = currentList.map((p, idx) => ({ ...p, sortOrder: idx }))
 
-    const results = await Promise.all(
-      updates.map(u =>
-        apiFetch(`/api/photos/${u.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sortOrder: u.sortOrder })
-        })
+    try {
+      const results = await Promise.all(
+        updates.map(u =>
+          apiFetch(`/api/photos/${u.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sortOrder: u.sortOrder })
+          })
+        )
       )
-    )
-    const failed = results.find(response => !response.ok)
-    if (failed) {
+      const failed = results.find(response => !response.ok)
+      if (failed) {
+        throw await responseError(failed, '调整照片排序失败，请重试。')
+      }
+      await reload()
+    } catch (cause) {
+      // One of the two PATCHes may have succeeded; reload to match persisted order.
       photos.value = previous
-      throw await responseError(failed, '调整照片排序失败，请重试。')
+      await reload().catch(() => {
+        // Keep optimistic rollback if reload also fails.
+      })
+      throw cause
     }
-    await reload()
   }
 
   async function setPublished(publish: boolean) {

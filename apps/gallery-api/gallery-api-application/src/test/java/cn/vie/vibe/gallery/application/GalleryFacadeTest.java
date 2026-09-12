@@ -134,6 +134,31 @@ class GalleryFacadeTest {
         assertEquals("GALLERY_NOT_FOUND", exception.code());
     }
 
+    @Test
+    void updateVisibilityChangesVisibilityAndClearsPasswordHashWhenNotPassword() {
+        UUID tenantId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        GalleryFacade facade = new GalleryFacade(repository,
+                () -> new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER),
+                null, new WorkspaceAuthorizationPolicy(() -> new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER)),
+                new PasswordHasher() {
+                    public String hash(String raw) { return "hash:" + raw; }
+                    public boolean matches(String raw, String hash) { return hash.equals("hash:" + raw); }
+                });
+        Gallery created = facade.create("Wedding", "wedding", GalleryVisibility.PASSWORD);
+        facade.setPassword(created.id(), "secret123");
+
+        Gallery passwordGallery = facade.get(created.id());
+        assertEquals("hash:secret123", passwordGallery.passwordHash());
+
+        Gallery updatedToPublic = facade.updateVisibility(created.id(), GalleryVisibility.PUBLIC);
+        assertEquals(GalleryVisibility.PUBLIC, updatedToPublic.visibility());
+        assertEquals(null, updatedToPublic.passwordHash());
+
+        Gallery updatedBackToPassword = facade.updateVisibility(created.id(), GalleryVisibility.PASSWORD);
+        assertEquals(GalleryVisibility.PASSWORD, updatedBackToPassword.visibility());
+    }
+
     private static final class InMemoryPhotoRepository implements PhotoRepository {
         int ready;
         InMemoryPhotoRepository(int ready) { this.ready = ready; }

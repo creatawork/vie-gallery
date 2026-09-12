@@ -179,11 +179,24 @@ public class GalleryController {
         return toResponse(facade.clearPassword(galleryId), tenant);
     }
 
+    @PatchMapping("/{galleryId}")
+    public GalleryResponse update(@PathVariable UUID galleryId, @Valid @RequestBody UpdateGalleryRequest request) {
+        UUID tenant = tenantContext.requireContext().tenantId();
+        Gallery current = facade.get(galleryId);
+        if (request.visibility() != null) {
+            current = facade.updateVisibility(galleryId, request.visibility());
+        }
+        return toResponse(current, tenant);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public GalleryResponse create(@Valid @RequestBody CreateGalleryRequest request) {
         UUID tenant = tenantContext.requireContext().tenantId();
         return toResponse(facade.create(request.name().trim(), request.slug().trim(), request.visibility()), tenant);
+    }
+
+    public record UpdateGalleryRequest(GalleryVisibility visibility) {
     }
 
     public record CreateGalleryRequest(@NotBlank @Size(max = 160) String name,

@@ -28,6 +28,11 @@ public interface PhotoProcessingTaskRepository {
         return TaskSummary.empty();
     }
 
+    /** Count of QUEUED/PENDING/PROCESSING tasks across all tenants (queue depth gauge). */
+    default long countActiveQueue() {
+        return 0;
+    }
+
     default Optional<PhotoProcessingTask> claimNext(Instant now, String workerId) {
         return Optional.empty();
     }

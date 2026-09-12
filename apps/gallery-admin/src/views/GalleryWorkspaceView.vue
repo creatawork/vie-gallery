@@ -204,6 +204,7 @@ async function handleRetryTask(task: UploadTask) {
   if (!canPhotoWrite.value) return
   try {
     await taskCenter.retry(task)
+    await workspace.reload()
     toast.success('任务已重新排队。')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '任务重试失败。')
@@ -299,6 +300,7 @@ async function handleRetryFailedGrid() {
     }
   }
   if (successCount > 0) {
+    await workspace.reload()
     toast.success(`已为 ${successCount} 个失败项重新排队。`)
   } else {
     toast.error('重试失败项失败，请检查网络后重试。')

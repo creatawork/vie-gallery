@@ -12,21 +12,30 @@ import java.util.Optional;
 
 @Mapper
 public interface UserMapper {
-    @Select("SELECT BIN_TO_UUID(id) id, email, display_name displayName, password_hash passwordHash, status, last_login_at lastLoginAt " +
+    @Select("SELECT BIN_TO_UUID(id) id, email, display_name displayName, password_hash passwordHash, " +
+            "authentication_version authenticationVersion, status, last_login_at lastLoginAt " +
             "FROM users WHERE email = #{email} AND deleted_at IS NULL")
     Map<String, Object> findByEmail(@Param("email") String email);
 
-    @Select("SELECT BIN_TO_UUID(id) id, email, display_name displayName, password_hash passwordHash, status, last_login_at lastLoginAt " +
+    @Select("SELECT BIN_TO_UUID(id) id, email, display_name displayName, password_hash passwordHash, " +
+            "authentication_version authenticationVersion, status, last_login_at lastLoginAt " +
             "FROM users WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
     Map<String, Object> findById(@Param("id") String id);
 
-    @Insert("INSERT INTO users (id, email, display_name, password_hash, status, last_login_at, deleted_at, created_at, updated_at) " +
-            "VALUES (UUID_TO_BIN(#{id}), #{email}, #{displayName}, #{passwordHash}, #{status}, #{lastLoginAt}, NULL, #{createdAt}, #{updatedAt})")
+    @Insert("INSERT INTO users (id, email, display_name, password_hash, authentication_version, status, last_login_at, deleted_at, created_at, updated_at) " +
+            "VALUES (UUID_TO_BIN(#{id}), #{email}, #{displayName}, #{passwordHash}, #{authenticationVersion}, #{status}, #{lastLoginAt}, NULL, #{createdAt}, #{updatedAt})")
     int insert(@Param("id") String id, @Param("email") String email, @Param("displayName") String displayName,
-               @Param("passwordHash") String passwordHash, @Param("status") String status,
+               @Param("passwordHash") String passwordHash, @Param("authenticationVersion") long authenticationVersion,
+               @Param("status") String status,
                @Param("lastLoginAt") LocalDateTime lastLoginAt, @Param("createdAt") LocalDateTime createdAt,
                @Param("updatedAt") LocalDateTime updatedAt);
 
     @Update("UPDATE users SET last_login_at = #{lastLoginAt}, updated_at = #{lastLoginAt} WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
     int updateLastLoginAt(@Param("id") String id, @Param("lastLoginAt") LocalDateTime lastLoginAt);
+
+    @Update("UPDATE users SET password_hash = #{passwordHash}, authentication_version = #{authenticationVersion}, " +
+            "updated_at = #{updatedAt} WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
+    int updateCredentials(@Param("id") String id, @Param("passwordHash") String passwordHash,
+                          @Param("authenticationVersion") long authenticationVersion,
+                          @Param("updatedAt") LocalDateTime updatedAt);
 }

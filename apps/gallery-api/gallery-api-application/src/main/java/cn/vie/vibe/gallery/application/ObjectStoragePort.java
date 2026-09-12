@@ -14,6 +14,13 @@ public interface ObjectStoragePort {
     void delete(String key);
 
     /**
+     * Lightweight connectivity / readiness probe for health checks.
+     * Default is a no-op so test doubles do not need to implement it.
+     */
+    default void ping() {
+    }
+
+    /**
      * Creates a temporary URL for reading an object.
      *
      * New callers should always provide a TTL.

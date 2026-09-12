@@ -116,7 +116,7 @@ public class AuthController {
             request.getSession(true);
         }
         Authentication authentication = new UsernamePasswordAuthenticationToken(
-                new CurrentPrincipal(result.user().id()), null,
+                new CurrentPrincipal(result.user().id(), result.user().authenticationVersion()), null,
                 List.of(new SimpleGrantedAuthority("ROLE_" + result.role().name())));
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);

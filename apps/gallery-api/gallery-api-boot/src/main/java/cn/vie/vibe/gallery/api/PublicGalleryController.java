@@ -28,6 +28,7 @@ import java.util.UUID;
 public class PublicGalleryController {
     private static final String PUBLIC_SESSION_GALLERY_ID = "public_gallery_id";
     private static final String PUBLIC_SESSION_EXPIRES_AT = "public_expires_at";
+    private static final String PUBLIC_SESSION_PASSWORD_FP = "public_password_fp";
     private static final int PUBLIC_SESSION_TTL_SECONDS = 1800;
 
     private final PublicAccessFacade publicAccessFacade;
@@ -71,7 +72,7 @@ public class PublicGalleryController {
             metrics.recordPublicAccess(slug);
         }
         PublicGalleryView view = publicAccessFacade.resolvePublicGallery(
-                slug, shareToken, readSessionGalleryId(session), previewToken(previewHeader, previewQuery));
+                slug, shareToken, readUnlockSession(session), previewToken(previewHeader, previewQuery));
 
         CoverResponse cover = view.cover() == null ? null : new CoverResponse(
                 view.cover().url(),
@@ -101,7 +102,7 @@ public class PublicGalleryController {
             HttpSession session
     ) {
         String preview = previewToken(previewHeader, previewQuery);
-        publicAccessFacade.validateViewerConfigAccess(slug, shareToken, readSessionGalleryId(session), preview);
+        publicAccessFacade.validateViewerConfigAccess(slug, shareToken, readUnlockSession(session), preview);
         boolean includeDraft = publicAccessFacade.allowsCreatorPreview(slug, preview);
         return configFacade.getPublicConfig(slug, includeDraft)
                 .map(config -> new PublicViewerConfigResponse(
@@ -131,9 +132,9 @@ public class PublicGalleryController {
     ) {
         String identity = slug + "|" + clientIp(httpRequest);
         rateLimiter.assertUnlockAllowed(identity);
-        UUID galleryId;
+        cn.vie.vibe.gallery.application.PublicUnlockSession unlock;
         try {
-            galleryId = publicAccessFacade.unlockGallery(slug, shareToken, request.password());
+            unlock = publicAccessFacade.unlockGallery(slug, shareToken, request.password());
         } catch (PublicAccessException exception) {
             if (PublicAccessException.PASSWORD_INVALID.equals(exception.getCode())) {
                 rateLimiter.recordUnlockFailure(identity);
@@ -143,8 +144,9 @@ public class PublicGalleryController {
         rateLimiter.resetUnlock(identity);
         Instant expiresAt = Instant.now().plusSeconds(PUBLIC_SESSION_TTL_SECONDS);
 
-        // 只保存真实 gallery ID 和绝对过期时间，不保存密码或 raw token。
-        session.setAttribute(PUBLIC_SESSION_GALLERY_ID, galleryId.toString());
+        // 保存 gallery ID、密码指纹与绝对过期时间；不保存明文密码或 raw token。
+        session.setAttribute(PUBLIC_SESSION_GALLERY_ID, unlock.galleryId().toString());
+        session.setAttribute(PUBLIC_SESSION_PASSWORD_FP, unlock.passwordFingerprint());
         session.setAttribute(PUBLIC_SESSION_EXPIRES_AT, expiresAt.toString());
         session.setMaxInactiveInterval(PUBLIC_SESSION_TTL_SECONDS);
 
@@ -173,11 +175,11 @@ public class PublicGalleryController {
             @RequestParam(value = "pageSize", defaultValue = "50") int pageSize,
             HttpSession session
     ) {
-        UUID publicSessionGalleryId = readSessionGalleryId(session);
+        var unlockSession = readUnlockSession(session);
         PublicPhotoPage result = publicAccessFacade.listPublicPhotos(
                 slug,
                 shareToken,
-                publicSessionGalleryId,
+                unlockSession,
                 previewToken(previewHeader, previewQuery),
                 page,
                 pageSize
@@ -204,10 +206,12 @@ public class PublicGalleryController {
         return null;
     }
 
-    private UUID readSessionGalleryId(HttpSession session) {
+    private cn.vie.vibe.gallery.application.PublicUnlockSession readUnlockSession(HttpSession session) {
         Object rawGalleryId = session.getAttribute(PUBLIC_SESSION_GALLERY_ID);
         Object rawExpiresAt = session.getAttribute(PUBLIC_SESSION_EXPIRES_AT);
-        if (!(rawGalleryId instanceof String galleryIdValue) || !(rawExpiresAt instanceof String expiresAtValue)) {
+        Object rawFingerprint = session.getAttribute(PUBLIC_SESSION_PASSWORD_FP);
+        if (!(rawGalleryId instanceof String galleryIdValue) || !(rawExpiresAt instanceof String expiresAtValue)
+                || !(rawFingerprint instanceof String fingerprint) || fingerprint.isBlank()) {
             clearPublicSession(session);
             return null;
         }
@@ -219,7 +223,7 @@ public class PublicGalleryController {
                 clearPublicSession(session);
                 return null;
             }
-            return galleryId;
+            return new cn.vie.vibe.gallery.application.PublicUnlockSession(galleryId, fingerprint);
         } catch (IllegalArgumentException exception) {
             clearPublicSession(session);
             return null;
@@ -229,6 +233,7 @@ public class PublicGalleryController {
     private void clearPublicSession(HttpSession session) {
         session.removeAttribute(PUBLIC_SESSION_GALLERY_ID);
         session.removeAttribute(PUBLIC_SESSION_EXPIRES_AT);
+        session.removeAttribute(PUBLIC_SESSION_PASSWORD_FP);
     }
 
     public record PublicGalleryResponse(

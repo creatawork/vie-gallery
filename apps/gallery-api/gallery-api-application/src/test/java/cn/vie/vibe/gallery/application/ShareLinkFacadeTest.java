@@ -129,8 +129,8 @@ class ShareLinkFacadeTest {
         assertCode("GALLERY_NOT_FOUND", () -> fixture.facade.createShareLink(
                 new CreateShareLinkCommand(gallery.id().toString(), Instant.now().plusSeconds(3600))));
         assertCode("GALLERY_NOT_FOUND", () -> fixture.facade.listShareLinks(gallery.id().toString()));
-        assertCode("ACCESS_DENIED", () -> fixture.facade.revokeShareLink(link.getId().toString()));
-        assertCode("ACCESS_DENIED", () -> fixture.facade.deleteShareLink(link.getId().toString()));
+        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.revokeShareLink(link.getId().toString()));
+        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.deleteShareLink(link.getId().toString()));
     }
 
     @Test

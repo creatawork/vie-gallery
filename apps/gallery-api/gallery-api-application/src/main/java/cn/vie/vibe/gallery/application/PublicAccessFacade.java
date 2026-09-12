@@ -100,18 +100,18 @@ public class PublicAccessFacade {
     }
 
     public PublicGalleryView resolvePublicGallery(String slug, String shareToken, UUID publicSessionGalleryId) {
-        return resolvePublicGallery(slug, shareToken, publicSessionGalleryId, null);
+        return resolvePublicGallery(slug, shareToken, toUnlockSession(publicSessionGalleryId, null), null);
     }
 
     public PublicGalleryView resolvePublicGallery(
             String slug,
             String shareToken,
-            UUID publicSessionGalleryId,
+            PublicUnlockSession unlockSession,
             String previewToken
     ) {
         Gallery gallery = findGallery(slug, previewToken);
         Instant now = Instant.now();
-        PublicAccessState accessState = determineAccessState(gallery, shareToken, publicSessionGalleryId, previewToken, now);
+        PublicAccessState accessState = determineAccessState(gallery, shareToken, unlockSession, previewToken, now);
         boolean canExposePhotos = accessState == PublicAccessState.READY;
         int photoCount = canExposePhotos
                 ? photoRepository.countPublicReadyByGalleryId(gallery.tenantId(), gallery.id())
@@ -127,29 +127,51 @@ public class PublicAccessFacade {
         );
     }
 
+    /** Compatibility overload used by older call sites/tests. */
+    public PublicGalleryView resolvePublicGallery(
+            String slug,
+            String shareToken,
+            UUID publicSessionGalleryId,
+            String previewToken
+    ) {
+        return resolvePublicGallery(slug, shareToken, toUnlockSession(publicSessionGalleryId, null), previewToken);
+    }
+
     /**
-     * 解锁密码相册，并返回真实的相册 ID 供 Controller 创建 gallery-scoped Session。
+     * 解锁密码相册，并返回带密码指纹的会话证明供 Controller 写入 Session。
      */
-    public UUID unlockGallery(String slug, String shareToken, String password) {
+    public PublicUnlockSession unlockGallery(String slug, String shareToken, String password) {
         Gallery gallery = findGallery(slug, null);
 
         if (gallery.visibility() != GalleryVisibility.PASSWORD) {
             throw new DomainException("INVALID_OPERATION", "Gallery does not require password");
         }
 
-        validateShareToken(shareToken, gallery.id(), Instant.now());
+        if (shareToken != null && !shareToken.isBlank()) {
+            validateShareToken(shareToken, gallery.id(), Instant.now());
+        }
         if (gallery.passwordHash() == null || !passwordHasher.matches(password, gallery.passwordHash())) {
             throw PublicAccessException.passwordInvalid();
         }
 
-        return gallery.id();
+        return new PublicUnlockSession(gallery.id(), passwordFingerprint(gallery.passwordHash()));
     }
 
     /**
      * 验证公开 Viewer 配置的访问权限。
      */
     public void validateViewerConfigAccess(String slug, String shareToken, UUID publicSessionGalleryId) {
-        validateViewerConfigAccess(slug, shareToken, publicSessionGalleryId, null);
+        validateViewerConfigAccess(slug, shareToken, toUnlockSession(publicSessionGalleryId, null), null);
+    }
+
+    public void validateViewerConfigAccess(
+            String slug,
+            String shareToken,
+            PublicUnlockSession unlockSession,
+            String previewToken
+    ) {
+        Gallery gallery = findGallery(slug, previewToken);
+        validatePublicAccess(gallery, shareToken, unlockSession, previewToken, Instant.now());
     }
 
     public void validateViewerConfigAccess(
@@ -158,8 +180,7 @@ public class PublicAccessFacade {
             UUID publicSessionGalleryId,
             String previewToken
     ) {
-        Gallery gallery = findGallery(slug, previewToken);
-        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, previewToken, Instant.now());
+        validateViewerConfigAccess(slug, shareToken, toUnlockSession(publicSessionGalleryId, null), previewToken);
     }
 
     public boolean allowsCreatorPreview(String slug, String previewToken) {
@@ -179,20 +200,20 @@ public class PublicAccessFacade {
             int page,
             int pageSize
     ) {
-        return listPublicPhotos(slug, shareToken, publicSessionGalleryId, null, page, pageSize);
+        return listPublicPhotos(slug, shareToken, toUnlockSession(publicSessionGalleryId, null), null, page, pageSize);
     }
 
     public PublicPhotoPage listPublicPhotos(
             String slug,
             String shareToken,
-            UUID publicSessionGalleryId,
+            PublicUnlockSession unlockSession,
             String previewToken,
             int page,
             int pageSize
     ) {
         validatePage(page, pageSize);
         Gallery gallery = findGallery(slug, previewToken);
-        validatePublicAccess(gallery, shareToken, publicSessionGalleryId, previewToken, Instant.now());
+        validatePublicAccess(gallery, shareToken, unlockSession, previewToken, Instant.now());
 
         long offsetLong = (long) page * pageSize;
         if (offsetLong > Integer.MAX_VALUE) {
@@ -213,6 +234,17 @@ public class PublicAccessFacade {
                 .toList();
 
         return new PublicPhotoPage(items, page, pageSize, total);
+    }
+
+    public PublicPhotoPage listPublicPhotos(
+            String slug,
+            String shareToken,
+            UUID publicSessionGalleryId,
+            String previewToken,
+            int page,
+            int pageSize
+    ) {
+        return listPublicPhotos(slug, shareToken, toUnlockSession(publicSessionGalleryId, null), previewToken, page, pageSize);
     }
 
     private boolean allowVisitorDownload(Gallery gallery) {
@@ -319,7 +351,7 @@ public class PublicAccessFacade {
     private PublicAccessState determineAccessState(
             Gallery gallery,
             String shareToken,
-            UUID publicSessionGalleryId,
+            PublicUnlockSession unlockSession,
             String previewToken,
             Instant now
     ) {
@@ -340,7 +372,7 @@ public class PublicAccessFacade {
                 }
             }
             case PASSWORD -> {
-                if (publicSessionGalleryId != null && publicSessionGalleryId.equals(gallery.id())) {
+                if (isUnlockSessionValid(gallery, unlockSession)) {
                     yield PublicAccessState.READY;
                 }
                 yield PublicAccessState.PASSWORD_REQUIRED;
@@ -375,7 +407,7 @@ public class PublicAccessFacade {
     private void validatePublicAccess(
             Gallery gallery,
             String shareToken,
-            UUID publicSessionGalleryId,
+            PublicUnlockSession unlockSession,
             String previewToken,
             Instant now
     ) {
@@ -388,10 +420,35 @@ public class PublicAccessFacade {
             }
             case PRIVATE -> validateShareToken(shareToken, gallery.id(), now);
             case PASSWORD -> {
-                if (publicSessionGalleryId == null || !publicSessionGalleryId.equals(gallery.id())) {
+                if (!isUnlockSessionValid(gallery, unlockSession)) {
                     throw PublicAccessException.sessionExpired();
                 }
             }
         }
+    }
+
+    private boolean isUnlockSessionValid(Gallery gallery, PublicUnlockSession unlockSession) {
+        if (unlockSession == null || unlockSession.galleryId() == null) {
+            return false;
+        }
+        if (!unlockSession.galleryId().equals(gallery.id())) {
+            return false;
+        }
+        if (gallery.passwordHash() == null || gallery.passwordHash().isBlank()) {
+            return false;
+        }
+        String expected = passwordFingerprint(gallery.passwordHash());
+        return expected.equals(unlockSession.passwordFingerprint());
+    }
+
+    private String passwordFingerprint(String passwordHash) {
+        return tokenGenerator.hashToken(passwordHash == null ? "" : passwordHash);
+    }
+
+    private static PublicUnlockSession toUnlockSession(UUID galleryId, String fingerprint) {
+        if (galleryId == null) {
+            return null;
+        }
+        return new PublicUnlockSession(galleryId, fingerprint);
     }
 }

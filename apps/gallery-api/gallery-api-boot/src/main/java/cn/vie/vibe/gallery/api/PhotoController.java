@@ -2,6 +2,8 @@ package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.application.*;
 import cn.vie.vibe.gallery.domain.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,6 +18,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api")
 public class PhotoController {
+    private static final Logger log = LoggerFactory.getLogger(PhotoController.class);
     private final PhotoFacade facade;
     private final StorageObjectRepository objects;
     private final ObjectStoragePort storage;
@@ -46,6 +49,7 @@ public class PhotoController {
             throw new DomainException("FILE_INVALID", "At least one and at most 50 files are required");
         }
         String batchId = clientBatchId == null || clientBatchId.isBlank() ? UUID.randomUUID().toString() : clientBatchId;
+        String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
         List<UploadItem> items = new ArrayList<>();
         int acceptedCount = 0;
         int rejectedCount = 0;
@@ -57,15 +61,21 @@ public class PhotoController {
                         : idempotencyKey.trim() + ":" + index;
                 PhotoFacade.UploadResult result = facade.upload(galleryId,
                         new PhotoUpload(file.getOriginalFilename(), file.getContentType(), file.getSize(), file.getInputStream()),
-                        batchId, itemKey, (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE));
+                        batchId, itemKey, requestId);
                 items.add(UploadItem.accepted(file.getOriginalFilename(), result));
                 acceptedCount++;
+                log.info("gallery_upload_accepted requestId={} galleryId={} batchId={} photoId={} taskId={} filename={}",
+                        requestId, galleryId, batchId, result.photoId(), result.taskId(), file.getOriginalFilename());
             } catch (DomainException exception) {
                 items.add(UploadItem.rejected(file.getOriginalFilename(), exception.code(), exception.getMessage()));
                 rejectedCount++;
+                log.warn("gallery_upload_rejected requestId={} galleryId={} batchId={} filename={} errorCode={}",
+                        requestId, galleryId, batchId, file.getOriginalFilename(), exception.code());
             } catch (IOException exception) {
                 items.add(UploadItem.rejected(file.getOriginalFilename(), "FILE_INVALID", "Unable to read file"));
                 rejectedCount++;
+                log.warn("gallery_upload_rejected requestId={} galleryId={} batchId={} filename={} errorCode=FILE_INVALID",
+                        requestId, galleryId, batchId, file.getOriginalFilename());
             }
         }
         if (metrics != null) {

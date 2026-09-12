@@ -137,4 +137,20 @@ public class GalleryFacade {
         galleries.update(updated);
         return updated;
     }
+
+    @Transactional
+    public Gallery updateVisibility(java.util.UUID galleryId, GalleryVisibility visibility) {
+        TenantContext context = authorization.requireOwner();
+        Gallery gallery = galleries.findById(context.tenantId(), galleryId)
+                .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+        if (visibility == null) {
+            throw new DomainException("VALIDATION_FAILED", "Visibility cannot be null");
+        }
+        String passwordHash = visibility == GalleryVisibility.PASSWORD ? gallery.passwordHash() : null;
+        Gallery updated = new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                visibility, passwordHash, gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
+                gallery.status(), gallery.publishedAt());
+        galleries.update(updated);
+        return updated;
+    }
 }

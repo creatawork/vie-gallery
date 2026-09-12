@@ -74,6 +74,10 @@ public class PhotoTaskController {
         if (tasks.retry(tenant, taskId, Instant.now(), Instant.now()) == 0) {
             throw new DomainException("TASK_STATE_CONFLICT", "Task changed before it could be retried");
         }
+        // Keep photo status aligned with the re-queued task so grid filters and async UI stay consistent.
+        if (photos != null) {
+            photos.updateStatus(tenant, task.photoId(), PhotoStatus.PROCESSING);
+        }
         return tasks.findById(tenant, taskId).map(TaskResponse::from).orElseThrow(() -> new DomainException("TASK_NOT_FOUND", "Task not found"));
     }
 

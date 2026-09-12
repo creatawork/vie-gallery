@@ -3,14 +3,17 @@ package cn.vie.vibe.gallery.infrastructure;
 import cn.vie.vibe.gallery.application.EmailPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 
 /**
- * 默认邮件适配器，打印日志。
+ * 非生产环境邮件适配器：将重置链接打印到日志，便于本地联调。
+ * 生产环境必须使用 SmtpEmailAdapter，禁止把 raw token 写入可观测日志。
  */
 @Component
+@Profile("!prod")
 public class LoggingEmailAdapter implements EmailPort {
     private static final Logger log = LoggerFactory.getLogger(LoggingEmailAdapter.class);
 

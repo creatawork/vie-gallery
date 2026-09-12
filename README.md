@@ -4,24 +4,24 @@ VIE Gallery 是一个面向个人用户和创作者的照片相册产品：保�
 
 ## 当前阶段
 
-当前唯一有效的产品与工程路线是 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)，下一阶段具体任务见 [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)。本期目标是完成个人相册的 **备份、记录、创作、分享、管理** 闭环并上线；团队协作、多工作区、企业客户门户、复杂商业化等后期领域暂不纳入本期。
+当前唯一有效的产品与工程路线是 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)；V1 收口执行清单见 [`docs/v1-closeout-execution-tasks.md`](docs/v1-closeout-execution-tasks.md)。**个人相册 V1 Ready 已于 2026-09-12 签字**，验收报告见 [`docs/v1-ready-signoff.md`](docs/v1-ready-signoff.md)。
 
-代码基线：`feat/gallery-workspace-slice` / `2358489`（2026-09-09）。
+下一阶段任务见 [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)（M7.3/M7.4 等 V1 后演进）。
 
 ### 阶段状态
 
 - M3.5 公开访问稳定化：核心完成。
 - M4 发布与 SEO：核心完成。
-- M5 成员与授权：核心完成，少量历史集成证据待补。
+- M5 成员与授权：核心完成。
 - M6 上传任务中心：完成并通过真实环境验收。
-- M6.5 发布前硬化：完成并通过真实环境验收；密码重置仍是上线前阻断项。
+- M6.5 发布前硬化：完成；账户密码恢复已闭环（WP-9）。
 - M7.1 配置版本化：已完成真实环境验收。
 - M7.2 TEXTURE 与资源变体：已完成真实环境验收。
-- M7.3 Viewer 性能与兼容：部分完成，LOD、低 FPS 阶梯降级和 WebGL 初始化失败回退尚未闭环。
-- M7.4 CDN 与社交预览：未完成。
-- M7.5 综合回归：待 M7.3/M7.4 和上线可靠性工作完成后执行。
+- M7.3 Viewer 性能与兼容：部分完成（LOD / 低 FPS 阶梯降级 / WebGL 回退属 V1 后）。
+- M7.4 CDN 与社交预览：未完成（V1 后）。
+- **M7.5 综合回归：✅ 已完成（2026-09-12，本机 Docker + 自动化门禁）**。
 
-M7 的当前证据见 [`docs/m7-testing-results.md`](docs/m7-testing-results.md)。不要将 M7.1/M7.2 的已验收事实与 M7 整体完成混淆。
+M7 历史证据见 [`docs/m7-testing-results.md`](docs/m7-testing-results.md)。V1 Ready 以 `v1-ready-signoff.md` 为准。
 
 ## 当前用户路径
 

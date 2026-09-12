@@ -11,4 +11,5 @@ public interface UserRepository {
     Optional<User> findById(UUID id);
     User save(User user);
     void updateLastLoginAt(UUID id, Instant lastLoginAt);
+    void updateCredentials(UUID id, String passwordHash, long authenticationVersion);
 }

@@ -148,9 +148,8 @@ public class AuthFacade {
         resetTokens.markAsUsed(token.id(), now);
         
         String newPasswordHash = passwords.hash(newPassword);
-        User updated = new User(user.id(), user.email(), user.displayName(),
-                newPasswordHash, user.status(), user.lastLoginAt());
-        users.save(updated);
+        long nextVersion = user.authenticationVersion() + 1;
+        users.updateCredentials(user.id(), newPasswordHash, nextVersion);
     }
 
     private Membership resolveMembership(UUID userId) {

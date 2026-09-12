@@ -40,7 +40,8 @@ const {
   createShareLink,
   revokeShareLink,
   setGalleryPassword,
-  clearGalleryPassword
+  clearGalleryPassword,
+  updateGalleryVisibility
 } = useShareDelivery(galleryId, computed(() => props.gallery))
 
 const showModal = computed(() => props.show)
@@ -49,6 +50,24 @@ const { root: modalRoot } = useModalFocus(showModal, { onEscape: () => emit('clo
 const shareExpiryDays = ref(30)
 const copied = ref(false)
 const linkToRevoke = ref<ShareLink | null>(null)
+const switchingVisibility = ref(false)
+
+async function handleVisibilityChange(event: Event) {
+  const target = event.target as HTMLSelectElement
+  const newVis = target.value as 'PUBLIC' | 'PRIVATE' | 'PASSWORD'
+  if (!props.gallery || newVis === props.gallery.visibility || switchingVisibility.value) return
+  switchingVisibility.value = true
+  try {
+    await updateGalleryVisibility(newVis)
+    toast.success(`访问模式已更新为「${newVis === 'PUBLIC' ? '公开' : newVis === 'PASSWORD' ? '密码保护' : '私密'}」`)
+    emit('gallery-updated')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : '更新访问模式失败。')
+    target.value = props.gallery.visibility
+  } finally {
+    switchingVisibility.value = false
+  }
+}
 
 // Gallery password management
 const editingPassword = ref(false)
@@ -161,10 +180,25 @@ function shareStatusLabel(status: string) {
         <div class="modal-body">
           <!-- Access Mode Section -->
           <section class="delivery-section">
-            <h4 class="section-title">
-              <Icon name="lock" :size="14" />
-              <span>访问模式</span>
-            </h4>
+            <div class="section-title-row">
+              <h4 class="section-title">
+                <Icon name="lock" :size="14" />
+                <span>访问模式</span>
+              </h4>
+              <div v-if="isOwner" class="mode-switch-wrapper">
+                <select
+                  id="delivery-visibility-select"
+                  :value="gallery?.visibility"
+                  :disabled="switchingVisibility"
+                  class="visibility-select"
+                  @change="handleVisibilityChange"
+                >
+                  <option value="PUBLIC">公开</option>
+                  <option value="PRIVATE">私密</option>
+                  <option value="PASSWORD">密码保护</option>
+                </select>
+              </div>
+            </div>
             <div class="mode-banner" :class="`is-${gallery?.visibility.toLowerCase()}`">
               <div class="mode-badge">
                 {{ gallery?.visibility === 'PUBLIC' ? '公开展厅' : gallery?.visibility === 'PASSWORD' ? '密码展厅' : '私密展厅' }}
@@ -444,6 +478,29 @@ function shareStatusLabel(status: string) {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.visibility-select {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  outline: none;
+}
+
+.visibility-select:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
 .section-title {

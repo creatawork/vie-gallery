@@ -46,6 +46,7 @@ class MembershipFacadeTest {
         public Optional<User> findById(UUID id) { return users.stream().filter(u -> u.id().equals(id)).findFirst(); }
         public User save(User user) { users.add(user); return user; }
         public void updateLastLoginAt(UUID id, Instant time) { }
+        public void updateCredentials(UUID id, String passwordHash, long authenticationVersion) { }
     }
     private static final class Memberships implements MembershipRepository {
         final Map<UUID, Membership> values = new LinkedHashMap<>();

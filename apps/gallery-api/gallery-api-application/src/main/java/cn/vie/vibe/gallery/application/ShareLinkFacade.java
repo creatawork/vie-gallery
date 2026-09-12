@@ -124,10 +124,10 @@ public class ShareLinkFacade {
         ShareLink shareLink = shareLinkRepository.findById(linkId)
                 .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
-        // 验证相册属于当前租户
+        // 跨租户统一返回 NOT_FOUND，避免泄露链接存在性
         galleryRepository.findById(shareLink.getGalleryId())
                 .filter(g -> g.tenantId().equals(context.tenantId()))
-                .orElseThrow(() -> new DomainException("ACCESS_DENIED", "Access denied"));
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
         // 创建新的已撤销状态
         Instant now = Instant.now();
@@ -155,10 +155,10 @@ public class ShareLinkFacade {
         ShareLink shareLink = shareLinkRepository.findById(linkId)
                 .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
-        // 验证相册属于当前租户
+        // 跨租户统一返回 NOT_FOUND，避免泄露链接存在性
         galleryRepository.findById(shareLink.getGalleryId())
                 .filter(g -> g.tenantId().equals(context.tenantId()))
-                .orElseThrow(() -> new DomainException("ACCESS_DENIED", "Access denied"));
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
         shareLinkRepository.delete(linkId);
     }

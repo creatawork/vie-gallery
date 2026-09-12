@@ -51,6 +51,9 @@ public interface TaskQuotaMapper {
     @Select("SELECT status,COUNT(*) count FROM photo_processing_task WHERE tenant_id=UUID_TO_BIN(#{tenant}) AND gallery_id=UUID_TO_BIN(#{gallery}) GROUP BY status")
     List<Map<String, Object>> summary(@Param("tenant") String tenant, @Param("gallery") String gallery);
 
+    @Select("SELECT COUNT(*) FROM photo_processing_task WHERE status IN ('QUEUED','PENDING','PROCESSING')")
+    long countActiveQueue();
+
     @Select("SELECT " + TASK_COLUMNS + " FROM photo_processing_task t WHERE t.status='QUEUED' AND (t.next_attempt_at IS NULL OR t.next_attempt_at<=#{now}) ORDER BY t.created_at,t.id LIMIT 1")
     Map<String, Object> nextTask(@Param("now") LocalDateTime now);
 

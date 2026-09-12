@@ -97,6 +97,17 @@ public class MinioObjectStorage implements ObjectStoragePort {
     }
 
     @Override
+    public void ping() {
+        try {
+            if (!client.bucketExists(BucketExistsArgs.builder().bucket(bucket).build())) {
+                throw new IllegalStateException("Object storage bucket missing: " + bucket);
+            }
+        } catch (Exception exception) {
+            throw new IllegalStateException("Object storage unavailable", exception);
+        }
+    }
+
+    @Override
     public URI createReadUrl(String key, Duration ttl) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(ttl, "ttl");

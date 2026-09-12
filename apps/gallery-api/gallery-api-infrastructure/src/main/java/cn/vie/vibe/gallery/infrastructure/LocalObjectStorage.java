@@ -59,6 +59,18 @@ public class LocalObjectStorage implements ObjectStoragePort {
         }
     }
 
+    @Override
+    public void ping() {
+        try {
+            Files.createDirectories(root);
+            if (!Files.isWritable(root)) {
+                throw new IllegalStateException("Local object storage root is not writable: " + root);
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Local object storage unavailable", exception);
+        }
+    }
+
     /**
      * Local storage is a test/dev adapter; it intentionally keeps a file URI
      * rather than pretending to provide a production signed URL.

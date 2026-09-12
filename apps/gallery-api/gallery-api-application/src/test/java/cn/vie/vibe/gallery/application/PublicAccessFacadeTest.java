@@ -68,7 +68,7 @@ class PublicAccessFacadeTest {
         fixture.addPhoto(gallery, "ready", PhotoStatus.READY, StorageObjectStatus.READY, 1);
         String token = previewTokens.issue(gallery.id()).token();
 
-        PublicGalleryView result = facade.resolvePublicGallery(gallery.slug(), null, null, token);
+        PublicGalleryView result = facade.resolvePublicGallery(gallery.slug(), null, (PublicUnlockSession) null, token);
 
         assertEquals(PublicAccessState.READY, result.accessState());
         assertEquals(1, result.photoCount());
@@ -158,12 +158,40 @@ class PublicAccessFacadeTest {
         fixture.addLink(gallery, "password-token", null, null);
 
         PublicGalleryView view = fixture.facade.resolvePublicGallery(gallery.slug(), null);
-        UUID unlockedGalleryId = fixture.facade.unlockGallery(gallery.slug(), "password-token", "correct");
+        PublicUnlockSession unlocked = fixture.facade.unlockGallery(gallery.slug(), "password-token", "correct");
 
         assertEquals(PublicAccessState.PASSWORD_REQUIRED, view.accessState());
         assertEquals(PublicAccessState.READY,
-                fixture.facade.resolvePublicGallery(gallery.slug(), null, gallery.id()).accessState());
-        assertEquals(gallery.id(), unlockedGalleryId);
+                fixture.facade.resolvePublicGallery(gallery.slug(), null, unlocked, null).accessState());
+        assertEquals(gallery.id(), unlocked.galleryId());
+    }
+
+    @Test
+    void passwordGalleryCanBeUnlockedWithoutShareTokenDirectlyBySlug() {
+        Fixture fixture = new Fixture();
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PASSWORD, "hash:my-secret", "direct-pwd-gallery");
+
+        // No shareToken passed, direct visitor entering password
+        PublicUnlockSession unlocked = fixture.facade.unlockGallery(gallery.slug(), null, "my-secret");
+        assertEquals(gallery.id(), unlocked.galleryId());
+        assertEquals(PublicAccessState.READY,
+                fixture.facade.resolvePublicGallery(gallery.slug(), null, unlocked, null).accessState());
+    }
+
+    @Test
+    void passwordChangeInvalidatesExistingUnlockSession() {
+        Fixture fixture = new Fixture();
+        Gallery gallery = fixture.addGallery(GalleryVisibility.PASSWORD, "hash:old-secret", "pwd-rotate");
+        PublicUnlockSession unlocked = fixture.facade.unlockGallery(gallery.slug(), null, "old-secret");
+        assertEquals(PublicAccessState.READY,
+                fixture.facade.resolvePublicGallery(gallery.slug(), null, unlocked, null).accessState());
+
+        fixture.galleries.update(new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                gallery.visibility(), "hash:new-secret", gallery.coverPhotoId(), gallery.deleted(),
+                gallery.createdAt(), gallery.status(), gallery.publishedAt()));
+
+        assertEquals(PublicAccessState.PASSWORD_REQUIRED,
+                fixture.facade.resolvePublicGallery(gallery.slug(), null, unlocked, null).accessState());
     }
 
     @Test
@@ -264,7 +292,8 @@ class PublicAccessFacadeTest {
         assertCode(PublicAccessException.PUBLIC_SESSION_EXPIRED,
                 () -> fixture.facade.listPublicPhotos(gallery.slug(), null, UUID.randomUUID(), 0, 10));
 
-        PublicPhotoPage result = fixture.facade.listPublicPhotos(gallery.slug(), null, gallery.id(), 0, 10);
+        PublicUnlockSession unlocked = fixture.facade.unlockGallery(gallery.slug(), null, "correct");
+        PublicPhotoPage result = fixture.facade.listPublicPhotos(gallery.slug(), null, unlocked, null, 0, 10);
         assertEquals(List.of("private-photo"), titles(result));
     }
 

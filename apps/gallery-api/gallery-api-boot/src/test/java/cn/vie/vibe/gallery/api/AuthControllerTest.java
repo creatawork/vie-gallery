@@ -85,4 +85,31 @@ class AuthControllerTest {
         assertEquals("RATE_LIMITED", exception.code());
         verify(auth, never()).login(anyString(), anyString());
     }
+
+    @Test
+    void forgotPasswordInvokesFacadeAndReturnsGenericMessage() {
+        AuthFacade auth = mock(AuthFacade.class);
+        RedisRateLimiter limiter = mock(RedisRateLimiter.class);
+        AuthController controller = controller(auth, limiter);
+
+        java.util.Map<String, String> response = controller.forgotPassword(
+                new AuthController.ForgotPasswordRequest(EMAIL));
+
+        verify(auth).requestPasswordReset(EMAIL);
+        assertEquals("如果邮箱存在，您将收到密码重置邮件", response.get("message"));
+    }
+
+    @Test
+    void resetPasswordInvokesFacadeAndReturnsSuccessMessage() {
+        AuthFacade auth = mock(AuthFacade.class);
+        RedisRateLimiter limiter = mock(RedisRateLimiter.class);
+        AuthController controller = controller(auth, limiter);
+
+        String token = "1234567890123456789012345678901234567890123";
+        java.util.Map<String, Boolean> response = controller.resetPassword(
+                new AuthController.ResetPasswordRequest(token, "NewPassword123"));
+
+        verify(auth).resetPassword(token, "NewPassword123");
+        assertEquals(true, response.get("success"));
+    }
 }

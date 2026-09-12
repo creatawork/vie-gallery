@@ -1,5 +1,6 @@
 package cn.vie.vibe.gallery.application;
 
+import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.Membership;
 import cn.vie.vibe.gallery.domain.MembershipRole;
 import cn.vie.vibe.gallery.domain.PasswordResetToken;
@@ -39,6 +40,59 @@ class AuthFacadeTest {
         assertEquals("Invalid credentials", exception.getMessage());
     }
 
+    @Test
+    void forgotPasswordSilentlyIgnoresUnknownOrDisabledEmail() {
+        Fixture fixture = new Fixture();
+        fixture.auth.requestPasswordReset("nonexistent@example.com");
+        assertEquals(0, fixture.resetTokens.saved.size());
+        assertEquals(null, fixture.emailPort.lastEmail);
+    }
+
+    @Test
+    void forgotPasswordGeneratesTokenAndSendsEmailForActiveUser() {
+        Fixture fixture = new Fixture();
+        fixture.auth.register("active@example.com", "Active", "password123");
+
+        fixture.auth.requestPasswordReset("ACTIVE@EXAMPLE.COM");
+
+        assertEquals(1, fixture.resetTokens.saved.size());
+        assertEquals("active@example.com", fixture.emailPort.lastEmail);
+        assertEquals("fixed-token-43-characters-aaaaaaaaaaaaaa", fixture.emailPort.lastToken);
+    }
+
+    @Test
+    void resetPasswordSucceedsAndAllowsLoginWithNewPassword() {
+        Fixture fixture = new Fixture();
+        fixture.auth.register("reset-me@example.com", "Reset", "old-password");
+        fixture.auth.requestPasswordReset("reset-me@example.com");
+        String rawToken = fixture.emailPort.lastToken;
+
+        fixture.auth.resetPassword(rawToken, "brand-new-password");
+
+        User afterReset = fixture.users.findByEmail("reset-me@example.com").orElseThrow();
+        assertEquals(2L, afterReset.authenticationVersion());
+
+        // Old password rejected
+        assertThrows(RuntimeException.class, () -> fixture.auth.login("reset-me@example.com", "old-password"));
+        // New password works
+        AuthenticatedUser user = fixture.auth.login("reset-me@example.com", "brand-new-password");
+        assertEquals("reset-me@example.com", user.user().email());
+        assertEquals(2L, user.user().authenticationVersion());
+
+        // Token cannot be reused (one-time use)
+        DomainException reuseException = assertThrows(DomainException.class,
+                () -> fixture.auth.resetPassword(rawToken, "another-password"));
+        assertEquals("INVALID_RESET_TOKEN", reuseException.code());
+    }
+
+    @Test
+    void resetPasswordFailsWithInvalidToken() {
+        Fixture fixture = new Fixture();
+        DomainException exception = assertThrows(DomainException.class,
+                () -> fixture.auth.resetPassword("invalid-token", "some-password"));
+        assertEquals("INVALID_RESET_TOKEN", exception.code());
+    }
+
     private static final class Fixture {
         final Users users = new Users();
         final Tenants tenants = new Tenants();
@@ -74,10 +128,14 @@ class AuthFacadeTest {
             return saved.stream().filter(t -> t.tokenHash().equals(tokenHash)).findFirst();
         }
         public void markAsUsed(UUID tokenId, Instant usedAt) {
-            saved.removeIf(t -> t.id().equals(tokenId));
-            saved.stream().filter(t -> t.id().equals(tokenId)).findFirst()
-                    .ifPresent(old -> saved.add(new PasswordResetToken(old.id(), old.userId(), old.tokenHash(),
-                            old.expiresAt(), usedAt, old.createdAt())));
+            for (int i = 0; i < saved.size(); i++) {
+                PasswordResetToken old = saved.get(i);
+                if (old.id().equals(tokenId)) {
+                    saved.set(i, new PasswordResetToken(old.id(), old.userId(), old.tokenHash(),
+                            old.expiresAt(), usedAt, old.createdAt()));
+                    break;
+                }
+            }
         }
         public void deleteByUserId(UUID userId) { saved.removeIf(t -> t.userId().equals(userId)); }
     }
@@ -86,8 +144,22 @@ class AuthFacadeTest {
         final List<User> saved = new ArrayList<>();
         public Optional<User> findByEmail(String email) { return saved.stream().filter(u -> u.email().equals(email)).findFirst(); }
         public Optional<User> findById(UUID id) { return saved.stream().filter(u -> u.id().equals(id)).findFirst(); }
-        public User save(User user) { saved.add(user); return user; }
+        public User save(User user) {
+            saved.removeIf(u -> u.id().equals(user.id()));
+            saved.add(user);
+            return user;
+        }
         public void updateLastLoginAt(UUID id, Instant time) { }
+        public void updateCredentials(UUID id, String passwordHash, long authenticationVersion) {
+            for (int i = 0; i < saved.size(); i++) {
+                User old = saved.get(i);
+                if (old.id().equals(id)) {
+                    saved.set(i, new User(old.id(), old.email(), old.displayName(), passwordHash,
+                            old.status(), old.lastLoginAt(), authenticationVersion));
+                    return;
+                }
+            }
+        }
     }
 
     private static final class Tenants implements TenantRepository {

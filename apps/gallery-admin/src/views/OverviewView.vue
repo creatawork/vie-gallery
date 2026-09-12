@@ -125,7 +125,9 @@ function formatTime(value?: string | null) {
 }
 
 function visibilityLabel(gallery: Gallery) {
-  return gallery.visibility === 'PUBLIC' ? '公开' : '私密'
+  if (gallery.visibility === 'PUBLIC') return '公开'
+  if (gallery.visibility === 'PASSWORD') return '密码保护'
+  return '私密'
 }
 
 function statusLabel(gallery: Gallery) {
@@ -565,7 +567,7 @@ async function handleCreateGallery() {
         >
           <div class="card-cover">
             <img :src="coverFor(gallery)" class="cover-image" :alt="gallery.name" loading="lazy" />
-            <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
+            <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : gallery.visibility === 'PASSWORD' ? 'is-password' : 'is-private'">
               {{ visibilityLabel(gallery) }}
             </span>
             <span v-if="gallery.hasUnpublishedConfig" class="badge-draft-config">
@@ -653,7 +655,7 @@ async function handleCreateGallery() {
             <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
             <span>{{ statusLabel(gallery) }}</span>
           </span>
-          <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
+          <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : gallery.visibility === 'PASSWORD' ? 'is-password' : 'is-private'">
             {{ visibilityLabel(gallery) }}
           </span>
         </button>
@@ -737,6 +739,7 @@ async function handleCreateGallery() {
               <select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input">
                 <option value="PUBLIC">公开</option>
                 <option value="PRIVATE">私密</option>
+                <option value="PASSWORD">密码保护</option>
               </select>
             </div>
             <div class="modal-actions">
@@ -1406,6 +1409,11 @@ async function handleCreateGallery() {
 .vis-tag.is-private {
   background: rgba(255, 255, 255, 0.92);
   color: #4b5563;
+}
+
+.vis-tag.is-password {
+  background: rgba(255, 255, 255, 0.92);
+  color: #b45309;
 }
 
 .badge-draft-config {

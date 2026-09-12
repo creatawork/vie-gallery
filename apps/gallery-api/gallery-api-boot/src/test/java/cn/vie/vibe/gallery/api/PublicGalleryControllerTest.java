@@ -5,6 +5,7 @@ import cn.vie.vibe.gallery.application.PublicAccessFacade;
 import cn.vie.vibe.gallery.application.PublicGalleryView;
 import cn.vie.vibe.gallery.application.PublicPhotoPage;
 import cn.vie.vibe.gallery.application.PublicPhotoView;
+import cn.vie.vibe.gallery.application.PublicUnlockSession;
 import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
 import cn.vie.vibe.gallery.domain.PublicAccessException;
@@ -37,7 +38,8 @@ class PublicGalleryControllerTest {
         PublicAccessFacade access = mock(PublicAccessFacade.class);
         GalleryViewerConfigFacade config = mock(GalleryViewerConfigFacade.class);
         RedisRateLimiter limiter = mock(RedisRateLimiter.class);
-        when(access.unlockGallery(SLUG, "token", "password")).thenReturn(GALLERY_ID);
+        when(access.unlockGallery(SLUG, "token", "password"))
+                .thenReturn(new PublicUnlockSession(GALLERY_ID, "fp-hash"));
         PublicGalleryController controller = new PublicGalleryController(access, config, limiter);
         MockHttpSession session = new MockHttpSession();
 
@@ -47,6 +49,7 @@ class PublicGalleryControllerTest {
 
         assertEquals(true, response.unlocked());
         assertEquals(GALLERY_ID.toString(), session.getAttribute("public_gallery_id"));
+        assertEquals("fp-hash", session.getAttribute("public_password_fp"));
         assertEquals(response.expiresAt().toString(), session.getAttribute("public_expires_at"));
         assertEquals(1800, session.getMaxInactiveInterval());
         verify(limiter).resetUnlock(anyString());
@@ -93,7 +96,7 @@ class PublicGalleryControllerTest {
         GalleryViewerConfigFacade config = mock(GalleryViewerConfigFacade.class);
         RedisRateLimiter limiter = mock(RedisRateLimiter.class);
         PublicPhotoPage page = new PublicPhotoPage(List.of(), 0, 10, 0);
-        when(access.listPublicPhotos(eq(SLUG), any(), eq(null), eq(null), eq(0), eq(10))).thenReturn(page);
+        when(access.listPublicPhotos(eq(SLUG), any(), eq((PublicUnlockSession) null), eq(null), eq(0), eq(10))).thenReturn(page);
         PublicGalleryController controller = new PublicGalleryController(access, config, limiter);
 
         MockHttpSession session = new MockHttpSession();
@@ -122,7 +125,7 @@ class PublicGalleryControllerTest {
                 1,
                 7
         );
-        when(access.listPublicPhotos(SLUG, null, null, null, 2, 1)).thenReturn(page);
+        when(access.listPublicPhotos(eq(SLUG), eq(null), eq((PublicUnlockSession) null), eq(null), eq(2), eq(1))).thenReturn(page);
         PublicGalleryController controller = new PublicGalleryController(access, config, limiter);
 
         PublicGalleryController.PhotoListResponse result = controller.getPhotos(
@@ -139,7 +142,11 @@ class PublicGalleryControllerTest {
         PublicAccessFacade access = mock(PublicAccessFacade.class);
         GalleryViewerConfigFacade config = mock(GalleryViewerConfigFacade.class);
         RedisRateLimiter limiter = mock(RedisRateLimiter.class);
-        when(access.resolvePublicGallery(eq(SLUG), eq(null), any(), eq(null))).thenReturn(new PublicGalleryView(
+        when(access.resolvePublicGallery(eq(SLUG), eq(null), any(PublicUnlockSession.class), eq(null))).thenReturn(new PublicGalleryView(
+                SLUG, "Public Space", GalleryVisibility.PUBLIC, PublicAccessState.READY,
+                new PublicGalleryView.CoverView("https://cdn/cover", 1200, 800), 7));
+        // also allow null unlock session
+        when(access.resolvePublicGallery(eq(SLUG), eq(null), eq((PublicUnlockSession) null), eq(null))).thenReturn(new PublicGalleryView(
                 SLUG, "Public Space", GalleryVisibility.PUBLIC, PublicAccessState.READY,
                 new PublicGalleryView.CoverView("https://cdn/cover", 1200, 800), 7));
         PublicGalleryController controller = new PublicGalleryController(access, config, limiter);

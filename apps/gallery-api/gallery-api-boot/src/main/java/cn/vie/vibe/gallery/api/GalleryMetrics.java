@@ -1,6 +1,8 @@
 package cn.vie.vibe.gallery.api;
 
+import cn.vie.vibe.gallery.application.PhotoProcessingTaskRepository;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
@@ -15,7 +17,7 @@ public class GalleryMetrics {
     private final Counter storagePutErrorCounter;
     private final MeterRegistry registry;
 
-    public GalleryMetrics(MeterRegistry registry) {
+    public GalleryMetrics(MeterRegistry registry, PhotoProcessingTaskRepository tasks) {
         this.registry = registry;
         this.uploadAcceptedCounter = Counter.builder("gallery.upload.accepted")
                 .description("已接收并排队处理的照片上传数")
@@ -28,6 +30,9 @@ public class GalleryMetrics {
                 .register(registry);
         this.storagePutErrorCounter = Counter.builder("gallery.storage.put.error")
                 .description("对象存储写入失败次数")
+                .register(registry);
+        Gauge.builder("gallery.task.queue.depth", tasks, PhotoProcessingTaskRepository::countActiveQueue)
+                .description("QUEUED/PENDING/PROCESSING 任务队列深度")
                 .register(registry);
     }
 

@@ -87,6 +87,11 @@ class MyBatisTaskRepository implements PhotoProcessingTaskRepository {
     }
 
     @Override
+    public long countActiveQueue() {
+        return mapper.countActiveQueue();
+    }
+
+    @Override
     public Optional<PhotoProcessingTask> claimNext() {
         return claimNext(Instant.now(), "legacy-worker");
     }
