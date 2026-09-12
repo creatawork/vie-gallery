@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
-import { ViewerEngine, type EngineMetrics } from './core/ViewerEngine'
+import { ViewerEngine, WebGLUnavailableError, type EngineMetrics } from './core/ViewerEngine'
 import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
 import ErrorState from './components/ErrorState.vue'
@@ -25,10 +25,15 @@ watch(
 
 // 视图模式: '3d' 空间漫游 vs '2d' 策展画廊
 const viewMode = ref<'3d' | '2d'>('3d')
+const webglFallbackMessage = ref('')
 
 // WebGL Engine
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let engine: ViewerEngine | null = null
+let canvasPointerDownHandler: ((event: PointerEvent) => void) | null = null
+let canvasPointerMoveHandler: ((event: PointerEvent) => void) | null = null
+let canvasClickHandler: ((event: MouseEvent) => void) | null = null
+let webglLostHandler: (() => void) | null = null
 
 // Lightbox
 const showLightbox = ref(false)
@@ -188,6 +193,7 @@ watch(
 async function init3DEngine() {
   if (!canvasRef.value) return
   destroy3DEngine()
+  webglFallbackMessage.value = ''
 
   try {
     const rawPhotos = viewer.photos.value
@@ -253,11 +259,26 @@ async function init3DEngine() {
       apmMetrics.value = metrics
     })
 
+    webglLostHandler = () => fallbackTo2D('3D 渲染连接中断，已切换到经典画廊，照片仍可正常浏览。')
+    engine.getEventBus().on('webgl:lost', webglLostHandler)
+
     // 绑定 3D 悬停与交互
     bindCanvasInteractions()
   } catch (err) {
     console.error('Failed to init 3D engine:', err)
+    fallbackTo2D(
+      err instanceof WebGLUnavailableError
+        ? '当前设备无法使用 3D，已切换到经典画廊，照片仍可正常浏览。'
+        : '3D 画廊暂时无法启动，已切换到经典画廊，照片仍可正常浏览。'
+    )
   }
+}
+
+function fallbackTo2D(message: string) {
+  if (webglFallbackMessage.value && viewMode.value === '2d') return
+  destroy3DEngine()
+  webglFallbackMessage.value = message
+  viewMode.value = '2d'
 }
 
 function bindCanvasInteractions() {
@@ -266,12 +287,13 @@ function bindCanvasInteractions() {
 
   let pointerDownPos = { x: 0, y: 0 }
 
-  canvas.addEventListener('pointerdown', (e) => {
+  canvasPointerDownHandler = (e) => {
     pointerDownPos = { x: e.clientX, y: e.clientY }
-  })
+  }
 
-  canvas.addEventListener('pointermove', (e) => {
-    if (!engine) return
+  canvasPointerMoveHandler = (e) => {
+    // Touch pointers are reserved for OrbitControls gestures; hover is mouse-only.
+    if (e.pointerType !== 'mouse' || !engine) return
     const rect = canvas.getBoundingClientRect()
     mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
     mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
@@ -288,7 +310,7 @@ function bindCanvasInteractions() {
           lastHoveredMesh.scale.set(1, 1, 1)
         }
         lastHoveredMesh = hit
-        hit.scale.set(1.08, 1.08, 1.08)
+        hit.scale.set(1.08, 1.08, 1)
       }
 
       hoveredPhoto.value = {
@@ -304,9 +326,9 @@ function bindCanvasInteractions() {
       canvas.style.cursor = 'default'
       hoveredPhoto.value = null
     }
-  })
+  }
 
-  canvas.addEventListener('click', (e) => {
+  canvasClickHandler = (e) => {
     // 过滤拖拽旋转操作
     const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y)
     if (dist > 6) return
@@ -326,7 +348,11 @@ function bindCanvasInteractions() {
         openLightbox(idx)
       })
     }
-  })
+  }
+
+  canvas.addEventListener('pointerdown', canvasPointerDownHandler)
+  canvas.addEventListener('pointermove', canvasPointerMoveHandler)
+  canvas.addEventListener('click', canvasClickHandler)
 }
 
 /**
@@ -433,6 +459,24 @@ function createDemoFallbackPhotos() {
 }
 
 function destroy3DEngine() {
+  const canvas = canvasRef.value
+  if (canvas) {
+    if (canvasPointerDownHandler) canvas.removeEventListener('pointerdown', canvasPointerDownHandler)
+    if (canvasPointerMoveHandler) canvas.removeEventListener('pointermove', canvasPointerMoveHandler)
+    if (canvasClickHandler) canvas.removeEventListener('click', canvasClickHandler)
+  }
+
+  if (engine && webglLostHandler) {
+    engine.getEventBus().off('webgl:lost', webglLostHandler)
+  }
+
+  canvasPointerDownHandler = null
+  canvasPointerMoveHandler = null
+  canvasClickHandler = null
+  webglLostHandler = null
+  hoveredPhoto.value = null
+  lastHoveredMesh = null
+
   if (engine) {
     engine.stop()
     engine.dispose()
@@ -493,10 +537,43 @@ async function selectPreset(presetName: string) {
     />
 
     <!-- 3. Admin 嵌入预览：草稿/未公开时仍渲染 WebGL 沙盒 -->
-    <div v-else-if="isEmbedPreview()" class="gallery-viewport embed-preview">
+    <div v-else-if="isEmbedPreview() && viewMode === '3d'" class="gallery-viewport embed-preview">
       <div class="canvas-container">
         <canvas ref="canvasRef" class="webgl-canvas"></canvas>
       </div>
+    </div>
+
+    <!-- 3D 预览失败时，嵌入页也保留可浏览的照片网格 -->
+    <div v-else-if="isEmbedPreview() && viewMode === '2d'" class="gallery-viewport embed-preview embed-fallback-viewport">
+      <div v-if="webglFallbackMessage" class="webgl-fallback-banner" role="status">
+        <Icon name="grid" :size="16" />
+        <span>{{ webglFallbackMessage }}</span>
+      </div>
+      <main class="editorial-main embed-fallback-main">
+        <section class="editorial-photo-grid" aria-label="照片墙">
+          <article
+            v-for="(photo, idx) in viewer.photos.value"
+            :key="photo.sortOrder ?? idx"
+            class="editorial-photo-card"
+            @click="openLightbox(idx)"
+          >
+            <div class="photo-img-frame">
+              <img :src="photo.thumbnailUrl || ''" :alt="photo.title || 'Photograph'" loading="lazy" />
+              <div class="card-overlay">
+                <span class="photo-caption">{{ photo.title || `Photograph ${idx + 1}` }}</span>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+      <LightboxModal
+        :show="showLightbox"
+        :photos="viewer.photos.value"
+        :current-index="lightboxIndex"
+        :allow-download="viewer.allowDownload.value"
+        @close="showLightbox = false"
+        @select="idx => lightboxIndex = idx"
+      />
     </div>
 
     <!-- 4. 空相册状态 -->
@@ -529,6 +606,12 @@ async function selectPreset(presetName: string) {
 
     <!-- 5. 就绪：沉浸式双模画廊 -->
     <div v-else-if="viewer.isReady.value" class="gallery-viewport">
+      <div v-if="webglFallbackMessage" class="webgl-fallback-banner" role="status">
+        <Icon name="grid" :size="16" />
+        <span>{{ webglFallbackMessage }}</span>
+        <button type="button" @click="webglFallbackMessage = ''">知道了</button>
+      </div>
+
       <!-- 浮动毛玻璃 HUD 控制台 -->
       <header class="floating-hud">
         <!-- Brand & Gallery Info -->
@@ -1130,6 +1213,45 @@ async function selectPreset(presetName: string) {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.webgl-fallback-banner {
+  position: fixed;
+  top: 78px;
+  left: 50%;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(620px, calc(100vw - 32px));
+  padding: 10px 12px 10px 14px;
+  color: #d1fae5;
+  background: rgba(8, 31, 24, 0.92);
+  border: 1px solid rgba(52, 211, 153, 0.34);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+  font-size: 12px;
+}
+
+.webgl-fallback-banner button {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 4px 8px;
+  color: #a7f3d0;
+  background: transparent;
+  border: 1px solid rgba(167, 243, 208, 0.35);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.webgl-fallback-banner button:hover,
+.webgl-fallback-banner button:focus-visible {
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.2);
+  outline: none;
+}
+
 .embed-preview {
   position: fixed;
   inset: 0;
@@ -1141,6 +1263,15 @@ async function selectPreset(presetName: string) {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.embed-fallback-viewport {
+  overflow-y: auto;
+}
+
+.embed-fallback-main {
+  min-height: 100%;
+  padding-top: 100px;
 }
 
 /* ==========================================

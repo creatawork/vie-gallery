@@ -202,5 +202,8 @@ export type ViewerEvent =
   | 'layout:positions'
   | 'theme:update'
   | 'config:update'
+  | 'webgl:lost'
+  | 'webgl:restored'
+  | 'metrics:update'
   | 'resize'
   | 'destroy'

@@ -1,6 +1,31 @@
 import type { ViewerConfig } from './types'
 import { PublicApiClient } from '../api/client'
 
+export interface DeviceProfile {
+  isMobile: boolean
+  memory: number
+  cores: number
+  isLowEnd: boolean
+  pixelRatio: number
+}
+
+export function getDeviceProfile(): DeviceProfile {
+  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(userAgent)
+  const memory = typeof navigator === 'undefined' ? 4 : (navigator as any).deviceMemory || 4
+  const cores = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency || 4
+  const isLowEnd = isMobile || memory < 4 || cores < 4
+  const devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+
+  return {
+    isMobile,
+    memory,
+    cores,
+    isLowEnd,
+    pixelRatio: isLowEnd ? 1 : Math.min(devicePixelRatio, 2)
+  }
+}
+
 /**
  * 6 大生产级预设配置定义
  */
@@ -302,19 +327,18 @@ export class ConfigManager {
    * 自动检测设备并调整配置
    */
   autoAdjustForDevice(): ViewerConfig {
-    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
-    const memory = (navigator as any).deviceMemory || 4
-    const cores = navigator.hardwareConcurrency || 4
-    const isLowEnd = isMobile || memory < 4 || cores < 4
+    const profile = getDeviceProfile()
 
-    if (isLowEnd) {
+    if (profile.isLowEnd) {
       this.config = this.deepMerge(this.config, {
         quality: 'low',
         particles: {
+          enabled: false,
           density: 0.5
         },
         effects: {
-          bloom: { enabled: false }
+          bloom: { enabled: false },
+          fog: { enabled: false }
         }
       })
     } else {
