@@ -1716,6 +1716,9 @@ async function handleCreateGallery() {
 }
 
 .modal-card {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
   background: #fff;
   border-radius: 22px;
   padding: 32px;
@@ -1798,6 +1801,10 @@ async function handleCreateGallery() {
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: all 0.2s ease;
+}
+
+.modal-backdrop.modal-fade-leave-active {
+  pointer-events: none;
 }
 
 .modal-fade-enter-from,
