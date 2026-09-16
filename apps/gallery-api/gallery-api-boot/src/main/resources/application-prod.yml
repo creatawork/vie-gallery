@@ -54,6 +54,8 @@ management:
 
 gallery:
   admin-public-base-url: ${ADMIN_PUBLIC_BASE_URL}
+  public:
+    base-url: ${GALLERY_PUBLIC_BASE_URL}
   mail:
     from: ${MAIL_FROM}
   storage:

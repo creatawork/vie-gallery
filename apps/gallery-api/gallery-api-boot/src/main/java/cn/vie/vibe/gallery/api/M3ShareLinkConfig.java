@@ -18,7 +18,7 @@ public class M3ShareLinkConfig {
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
             TokenGenerator tokenGenerator,
-            @Value("${gallery.public.base-url:https://gallery.vie-vibe.cn}") String publicBaseUrl,
+            @Value("${gallery.public.base-url:http://localhost:5174}") String publicBaseUrl,
             WorkspaceAuthorizationPolicy authorization
     ) {
         return new ShareLinkFacade(

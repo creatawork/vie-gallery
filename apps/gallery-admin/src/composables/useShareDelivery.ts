@@ -68,22 +68,18 @@ export function useShareDelivery(
     return `${window.location.protocol}//${window.location.hostname}${port}/g/${slug}`
   }
 
-  function normalizeShareUrl(url: string, slug: string, rawToken?: string): string {
-    if (url) {
-      // In local development normalize 5173 to 5174
-      if (['5173', '5175'].includes(window.location.port)) {
-        try {
-          const parsed = new URL(url, window.location.origin)
-          parsed.port = '5174'
-          return parsed.toString()
-        } catch {
-          // ignore fallback
-        }
-      }
-      return url
-    }
-    const base = viewerBaseUrl(slug)
+  function shareUrlWithToken(base: string, rawToken?: string) {
     return rawToken ? `${base}?t=${encodeURIComponent(rawToken)}` : base
+  }
+
+  function normalizeShareUrl(url: string, slug: string, rawToken?: string): string {
+    // 本地开发时后端返回的是 gallery.public.base-url 配置的域名（默认是生产占位域），
+    // 直接改端口会拼出"生产域名 + 开发端口"的不可用链接，因此整条链接按当前窗口重建。
+    if (['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)) {
+      return shareUrlWithToken(viewerBaseUrl(slug), rawToken)
+    }
+    if (url) return url
+    return shareUrlWithToken(viewerBaseUrl(slug), rawToken)
   }
 
   async function loadShareLinks() {

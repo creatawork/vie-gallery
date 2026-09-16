@@ -376,6 +376,14 @@ onUnmounted(() => {
 .members-nav,
 .members-body {
   position: relative;
+}
+
+/* 导航必须高于正文，否则用户下拉菜单会被 members-body 盖住无法点击。 */
+.members-nav {
+  z-index: 50;
+}
+
+.members-body {
   z-index: 1;
 }
 

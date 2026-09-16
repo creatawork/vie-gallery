@@ -1050,6 +1050,14 @@ async function handleCreateGallery() {
 .space-nav,
 .space-body {
   position: relative;
+}
+
+/* 导航必须高于正文，否则用户下拉菜单会被 space-body 盖住无法点击。 */
+.space-nav {
+  z-index: 50;
+}
+
+.space-body {
   z-index: 1;
 }
 

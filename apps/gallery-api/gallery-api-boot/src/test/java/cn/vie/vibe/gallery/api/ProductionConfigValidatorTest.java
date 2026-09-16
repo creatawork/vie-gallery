@@ -74,5 +74,6 @@ class ProductionConfigValidatorTest {
         ReflectionTestUtils.setField(validator, "mailHost", "smtp.example.com");
         ReflectionTestUtils.setField(validator, "mailFrom", "noreply@example.com");
         ReflectionTestUtils.setField(validator, "adminPublicBaseUrl", "https://admin.example.com");
+        ReflectionTestUtils.setField(validator, "galleryPublicBaseUrl", "https://gallery.example.com");
     }
 }

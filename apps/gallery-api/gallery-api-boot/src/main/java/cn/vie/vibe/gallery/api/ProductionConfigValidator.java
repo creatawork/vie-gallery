@@ -32,6 +32,9 @@ public class ProductionConfigValidator {
     @Value("${gallery.admin-public-base-url:}")
     private String adminPublicBaseUrl;
 
+    @Value("${gallery.public.base-url:}")
+    private String galleryPublicBaseUrl;
+
     private static final Set<String> WEAK_OR_DEFAULT_PASSWORDS = Set.of(
             "", "vie_local", "vie_local_secret", "root_local", "password", "123456", "admin", "root"
     );
@@ -64,6 +67,10 @@ public class ProductionConfigValidator {
         if (adminPublicBaseUrl == null || adminPublicBaseUrl.isBlank()
                 || !(adminPublicBaseUrl.startsWith("https://") || adminPublicBaseUrl.startsWith("http://"))) {
             throw new IllegalStateException("Production configuration error: ADMIN_PUBLIC_BASE_URL must be an absolute http(s) URL.");
+        }
+        if (galleryPublicBaseUrl == null || galleryPublicBaseUrl.isBlank()
+                || !(galleryPublicBaseUrl.startsWith("https://") || galleryPublicBaseUrl.startsWith("http://"))) {
+            throw new IllegalStateException("Production configuration error: GALLERY_PUBLIC_BASE_URL must be an absolute http(s) URL.");
         }
     }
 }
