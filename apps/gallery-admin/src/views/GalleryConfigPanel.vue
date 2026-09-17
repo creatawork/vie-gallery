@@ -975,45 +975,25 @@ onUnmounted(() => {
             氛围
           </h2>
 
-          <label class="field-label">
-            背景模式
-            <span class="help-tip" title="选择展厅空间的背景渲染方式">ⓘ</span>
-          </label>
+          <label class="field-label">3D 背景图</label>
           <div class="chip-row">
             <button
-              v-for="item in BG_TYPES"
+              v-for="item in SKY_THEMES"
               :key="item.id"
               class="chip"
-              :class="{ active: config.background.type === item.id }"
+              :class="{ active: config.background.sky.theme === item.id }"
               type="button"
               :disabled="!canConfigWrite"
-              @click="setBackgroundType(item.id)"
+              @click="setSkyTheme(item.id)"
             >
               {{ item.label }}
             </button>
           </div>
-
-          <template v-if="config.background.type === 'sky'">
-            <label class="field-label">3D 背景图</label>
-            <div class="chip-row">
-              <button
-                v-for="item in SKY_THEMES"
-                :key="item.id"
-                class="chip"
-                :class="{ active: config.background.sky.theme === item.id }"
-                type="button"
-                :disabled="!canConfigWrite"
-                @click="setSkyTheme(item.id)"
-              >
-                {{ item.label }}
-              </button>
-            </div>
-            
-            <div class="custom-skybox-hint">
-              <Icon name="upload" :size="14" />
-              <span>自定义全景图上传功能即将推出</span>
-            </div>
-          </template>
+          
+          <div class="custom-skybox-hint">
+            <Icon name="upload" :size="14" />
+            <span>自定义全景图上传功能即将推出</span>
+          </div>
 
           <div class="slider-row">
             <Icon name="sun" :size="15" />
@@ -1031,52 +1011,20 @@ onUnmounted(() => {
             type="range"
             min="8"
             max="100"
-            :disabled="!canConfigWrite"
+            :disabled="!canConfigWrite || !bloomOn"
             @input="onAtmosphereInput"
           />
 
           <div class="toggle-row">
             <div class="slider-row">
               <Icon name="zap" :size="15" />
-              <span>辉光 Bloom</span>
+              <span>辉光效果</span>
             </div>
             <label class="switch">
               <input v-model="bloomOn" type="checkbox" :disabled="!canConfigWrite" @change="onAtmosphereInput" />
               <span></span>
             </label>
           </div>
-          <template v-if="bloomOn">
-            <div class="slider-row">
-              <div class="slider-copy">
-                <span>辉光半径</span>
-                <strong>{{ bloomRadius }}%</strong>
-              </div>
-            </div>
-            <input
-              v-model.number="bloomRadius"
-              class="range"
-              type="range"
-              min="10"
-              max="100"
-              :disabled="!canConfigWrite"
-              @input="onAtmosphereInput"
-            />
-            <div class="slider-row">
-              <div class="slider-copy">
-                <span>辉光阈值</span>
-                <strong>{{ bloomThreshold }}%</strong>
-              </div>
-            </div>
-            <input
-              v-model.number="bloomThreshold"
-              class="range"
-              type="range"
-              min="5"
-              max="60"
-              :disabled="!canConfigWrite"
-              @input="onAtmosphereInput"
-            />
-          </template>
 
           <div class="toggle-row">
             <div class="slider-row">
@@ -1092,7 +1040,10 @@ onUnmounted(() => {
           <div class="slider-row">
             <Icon name="cloud" :size="15" />
             <div class="slider-copy">
-              <span>空间雾化</span>
+              <span>
+                空间雾化
+                <span class="help-tip" title="增加空间深度感，营造氛围">ⓘ</span>
+              </span>
               <strong>{{ fogLevel }}%</strong>
             </div>
           </div>
@@ -1105,19 +1056,19 @@ onUnmounted(() => {
             :disabled="!canConfigWrite"
             @input="onAtmosphereInput"
           />
-          <label class="field-label">雾的颜色</label>
-          <div class="swatches">
-            <button
-              v-for="color in FOG_COLORS"
-              :key="color"
-              class="swatch"
-              :class="{ active: fogColor === color }"
-              type="button"
-              :style="{ background: color }"
-              :aria-label="color"
-              :disabled="!canConfigWrite"
-              @click="setFogColor(color)"
-            />
+
+          <div class="toggle-row">
+            <div class="slider-row">
+              <Icon name="star" :size="15" />
+              <span>
+                点击涟漪
+                <span class="help-tip" title="点击照片时显示涟漪特效">ⓘ</span>
+              </span>
+            </div>
+            <label class="switch">
+              <input v-model="config.interaction.clickRipple" type="checkbox" :disabled="!canConfigWrite" @change="scheduleAutoSave" />
+              <span></span>
+            </label>
           </div>
         </section>
 
