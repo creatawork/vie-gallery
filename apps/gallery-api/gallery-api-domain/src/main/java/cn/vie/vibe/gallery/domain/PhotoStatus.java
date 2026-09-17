@@ -1,3 +1,3 @@
 package cn.vie.vibe.gallery.domain;
 
-public enum PhotoStatus { PROCESSING, READY, FAILED, DELETED }
+public enum PhotoStatus { PROCESSING, READY, FAILED, CANCELLED, DELETED }

@@ -8,6 +8,8 @@ services:
       DB_PASSWORD: vie_local
       REDIS_URL: redis://redis:6379
       STORAGE_ENDPOINT: http://minio:9000
+      # Browsers on the host reach the published MinIO port through localhost.
+      # Production must override this with the externally reachable storage URL.
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
       STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-vie_local}
       STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-vie_local_secret}
@@ -57,7 +59,7 @@ services:
     environment:
       MINIO_ROOT_USER: vie_local
       MINIO_ROOT_PASSWORD: vie_local_secret
-      MINIO_SERVER_URL: http://localhost:9000
+      MINIO_SERVER_URL: ${MINIO_SERVER_URL:-http://localhost:9000}
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio_data:/data"]
     healthcheck:

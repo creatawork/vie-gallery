@@ -2,6 +2,7 @@ package cn.vie.vibe.gallery.application;
 
 import cn.vie.vibe.gallery.domain.ShareLink;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,6 +40,11 @@ public interface ShareLinkRepository {
      * 更新分享链接
      */
     void update(ShareLink shareLink);
+
+    /**
+     * 记录最近访问时间，仅当上次访问早于阈值时才写入（节流）。
+     */
+    void touchLastAccessed(UUID id, Instant lastAccessedAt, Instant threshold);
 
     /**
      * 删除分享链接（软删除）

@@ -3,6 +3,7 @@ package cn.vie.vibe.gallery.api;
 import cn.vie.vibe.gallery.application.AuthFacade;
 import cn.vie.vibe.gallery.application.AuthenticatedUser;
 import cn.vie.vibe.gallery.application.CurrentPrincipal;
+import cn.vie.vibe.gallery.domain.Capability;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Cookie;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -36,10 +38,13 @@ import java.util.Map;
 public class AuthController {
     private final AuthFacade auth;
     private final SecurityContextRepository securityContextRepository;
+    private final RedisRateLimiter rateLimiter;
 
-    public AuthController(AuthFacade auth, SecurityContextRepository securityContextRepository) {
+    public AuthController(AuthFacade auth, SecurityContextRepository securityContextRepository,
+                          RedisRateLimiter rateLimiter) {
         this.auth = auth;
         this.securityContextRepository = securityContextRepository;
+        this.rateLimiter = rateLimiter;
     }
 
     @GetMapping("/csrf")
@@ -58,7 +63,18 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request,
                               HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
-        AuthenticatedUser result = auth.login(request.email(), request.password());
+        String identity = request.email().trim().toLowerCase(Locale.ROOT);
+        rateLimiter.assertLoginAllowed(identity);
+        AuthenticatedUser result;
+        try {
+            result = auth.login(request.email(), request.password());
+        } catch (DomainException exception) {
+            if ("AUTH_INVALID_CREDENTIALS".equals(exception.code())) {
+                rateLimiter.recordLoginFailure(identity);
+            }
+            throw exception;
+        }
+        rateLimiter.resetLogin(identity);
         authenticate(result, httpRequest, httpResponse);
         return AuthResponse.from(result);
     }
@@ -81,6 +97,18 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/forgot-password")
+    public Map<String, String> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        auth.requestPasswordReset(request.email());
+        return Map.of("message", "如果邮箱存在，您将收到密码重置邮件");
+    }
+
+    @PostMapping("/reset-password")
+    public Map<String, Boolean> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        auth.resetPassword(request.token(), request.newPassword());
+        return Map.of("success", true);
+    }
+
     private void authenticate(AuthenticatedUser result, HttpServletRequest request, HttpServletResponse response) {
         if (request.getSession(false) != null) {
             request.changeSessionId();
@@ -88,8 +116,8 @@ public class AuthController {
             request.getSession(true);
         }
         Authentication authentication = new UsernamePasswordAuthenticationToken(
-                new CurrentPrincipal(result.user().id()), null,
-                List.of(new SimpleGrantedAuthority("ROLE_OWNER")));
+                new CurrentPrincipal(result.user().id(), result.user().authenticationVersion()), null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + result.role().name())));
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
@@ -113,10 +141,17 @@ public class AuthController {
                                @NotBlank @Size(min = 12, max = 128) String password) {
     }
 
-    public record AuthResponse(UserResponse user, TenantResponse tenant, String role) {
+    public record ForgotPasswordRequest(@NotBlank @Email @Size(max = 320) String email) {
+    }
+
+    public record ResetPasswordRequest(@NotBlank @Size(min = 43, max = 128) String token,
+                                       @NotBlank @Size(min = 12, max = 128) String newPassword) {
+    }
+
+    public record AuthResponse(UserResponse user, TenantResponse tenant, String role, List<Capability> capabilities) {
         static AuthResponse from(AuthenticatedUser authenticated) {
             return new AuthResponse(UserResponse.from(authenticated), TenantResponse.from(authenticated),
-                    authenticated.role().name());
+                    authenticated.role().name(), cn.vie.vibe.gallery.application.WorkspaceCapabilities.forRole(authenticated.role()));
         }
     }
 

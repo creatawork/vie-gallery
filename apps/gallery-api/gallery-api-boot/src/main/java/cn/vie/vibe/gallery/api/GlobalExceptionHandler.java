@@ -9,8 +9,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,11 +50,13 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> domain(DomainException exception, HttpServletRequest request) {
         HttpStatus status = switch (exception.code()) {
             case "AUTH_REQUIRED", "AUTH_INVALID_CREDENTIALS" -> HttpStatus.UNAUTHORIZED;
-            case "AUTH_USER_DISABLED", "AUTH_TENANT_NOT_FOUND" -> HttpStatus.FORBIDDEN;
-            case "RESOURCE_NOT_FOUND", "GALLERY_NOT_FOUND", "PHOTO_NOT_FOUND", "TASK_NOT_FOUND" -> HttpStatus.NOT_FOUND;
-            case "VALIDATION_FAILED", "FILE_INVALID", "FILE_TYPE_UNSUPPORTED", "IMAGE_DECODE_FAILED", "IMAGE_DIMENSIONS_INVALID" -> HttpStatus.BAD_REQUEST;
+            case "AUTH_USER_DISABLED", "AUTH_TENANT_NOT_FOUND", "MEMBER_FORBIDDEN", "ROLE_REQUIRED" -> HttpStatus.FORBIDDEN;
+            case "RESOURCE_NOT_FOUND", "GALLERY_NOT_FOUND", "PHOTO_NOT_FOUND", "TASK_NOT_FOUND", "MEMBERSHIP_NOT_FOUND", "CONFIG_NOT_FOUND", "CONFIG_VERSION_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+            case "VALIDATION_FAILED", "FILE_INVALID", "FILE_TYPE_UNSUPPORTED", "IMAGE_DECODE_FAILED", "IMAGE_DIMENSIONS_INVALID", "INVALID_PAGE", "INVALID_PAGE_SIZE", "INVALID_PARAMETER", "BAD_SCHEMA_VERSION", "CONFIG_VERSIONING_UNAVAILABLE" -> HttpStatus.BAD_REQUEST;
             case "DEPENDENCY_UNAVAILABLE", "STORAGE_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
-            case "AUTH_EMAIL_UNAVAILABLE", "GALLERY_SLUG_CONFLICT", "QUOTA_EXCEEDED", "FILE_TOO_LARGE" -> HttpStatus.CONFLICT;
+            case "AUTH_EMAIL_UNAVAILABLE", "GALLERY_SLUG_CONFLICT", "GALLERY_ALREADY_ARCHIVED", "GALLERY_NOT_READY", "GALLERY_STATE_CONFLICT", "MEMBERSHIP_CONFLICT", "LAST_OWNER", "QUOTA_EXCEEDED", "TASK_STATE_CONFLICT", "TASK_RETRY_EXHAUSTED", "CONFIG_VERSION_PUBLISH_FAILED" -> HttpStatus.CONFLICT;
+            case "FILE_TOO_LARGE" -> HttpStatus.PAYLOAD_TOO_LARGE;
+            case "RATE_LIMITED" -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(errors.create(request, exception.code(), exception.getMessage()));
@@ -68,6 +72,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ApiError> malformedJson(HttpServletRequest request) {
         return ResponseEntity.badRequest().body(errors.create(request, "MALFORMED_JSON", "Malformed JSON"));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiError> invalidParameter(MethodArgumentTypeMismatchException exception, HttpServletRequest request) {
+        String parameter = exception.getName();
+        String code = switch (parameter) {
+            case "page" -> "INVALID_PAGE";
+            case "pageSize" -> "INVALID_PAGE_SIZE";
+            default -> "INVALID_PARAMETER";
+        };
+        return ResponseEntity.badRequest().body(errors.create(request, code, "Request parameter is invalid"));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<ApiError> uploadTooLarge(HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(errors.create(request, "FILE_TOO_LARGE", "文件体积超过限制，请选择较小的照片"));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

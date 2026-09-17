@@ -1,0 +1,70 @@
+name: Quality
+
+# 上线前暂不绑定 push/PR：尚无生产服务器与域名，避免每次提交触发远程 CI。
+# 本地门禁：npm run verify && npm run verify:full
+# 需要时在 GitHub Actions 页手动 Run workflow。
+on:
+  workflow_dispatch:
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify frontend and docs
+        run: npm run verify
+
+      - name: Run backend unit and integration tests
+        run: mvn -B -ntp test
+        env:
+          CI: true
+          testcontainers.enabled: true
+
+  admin-smoke:
+    name: Admin smoke (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Admin
+        run: npm run build --workspace apps/gallery-admin
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+        working-directory: apps/gallery-admin
+
+      - name: Run Playwright smoke
+        run: npm run test:e2e
+        working-directory: apps/gallery-admin
+        env:
+          CI: true
+          ADMIN_URL: http://127.0.0.1:4173

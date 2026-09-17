@@ -25,6 +25,7 @@ public class MyBatisGalleryViewerConfigRepository implements GalleryViewerConfig
         if (row == null) return Optional.empty();
 
         Boolean enabled = (Boolean) row.get("enabled");
+        Number schemaVersion = (Number) row.get("schemaVersion");
         return Optional.of(new GalleryViewerConfig(
                 MyBatisValueMapper.uuid(row, "id"),
                 MyBatisValueMapper.uuid(row, "galleryId"),
@@ -32,7 +33,11 @@ public class MyBatisGalleryViewerConfigRepository implements GalleryViewerConfig
                 enabled != null && enabled,
                 (String) row.get("presetName"),
                 MyBatisValueMapper.instant(row, "createdAt"),
-                MyBatisValueMapper.instant(row, "updatedAt")
+                MyBatisValueMapper.instant(row, "updatedAt"),
+                schemaVersion == null ? GalleryViewerConfig.CURRENT_SCHEMA_VERSION : schemaVersion.intValue(),
+                MyBatisValueMapper.uuid(row, "updatedByUserId"),
+                MyBatisValueMapper.instant(row, "lastPublishedAt"),
+                MyBatisValueMapper.uuid(row, "publishedVersionId")
         ));
     }
 
@@ -45,7 +50,10 @@ public class MyBatisGalleryViewerConfigRepository implements GalleryViewerConfig
                 config.enabled(),
                 config.presetName(),
                 MyBatisValueMapper.localDateTime(config.createdAt()),
-                MyBatisValueMapper.localDateTime(config.updatedAt())
+                MyBatisValueMapper.localDateTime(config.updatedAt()),
+                config.schemaVersion(),
+                config.updatedByUserId() == null ? null : config.updatedByUserId().toString(),
+                config.publishedVersionId() == null ? null : config.publishedVersionId().toString()
         );
     }
 

@@ -1,16 +1,19 @@
 package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.application.AuthFacade;
+import cn.vie.vibe.gallery.application.AuthenticatedUser;
 import cn.vie.vibe.gallery.application.CurrentPrincipal;
 import cn.vie.vibe.gallery.application.TenantContextHolder;
 import cn.vie.vibe.gallery.domain.DomainException;
+import cn.vie.vibe.gallery.domain.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -33,7 +36,17 @@ public class TenantContextFilter extends OncePerRequestFilter {
         try {
             if (authentication != null && authentication.isAuthenticated()
                     && authentication.getPrincipal() instanceof CurrentPrincipal principal) {
-                TenantContextHolder.set(auth.resolveTenantContext(principal.userId()));
+                AuthenticatedUser authenticated = auth.currentUser(principal.userId());
+                if (authenticated.user().authenticationVersion() != principal.authenticationVersion()) {
+                    HttpSession session = request.getSession(false);
+                    if (session != null) {
+                        session.invalidate();
+                    }
+                    SecurityContextHolder.clearContext();
+                    throw new DomainException("AUTH_REQUIRED", "Authentication is required");
+                }
+                TenantContextHolder.set(new TenantContext(
+                        authenticated.user().id(), authenticated.tenant().id(), authenticated.role()));
             }
             filterChain.doFilter(request, response);
         } catch (DomainException exception) {

@@ -86,6 +86,16 @@ public class MyBatisShareLinkRepository implements ShareLinkRepository {
     }
 
     @Override
+    public void touchLastAccessed(UUID id, Instant lastAccessedAt, Instant threshold) {
+        mapper.touchLastAccessed(
+                id.toString(),
+                localDateTime(lastAccessedAt),
+                localDateTime(threshold),
+                localDateTime(lastAccessedAt)
+        );
+    }
+
+    @Override
     public void delete(UUID id) {
         Instant now = Instant.now();
         mapper.softDelete(

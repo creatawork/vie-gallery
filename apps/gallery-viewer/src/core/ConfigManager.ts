@@ -1,4 +1,30 @@
 import type { ViewerConfig } from './types'
+import { PublicApiClient } from '../api/client'
+
+export interface DeviceProfile {
+  isMobile: boolean
+  memory: number
+  cores: number
+  isLowEnd: boolean
+  pixelRatio: number
+}
+
+export function getDeviceProfile(): DeviceProfile {
+  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(userAgent)
+  const memory = typeof navigator === 'undefined' ? 4 : (navigator as any).deviceMemory || 4
+  const cores = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency || 4
+  const isLowEnd = isMobile || memory < 4 || cores < 4
+  const devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+
+  return {
+    isMobile,
+    memory,
+    cores,
+    isLowEnd,
+    pixelRatio: isLowEnd ? 1 : Math.min(devicePixelRatio, 2)
+  }
+}
 
 /**
  * 6 大生产级预设配置定义
@@ -150,6 +176,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
 export class ConfigManager {
   private config: ViewerConfig
   private serverConfig: Partial<ViewerConfig> | null = null
+  private readonly publicApi = new PublicApiClient()
   private readonly STORAGE_KEY = 'vie-gallery-viewer-config'
   private readonly PREFERENCE_KEY = 'vie-gallery-viewer-preference'
 
@@ -164,32 +191,17 @@ export class ConfigManager {
    * 从服务端加载配置（相册所有者设定的风格）
    */
   async loadFromServer(slug: string): Promise<ViewerConfig> {
-    try {
-      const token = new URLSearchParams(window.location.search).get('t') || new URLSearchParams(window.location.search).get('token')
-      const headers: Record<string, string> = {}
-      if (token) {
-        headers['X-Share-Token'] = token
-      }
-
-      const response = await fetch(`/api/public/g/${slug}/viewer-config`, { headers })
-      if (response.ok) {
-        const serverData = await response.json()
-        if (serverData && serverData.configJson) {
-          try {
-            const parsed = JSON.parse(serverData.configJson)
-            this.serverConfig = parsed
-            this.config = this.deepMerge(
-              DEFAULT_CONFIG,
-              parsed,
-              this.loadPreferenceFromStorage()
-            )
-          } catch (e) {
-            console.warn('Failed to parse server config JSON', e)
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to load server config:', error)
+    // Use the public client so HTTP and network failures retain their typed,
+    // non-sensitive error details. Only an empty 404 means no saved config.
+    const serverData = await this.publicApi.getViewerConfig(slug)
+    if (serverData?.configJson) {
+      const parsed = JSON.parse(serverData.configJson) as Partial<ViewerConfig>
+      this.serverConfig = parsed
+      this.config = this.deepMerge(
+        DEFAULT_CONFIG,
+        parsed,
+        this.loadPreferenceFromStorage()
+      )
     }
     return this.getConfig()
   }
@@ -315,19 +327,18 @@ export class ConfigManager {
    * 自动检测设备并调整配置
    */
   autoAdjustForDevice(): ViewerConfig {
-    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
-    const memory = (navigator as any).deviceMemory || 4
-    const cores = navigator.hardwareConcurrency || 4
-    const isLowEnd = isMobile || memory < 4 || cores < 4
+    const profile = getDeviceProfile()
 
-    if (isLowEnd) {
+    if (profile.isLowEnd) {
       this.config = this.deepMerge(this.config, {
         quality: 'low',
         particles: {
+          enabled: false,
           density: 0.5
         },
         effects: {
-          bloom: { enabled: false }
+          bloom: { enabled: false },
+          fog: { enabled: false }
         }
       })
     } else {

@@ -26,8 +26,28 @@ withDefaults(defineProps<Props>(), {
     stroke-linejoin="round"
     class="vie-icon"
   >
+    <!-- Users -->
+    <g v-if="name === 'users'">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </g>
+
+    <!-- Home / House -->
+    <g v-else-if="name === 'home'">
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5 10.5V20h5v-6h4v6h5v-9.5" />
+    </g>
+
+    <!-- More horizontal -->
+    <g v-else-if="name === 'more' || name === 'more-horizontal'">
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </g>
+
     <!-- Gallery / Layers -->
-    <g v-if="name === 'gallery'">
+    <g v-else-if="name === 'gallery'">
       <path d="M4 3h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <polyline points="21 15 16 10 5 21" />
@@ -214,6 +234,211 @@ withDefaults(defineProps<Props>(), {
     <!-- Star -->
     <g v-else-if="name === 'star'">
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </g>
+
+    <!-- Search -->
+    <g v-else-if="name === 'search'">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </g>
+
+    <!-- Hard Drive / Database -->
+    <g v-else-if="name === 'harddrive' || name === 'database' || name === 'storage'">
+      <line x1="22" y1="12" x2="2" y2="12" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+      <line x1="6" y1="16" x2="6.01" y2="16" />
+      <line x1="10" y1="16" x2="10.01" y2="16" />
+    </g>
+
+    <!-- Download -->
+    <g v-else-if="name === 'download'">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </g>
+
+    <!-- List -->
+    <g v-else-if="name === 'list'">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </g>
+
+    <!-- Filter -->
+    <g v-else-if="name === 'filter'">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </g>
+
+    <!-- Folder -->
+    <g v-else-if="name === 'folder'">
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+    </g>
+
+    <!-- Activity / Trending -->
+    <g v-else-if="name === 'activity'">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </g>
+
+    <!-- Clock -->
+    <g v-else-if="name === 'clock'">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </g>
+
+    <!-- Check Circle -->
+    <g v-else-if="name === 'check-circle'">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </g>
+
+    <!-- Chevron Left -->
+    <g v-else-if="name === 'chevron-left'">
+      <polyline points="15 18 9 12 15 6" />
+    </g>
+
+    <!-- Chevron Right -->
+    <g v-else-if="name === 'chevron-right'">
+      <polyline points="9 18 15 12 9 6" />
+    </g>
+
+    <!-- Chevron Down -->
+    <g v-else-if="name === 'chevron-down'">
+      <polyline points="6 9 12 15 18 9" />
+    </g>
+
+    <!-- Shield / Security -->
+    <g v-else-if="name === 'shield'">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </g>
+
+    <!-- Monitor / Desktop -->
+    <g v-else-if="name === 'monitor' || name === 'desktop'">
+      <rect width="20" height="14" x="2" y="3" rx="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </g>
+
+    <!-- Tablet -->
+    <g v-else-if="name === 'tablet'">
+      <rect width="16" height="20" x="4" y="2" rx="2" ry="2" />
+      <line x1="12" y1="18" x2="12.01" y2="18" />
+    </g>
+
+    <!-- Smartphone / Mobile -->
+    <g v-else-if="name === 'smartphone' || name === 'mobile'">
+      <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+      <line x1="12" y1="18" x2="12.01" y2="18" />
+    </g>
+
+    <!-- Music / Audio -->
+    <g v-else-if="name === 'music'">
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </g>
+
+    <!-- Bell -->
+    <g v-else-if="name === 'bell'">
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </g>
+
+    <!-- Send / Paper plane -->
+    <g v-else-if="name === 'send'">
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </g>
+
+    <!-- Pause -->
+    <g v-else-if="name === 'pause'">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </g>
+
+    <!-- Edit / Pencil -->
+    <g v-else-if="name === 'edit' || name === 'pencil'">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </g>
+
+    <!-- Grip -->
+    <g v-else-if="name === 'grip'">
+      <circle cx="9" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1.1" fill="currentColor" stroke="none" />
+    </g>
+
+    <!-- Layout / Workbench -->
+    <g v-else-if="name === 'layout'">
+      <rect x="3" y="3" width="7" height="18" rx="1" />
+      <rect x="14" y="3" width="7" height="8" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </g>
+
+    <!-- Wrench -->
+    <g v-else-if="name === 'wrench' || name === 'tool'">
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-1.8-1.8Z" />
+    </g>
+
+    <!-- Leaf -->
+    <g v-else-if="name === 'leaf'">
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 19 8.6 20 13.4 16 13 13 16 11 20Z" />
+      <path d="M12 12c-2 3-4 6-7 8" />
+    </g>
+
+    <!-- Zap / Lightning -->
+    <g v-else-if="name === 'zap'">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </g>
+
+    <!-- Sun -->
+    <g v-else-if="name === 'sun'">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </g>
+
+    <!-- Cloud -->
+    <g v-else-if="name === 'cloud'">
+      <path d="M17.5 19H8a5 5 0 0 1-.4-10 6 6 0 0 1 11.3 1.5A4 4 0 0 1 17.5 19Z" />
+    </g>
+
+    <!-- Undo -->
+    <g v-else-if="name === 'undo'">
+      <path d="M3 7v6h6" />
+      <path d="M3 13a9 9 0 1 0 2.6-6.7L3 13" />
+    </g>
+
+    <!-- Mouse pointer -->
+    <g v-else-if="name === 'mouse-pointer' || name === 'pointer'">
+      <path d="M4 4 11.2 20l1.7-6.1L19 12.2 4 4Z" />
+    </g>
+
+    <!-- Minus -->
+    <g v-else-if="name === 'minus'">
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </g>
+
+    <!-- Volume -->
+    <g v-else-if="name === 'volume'">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    </g>
+
+    <!-- Calendar -->
+    <g v-else-if="name === 'calendar'">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M3 11h18" />
+    </g>
+
+    <!-- Heart -->
+    <g v-else-if="name === 'heart'">
+      <path d="M19 14c1.5-1.4 3-3.2 3-5.6A4.4 4.4 0 0 0 12 6a4.4 4.4 0 0 0-10 2.4C2 10.8 3.5 12.6 5 14l7 7Z" />
     </g>
 
     <!-- Default generic bullet -->

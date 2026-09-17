@@ -11,7 +11,11 @@ public interface PhotoRepository {
     Optional<Photo> findById(UUID photoId);
     int countByGalleryId(UUID galleryId);
     List<Photo> findByGalleryIdWithPagination(UUID galleryId, int offset, int limit);
+    List<Photo> findPublicReadyByGalleryId(UUID tenantId, UUID galleryId, int offset, int limit);
+    int countPublicReadyByGalleryId(UUID tenantId, UUID galleryId);
+    int countFailedByGalleryId(UUID tenantId, UUID galleryId);
     int updateStatus(UUID tenantId, UUID photoId, PhotoStatus status);
     int updateMetadata(UUID tenantId, UUID photoId, String title, Integer sortOrder, Boolean cover);
+    int clearCoverByGallery(UUID tenantId, UUID galleryId);
     int softDelete(UUID tenantId, UUID photoId);
 }

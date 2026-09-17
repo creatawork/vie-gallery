@@ -1,0 +1,68 @@
+services:
+  gallery-api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    image: vie-gallery-api:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-vie-gallery}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  gallery-web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.admin
+    image: vie-gallery-web:latest
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    depends_on:
+      - gallery-api
+
+  mysql:
+    image: mysql:8.4.0
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vie_gallery}
+      MYSQL_USER: ${MYSQL_USER:-vie}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_prod_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mysql_prod_data:
+  redis_prod_data:

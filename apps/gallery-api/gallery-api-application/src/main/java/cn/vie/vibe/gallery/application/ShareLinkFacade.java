@@ -14,6 +14,7 @@ public class ShareLinkFacade {
     private final GalleryRepository galleryRepository;
     private final TokenGenerator tokenGenerator;
     private final String publicBaseUrl;
+    private final WorkspaceAuthorizationPolicy authorization;
 
     public ShareLinkFacade(
             ShareLinkRepository shareLinkRepository,
@@ -21,23 +22,36 @@ public class ShareLinkFacade {
             TokenGenerator tokenGenerator,
             String publicBaseUrl
     ) {
+        this(shareLinkRepository, galleryRepository, tokenGenerator, publicBaseUrl,
+                new WorkspaceAuthorizationPolicy(TenantContextHolder::current));
+    }
+
+    public ShareLinkFacade(
+            ShareLinkRepository shareLinkRepository,
+            GalleryRepository galleryRepository,
+            TokenGenerator tokenGenerator,
+            String publicBaseUrl,
+            WorkspaceAuthorizationPolicy authorization
+    ) {
         this.shareLinkRepository = shareLinkRepository;
         this.galleryRepository = galleryRepository;
         this.tokenGenerator = tokenGenerator;
         this.publicBaseUrl = publicBaseUrl;
+        this.authorization = authorization;
     }
 
     /**
      * 创建分享链接
      */
     public CreateShareLinkResult createShareLink(CreateShareLinkCommand command) {
-        TenantContext context = TenantContextHolder.current();
+        TenantContext context = authorization.requireOwner();
         UUID galleryId = UUID.fromString(command.galleryId());
 
         // 验证相册属于当前租户
         Gallery gallery = galleryRepository.findById(galleryId)
                 .filter(g -> g.tenantId().equals(context.tenantId()))
                 .filter(g -> !g.deleted())
+                .filter(g -> g.status() == GalleryStatus.PUBLISHED)
                 .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
 
         // 生成 token 和 hash
@@ -60,7 +74,7 @@ public class ShareLinkFacade {
         shareLinkRepository.save(shareLink);
 
         // 构建分享 URL
-        String shareUrl = String.format("%s/g/%s#s=%s", publicBaseUrl, gallery.slug(), rawToken);
+        String shareUrl = String.format("%s/g/%s?t=%s", publicBaseUrl, gallery.slug(), rawToken);
 
         return new CreateShareLinkResult(
                 shareLink.getId(),
@@ -77,7 +91,7 @@ public class ShareLinkFacade {
      * 列出相册的分享链接
      */
     public List<ShareLinkView> listShareLinks(String galleryId) {
-        TenantContext context = TenantContextHolder.current();
+        TenantContext context = authorization.requireOwner();
         UUID gId = UUID.fromString(galleryId);
 
         // 验证相册属于当前租户
@@ -104,16 +118,16 @@ public class ShareLinkFacade {
      * 撤销分享链接
      */
     public void revokeShareLink(String shareLinkId) {
-        TenantContext context = TenantContextHolder.current();
+        TenantContext context = authorization.requireOwner();
         UUID linkId = UUID.fromString(shareLinkId);
 
         ShareLink shareLink = shareLinkRepository.findById(linkId)
                 .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
-        // 验证相册属于当前租户
+        // 跨租户统一返回 NOT_FOUND，避免泄露链接存在性
         galleryRepository.findById(shareLink.getGalleryId())
                 .filter(g -> g.tenantId().equals(context.tenantId()))
-                .orElseThrow(() -> new DomainException("ACCESS_DENIED", "Access denied"));
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
         // 创建新的已撤销状态
         Instant now = Instant.now();
@@ -135,16 +149,16 @@ public class ShareLinkFacade {
      * 删除分享链接
      */
     public void deleteShareLink(String shareLinkId) {
-        TenantContext context = TenantContextHolder.current();
+        TenantContext context = authorization.requireOwner();
         UUID linkId = UUID.fromString(shareLinkId);
 
         ShareLink shareLink = shareLinkRepository.findById(linkId)
                 .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
-        // 验证相册属于当前租户
+        // 跨租户统一返回 NOT_FOUND，避免泄露链接存在性
         galleryRepository.findById(shareLink.getGalleryId())
                 .filter(g -> g.tenantId().equals(context.tenantId()))
-                .orElseThrow(() -> new DomainException("ACCESS_DENIED", "Access denied"));
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
         shareLinkRepository.delete(linkId);
     }

@@ -1,0 +1,83 @@
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        name: VIE_SESSION
+        http-only: true
+        same-site: lax
+        secure: true
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    validate-on-migrate: true
+  session:
+    store-type: redis
+    timeout: ${SESSION_TTL:7d}
+    redis:
+      namespace: vie:session:v2
+  data:
+    redis:
+      url: ${REDIS_URL}
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE:100MB}
+      max-request-size: ${MAX_REQUEST_SIZE:500MB}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+gallery:
+  admin-public-base-url: ${ADMIN_PUBLIC_BASE_URL}
+  public:
+    base-url: ${GALLERY_PUBLIC_BASE_URL}
+  mail:
+    from: ${MAIL_FROM}
+  storage:
+    endpoint: ${STORAGE_ENDPOINT}
+    public-endpoint: ${STORAGE_PUBLIC_ENDPOINT}
+    access-key: ${STORAGE_ACCESS_KEY}
+    secret-key: ${STORAGE_SECRET_KEY}
+    bucket: ${STORAGE_BUCKET}
+  quota:
+    max-bytes: ${QUOTA_MAX_BYTES:5368709120}
+    max-photos: ${QUOTA_MAX_PHOTOS:10000}
+    max-file-size: ${MAX_FILE_SIZE_BYTES:104857600}
+    max-pixels: ${MAX_IMAGE_PIXELS:40000000}
+    max-batch: ${MAX_BATCH_FILES:50}
+  processing:
+    poll-interval: ${PHOTO_PROCESSING_POLL_INTERVAL:5000}
+    max-retries: ${PHOTO_PROCESSING_MAX_RETRIES:3}
+    stale-after: ${PHOTO_PROCESSING_STALE_AFTER:PT10M}
+  rate-limit:
+    login:
+      max-failures: ${LOGIN_RATE_LIMIT_MAX_FAILURES:5}
+      window: ${LOGIN_RATE_LIMIT_WINDOW:PT15M}
+    unlock:
+      max-failures: ${UNLOCK_RATE_LIMIT_MAX_FAILURES:5}
+      window: ${UNLOCK_RATE_LIMIT_WINDOW:PT15M}

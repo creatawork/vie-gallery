@@ -4,7 +4,14 @@ import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectCom
 import type { ViewerContext, ViewerConfig, PhotoMesh } from './types'
 import { EventBus } from './EventBus'
 import { PluginManager } from './PluginManager'
-import { ConfigManager } from './ConfigManager'
+import { ConfigManager, getDeviceProfile } from './ConfigManager'
+
+export class WebGLUnavailableError extends Error {
+  constructor(message = 'WebGL is unavailable') {
+    super(message)
+    this.name = 'WebGLUnavailableError'
+  }
+}
 
 export interface EngineMetrics {
   fps: number
@@ -138,6 +145,12 @@ export class ViewerEngine {
 
     // 布局插件（必需）
     pluginsToInstall.push('Layout')
+
+    // 光照插件（默认启用）
+    pluginsToInstall.push('Lighting')
+
+    // 照片淡入淡出动画（默认启用）
+    pluginsToInstall.push('PhotoFade')
 
     // 背景插件
     if (config.background.type === 'sky') {
@@ -498,24 +511,35 @@ export class ViewerEngine {
   }
 
   private createRenderer(): THREE.WebGLRenderer {
-    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
-    this.basePixelRatio = isMobile ? 1 : Math.min(window.devicePixelRatio, 2)
+    const profile = getDeviceProfile()
+    this.basePixelRatio = profile.pixelRatio
 
-    const renderer = new THREE.WebGLRenderer({
-      canvas: this.canvas,
-      alpha: true,
-      antialias: !isMobile,
-      powerPreference: 'high-performance'
-    })
+    const context = this.canvas.getContext('webgl2') || this.canvas.getContext('webgl')
+    if (!context) {
+      throw new WebGLUnavailableError('This device does not provide a usable WebGL context')
+    }
 
-    const width = this.canvas.clientWidth || window.innerWidth
-    const height = this.canvas.clientHeight || window.innerHeight
-    renderer.setSize(width, height)
-    renderer.setPixelRatio(this.basePixelRatio)
-    renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.25
+    try {
+      const renderer = new THREE.WebGLRenderer({
+        canvas: this.canvas,
+        alpha: true,
+        antialias: !profile.isLowEnd,
+        powerPreference: profile.isLowEnd ? 'default' : 'high-performance'
+      })
 
-    return renderer
+      const width = this.canvas.clientWidth || window.innerWidth
+      const height = this.canvas.clientHeight || window.innerHeight
+      renderer.setSize(width, height)
+      renderer.setPixelRatio(this.basePixelRatio)
+      renderer.toneMapping = THREE.ACESFilmicToneMapping
+      renderer.toneMappingExposure = 1.25
+
+      return renderer
+    } catch (error) {
+      throw new WebGLUnavailableError(
+        error instanceof Error ? error.message : 'Failed to initialize WebGL renderer'
+      )
+    }
   }
 
   private createControls(): OrbitControls {

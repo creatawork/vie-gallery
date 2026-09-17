@@ -1,19 +1,24 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import Icon from './Icon.vue'
 
 interface PhotoItem {
-  title?: string
-  thumbnailUrl?: string
-  width?: number
-  height?: number
-  sortOrder?: number
+  title?: string | null
+  thumbnailUrl?: string | null
+  width?: number | null
+  height?: number | null
+  sortOrder?: number | null
+  mediumUrl?: string | null
+  textureUrl?: string | null
 }
 
 interface Props {
   show: boolean
   photos: PhotoItem[]
   currentIndex: number
+  allowDownload?: boolean
+  /** 缩略图的初始位置和尺寸（用于平滑过渡动画） */
+  thumbnailRect?: { x: number; y: number; width: number; height: number } | null
 }
 
 const props = defineProps<Props>()
@@ -22,6 +27,21 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'select', index: number): void
 }>()
+
+// 图片切换动画状态
+const imageKey = ref(0)
+const isTransitioning = ref(false)
+
+// 监听 currentIndex 变化，触发图片切换动画
+watch(() => props.currentIndex, () => {
+  isTransitioning.value = true
+  imageKey.value++
+  
+  // 300ms 后结束过渡状态
+  setTimeout(() => {
+    isTransitioning.value = false
+  }, 300)
+})
 
 function handleKeyDown(e: KeyboardEvent) {
   if (!props.show) return
@@ -49,9 +69,24 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           <span class="index-total">{{ photos.length }}</span>
         </div>
 
-        <button class="close-btn" title="关闭 (Esc)" @click="emit('close')">
-          <Icon name="x" :size="20" />
-        </button>
+        <div class="topbar-actions">
+          <a
+            v-if="allowDownload && photos[currentIndex].mediumUrl"
+            :href="photos[currentIndex].mediumUrl || undefined"
+            :download="photos[currentIndex].title || 'photo'"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="download-action-btn"
+            title="下载照片"
+          >
+            <Icon name="download" :size="15" />
+            <span>下载</span>
+          </a>
+
+          <button class="close-btn" title="关闭 (Esc)" @click="emit('close')">
+            <Icon name="x" :size="20" />
+          </button>
+        </div>
       </div>
 
       <!-- Main Stage -->
@@ -66,13 +101,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           <Icon name="arrow-left" :size="24" />
         </button>
 
-        <!-- Image Display -->
+        <!-- Image Display with Smooth Transition -->
         <div class="image-wrapper">
-          <img
-            :src="photos[currentIndex].thumbnailUrl"
-            :alt="photos[currentIndex].title || 'Photograph'"
-            class="main-image"
-          />
+          <Transition name="image-fade" mode="out-in">
+            <img
+              :key="imageKey"
+              :src="photos[currentIndex].thumbnailUrl || ''"
+              :alt="photos[currentIndex].title || 'Photograph'"
+              class="main-image"
+            />
+          </Transition>
         </div>
 
         <!-- Next Button -->
@@ -139,6 +177,33 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   opacity: 0.4;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.download-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.download-action-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
 .close-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -180,18 +245,31 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.7);
-  animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+/* 图片切换淡入淡出动画 */
+.image-fade-enter-active {
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.image-fade-leave-active {
+  transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+}
+
+.image-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.97);
+}
+
+.image-fade-leave-to {
+  opacity: 0;
+  transform: scale(1.03);
+}
+
+.image-fade-enter-to,
+.image-fade-leave-from {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .nav-btn {
@@ -244,9 +322,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   color: #94a3b8;
 }
 
-.fade-enter-active,
+/* Lightbox 整体淡入淡出 */
+.fade-enter-active {
+  transition: opacity 0.3s ease-out;
+}
+
 .fade-leave-active {
-  transition: opacity 0.25s ease;
+  transition: opacity 0.25s ease-in;
 }
 
 .fade-enter-from,

@@ -1,5 +1,5 @@
 import type * as THREE from 'three'
-import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer'
+import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 
 /**
  * 照片网格对象
@@ -9,6 +9,8 @@ export interface PhotoMesh extends THREE.Mesh {
     index: number
     url: string
     thumbnailUrl: string
+    mediumUrl?: string | null
+    textureUrl?: string | null
     title?: string
   }
 }
@@ -17,6 +19,7 @@ export interface PhotoMesh extends THREE.Mesh {
  * 相册配置
  */
 export interface ViewerConfig {
+  presetName?: string
   // 基础
   quality: 'low' | 'mid' | 'high' | 'auto'
 
@@ -57,6 +60,8 @@ export interface ViewerConfig {
       strength?: number
       radius?: number
       threshold?: number
+      /** 效果预设：fresh | warm | deep | minimal */
+      preset?: 'fresh' | 'warm' | 'deep' | 'minimal'
     }
     postGrade?: {
       enabled: boolean
@@ -67,6 +72,8 @@ export interface ViewerConfig {
       enabled: boolean
       color?: string
       density?: number
+      /** 效果预设：fresh | warm | deep | minimal */
+      preset?: 'fresh' | 'warm' | 'deep' | 'minimal'
     }
     godRays?: {
       enabled: boolean
@@ -104,6 +111,16 @@ export interface ViewerConfig {
       }>
     }
     customColors?: ThemeColors
+  }
+
+  // 光照系统
+  lighting?: {
+    /** 时间段模式：auto | sunrise | noon | sunset | night */
+    timeOfDay?: 'auto' | 'sunrise' | 'noon' | 'sunset' | 'night'
+    /** 是否根据照片主色调自动调整环境光 */
+    autoColorAdapt?: boolean
+    /** 颜色适应过渡时间（秒） */
+    transitionDuration?: number
   }
 }
 
@@ -199,5 +216,8 @@ export type ViewerEvent =
   | 'layout:positions'
   | 'theme:update'
   | 'config:update'
+  | 'webgl:lost'
+  | 'webgl:restored'
+  | 'metrics:update'
   | 'resize'
   | 'destroy'

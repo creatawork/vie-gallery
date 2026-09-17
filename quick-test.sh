@@ -13,6 +13,8 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+API_PORT="${API_PORT:-8088}"
+API_BASE="${API_BASE:-http://localhost:${API_PORT}}"
 
 show_banner() {
     echo ""
@@ -42,7 +44,7 @@ start_services() {
     echo -e "${BLUE}📦 Starting Docker services...${NC}"
 
     cd infra
-    docker-compose up -d
+    API_PORT="$API_PORT" docker-compose up -d
 
     echo ""
     echo -e "${YELLOW}⏳ Waiting for services to be healthy...${NC}"
@@ -60,7 +62,7 @@ start_services() {
 
     echo -n "  API...   "
     sleep 10
-    curl -s -f http://localhost:8080/actuator/health > /dev/null && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
+    curl -s -f "$API_BASE/actuator/health" > /dev/null && echo -e "${GREEN}✓${NC}" || echo -e "${RED}✗${NC}"
 
     cd ..
 
@@ -158,8 +160,8 @@ show_service_urls() {
     echo -e "${BLUE}🔗 Service URLs:${NC}"
     echo "  📱 Admin UI:     http://localhost:5173"
     echo "  🖼️  Viewer UI:    http://localhost:5174"
-    echo "  🔌 API:          http://localhost:8080"
-    echo "  🗄️  MySQL:        localhost:3306"
+    echo "  🔌 API:          $API_BASE"
+    echo "  🗄️  MySQL:        localhost:3307 (container: 3306)"
     echo "  💾 Redis:        localhost:6379"
     echo "  📦 MinIO:        http://localhost:9000"
     echo "  🎛️  MinIO Console: http://localhost:9001"
@@ -197,17 +199,17 @@ run_browser_tests() {
 open_docs() {
     echo -e "${BLUE}📖 Opening test documentation...${NC}"
 
-    if [ -f docs/mcp-test-guide.md ]; then
+    if [ -f docs/testing-guide.md ]; then
         if command -v xdg-open &> /dev/null; then
-            xdg-open docs/mcp-test-guide.md
+            xdg-open docs/testing-guide.md
         elif command -v open &> /dev/null; then
-            open docs/mcp-test-guide.md
+            open docs/testing-guide.md
         else
             echo ""
-            cat docs/mcp-test-guide.md
+            cat docs/testing-guide.md
         fi
     else
-        echo -e "${RED}Error: docs/mcp-test-guide.md not found${NC}"
+        echo -e "${RED}Error: docs/testing-guide.md not found${NC}"
     fi
 }
 

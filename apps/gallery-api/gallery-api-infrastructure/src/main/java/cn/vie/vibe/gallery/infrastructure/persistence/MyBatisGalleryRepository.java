@@ -3,6 +3,7 @@ package cn.vie.vibe.gallery.infrastructure.persistence;
 import cn.vie.vibe.gallery.application.GalleryRepository;
 import cn.vie.vibe.gallery.domain.Gallery;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
+import cn.vie.vibe.gallery.domain.GalleryStatus;
 import cn.vie.vibe.gallery.infrastructure.persistence.mapper.GalleryMapper;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
@@ -48,6 +49,12 @@ public class MyBatisGalleryRepository implements GalleryRepository {
     }
 
     @Override
+    public Optional<Gallery> findById(UUID tenantId, UUID galleryId) {
+        return Optional.ofNullable(mapper.findByTenantAndId(tenantId.toString(), galleryId.toString()))
+                .map(MyBatisGalleryRepository::toDomain);
+    }
+
+    @Override
     public Gallery save(Gallery gallery) {
         Instant now = Instant.now();
         mapper.insert(
@@ -59,7 +66,9 @@ public class MyBatisGalleryRepository implements GalleryRepository {
                 gallery.passwordHash(),
                 gallery.coverPhotoId() != null ? gallery.coverPhotoId().toString() : null,
                 localDateTime(now),
-                localDateTime(now)
+                localDateTime(now),
+                gallery.status().name(),
+                localDateTime(gallery.publishedAt())
         );
         return gallery;
     }
@@ -67,16 +76,30 @@ public class MyBatisGalleryRepository implements GalleryRepository {
     @Override
     public void update(Gallery gallery) {
         mapper.update(
+                gallery.tenantId().toString(),
                 gallery.id().toString(),
                 gallery.name(),
                 gallery.visibility().name(),
                 gallery.passwordHash(),
                 gallery.coverPhotoId() != null ? gallery.coverPhotoId().toString() : null,
+                gallery.status().name(),
+                localDateTime(gallery.publishedAt()),
                 localDateTime(Instant.now())
         );
     }
 
+    @Override
+    public void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId) {
+        if (coverPhotoId != null) {
+            mapper.updateCover(tenantId.toString(), galleryId.toString(), coverPhotoId.toString(), localDateTime(Instant.now()));
+        } else {
+            mapper.clearCover(tenantId.toString(), galleryId.toString(), localDateTime(Instant.now()));
+        }
+    }
+
     private static Gallery toDomain(java.util.Map<String, Object> row) {
+        Instant createdAt = instant(row, "createdAt");
+        Instant updatedAt = instant(row, "updatedAt");
         return new Gallery(
                 uuid(row, "id"),
                 uuid(row, "tenantId"),
@@ -86,7 +109,10 @@ public class MyBatisGalleryRepository implements GalleryRepository {
                 (String) row.get("passwordHash"),
                 uuid(row, "coverPhotoId"),
                 Boolean.TRUE.equals(row.get("deleted")),
-                instant(row, "createdAt")
+                createdAt,
+                row.get("status") == null ? GalleryStatus.PUBLISHED : GalleryStatus.valueOf((String) row.get("status")),
+                instant(row, "publishedAt"),
+                updatedAt != null ? updatedAt : createdAt
         );
     }
 }

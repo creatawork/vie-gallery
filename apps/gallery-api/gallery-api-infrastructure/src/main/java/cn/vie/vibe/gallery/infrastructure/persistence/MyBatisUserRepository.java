@@ -36,7 +36,8 @@ public class MyBatisUserRepository implements UserRepository {
     public User save(User user) {
         Instant now = Instant.now();
         mapper.insert(user.id().toString(), user.email(), user.displayName(), user.passwordHash(),
-                user.status().name(), localDateTime(user.lastLoginAt()), localDateTime(now), localDateTime(now));
+                user.authenticationVersion(), user.status().name(), localDateTime(user.lastLoginAt()),
+                localDateTime(now), localDateTime(now));
         return user;
     }
 
@@ -45,8 +46,20 @@ public class MyBatisUserRepository implements UserRepository {
         mapper.updateLastLoginAt(id.toString(), localDateTime(lastLoginAt));
     }
 
+    @Override
+    public void updateCredentials(UUID id, String passwordHash, long authenticationVersion) {
+        Instant now = Instant.now();
+        mapper.updateCredentials(id.toString(), passwordHash, authenticationVersion, localDateTime(now));
+    }
+
     private static User toDomain(java.util.Map<String, Object> row) {
+        long version = 1L;
+        Object rawVersion = row.get("authenticationVersion");
+        if (rawVersion instanceof Number number) {
+            version = number.longValue();
+        }
         return new User(uuid(row, "id"), (String) row.get("email"), (String) row.get("displayName"),
-                (String) row.get("passwordHash"), UserStatus.valueOf((String) row.get("status")), instant(row, "lastLoginAt"));
+                (String) row.get("passwordHash"), UserStatus.valueOf((String) row.get("status")),
+                instant(row, "lastLoginAt"), version);
     }
 }

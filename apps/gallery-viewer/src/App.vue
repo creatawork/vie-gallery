@@ -2,25 +2,38 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
 import { useViewerState } from './composables/useViewerState'
-import { ViewerEngine, type EngineMetrics } from './core/ViewerEngine'
+import { applyViewerSeo, clearViewerSeo } from './lib/seo'
+import { ViewerEngine, WebGLUnavailableError, type EngineMetrics } from './core/ViewerEngine'
 import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
 import ErrorState from './components/ErrorState.vue'
 import LightboxModal from './components/LightboxModal.vue'
 import Icon from './components/Icon.vue'
 
-// 从 URL 获取 slug
-const slug = location.pathname.split('/').filter(Boolean).pop() || 'demo'
+// 从 URL 获取 slug。生产环境没有 slug 时不回退 demo 内容。
+const slug = location.pathname.split('/').filter(Boolean).pop() || ''
 
 // 状态机
 const viewer = useViewerState(slug)
 
+// SEO defaults to noindex until the public gallery has loaded successfully.
+watch(
+  () => [viewer.state.value, viewer.gallery.value, viewer.isPublicReady.value],
+  () => applyViewerSeo({ slug, isPublicReady: viewer.isPublicReady.value, gallery: viewer.gallery.value }),
+  { immediate: true }
+)
+
 // 视图模式: '3d' 空间漫游 vs '2d' 策展画廊
 const viewMode = ref<'3d' | '2d'>('3d')
+const webglFallbackMessage = ref('')
 
 // WebGL Engine
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let engine: ViewerEngine | null = null
+let canvasPointerDownHandler: ((event: PointerEvent) => void) | null = null
+let canvasPointerMoveHandler: ((event: PointerEvent) => void) | null = null
+let canvasClickHandler: ((event: MouseEvent) => void) | null = null
+let webglLostHandler: (() => void) | null = null
 
 // Lightbox
 const showLightbox = ref(false)
@@ -65,6 +78,7 @@ onUnmounted(() => {
   window.removeEventListener('deviceorientation', handleOrientation, true)
   window.removeEventListener('message', handlePostMessage)
   destroy3DEngine()
+  clearViewerSeo()
 })
 
 // 动态按需挂载陀螺仪监听（避免权限策略拦截与无意义开销）
@@ -80,16 +94,71 @@ watch(gyroEnabled, (enabled) => {
   }
 })
 
-function handlePostMessage(event: MessageEvent) {
+function isEmbedPreview() {
+  return window.parent !== window
+}
+
+function adminEmbedOrigin() {
+  const { protocol, hostname, port } = window.location
+  if (port === '5174' || port === '5175') {
+    return `${protocol}//${hostname}:5173`
+  }
+  if (document.referrer) {
+    try {
+      const referrer = new URL(document.referrer)
+      if (referrer.origin !== window.location.origin) {
+        return referrer.origin
+      }
+    } catch {
+      // Fall back to same-origin below.
+    }
+  }
+  return window.location.origin
+}
+
+function isTrustedPreviewOrigin(origin: string) {
+  if (origin === 'null') {
+    return import.meta.env.DEV && isEmbedPreview()
+  }
+  if (!origin) return false
+  try {
+    const url = new URL(origin)
+    const localHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) return true
+    return url.hostname === window.location.hostname
+  } catch {
+    return false
+  }
+}
+
+async function handlePostMessage(event: MessageEvent) {
+  if (!isTrustedPreviewOrigin(event.origin)) return
+  if (isEmbedPreview() && event.source !== window.parent && event.source !== window.opener) return
   if (!event.data || typeof event.data !== 'object') return
   const { type, mode, config, presetName } = event.data
 
-  if (type === 'VIE_LAYOUT_CHANGE' && mode && engine) {
+  if (type === 'VIE_LAYOUT_CHANGE' && typeof mode === 'string' && engine) {
     engine.getEventBus().emit('layout:change', mode)
-  } else if (type === 'VIE_PRESET_CHANGE' && presetName) {
+  } else if (type === 'VIE_PRESET_CHANGE' && typeof presetName === 'string') {
     selectPreset(presetName)
-  } else if (type === 'VIE_CONFIG_UPDATE' && config && engine) {
-    engine.applyConfig(config)
+  } else if (type === 'VIE_CONFIG_UPDATE' && config && typeof config === 'object') {
+    viewer.viewerConfig.value = config
+    if (!engine && isEmbedPreview()) {
+      await nextTick()
+      await init3DEngine()
+    }
+    if (engine) engine.applyConfig(config)
+  }
+}
+
+function notifyParentReady() {
+  const payload = { type: 'VIE_PREVIEW_READY' }
+  const targetOrigin = adminEmbedOrigin()
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage(payload, targetOrigin)
+  }
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage(payload, targetOrigin)
   }
 }
 
@@ -107,9 +176,11 @@ function toggleFullscreen() {
 
 // 监听照片数据加载或视图模式切换后初始化 3D 引擎
 watch(
-  () => [viewer.isReady.value, viewer.photos.value, viewMode.value],
-  async ([isReady, photos, mode]) => {
-    if (isReady && mode === '3d') {
+  () => [viewer.isReady.value, viewer.isEmpty.value, viewer.state.value, viewMode.value],
+  async ([isReady, isEmpty, state, mode]) => {
+    const embedReady = isEmbedPreview() && state !== 'loading' && state !== 'password_prompt'
+    const canInit3d = mode === '3d' && (isReady || isEmpty || embedReady)
+    if (canInit3d) {
       await nextTick()
       init3DEngine()
     } else if (mode === '2d') {
@@ -122,11 +193,12 @@ watch(
 async function init3DEngine() {
   if (!canvasRef.value) return
   destroy3DEngine()
+  webglFallbackMessage.value = ''
 
   try {
     const rawPhotos = viewer.photos.value
     if (!rawPhotos || rawPhotos.length === 0) {
-      if (slug !== 'demo') return
+      if (!isDevDemo() && !isEmbedPreview()) return
     }
 
     engine = new ViewerEngine(canvasRef.value)
@@ -135,54 +207,94 @@ async function init3DEngine() {
     const textureLoader = new THREE.TextureLoader()
     const meshes: any[] = []
 
-    const photoList = rawPhotos.length > 0 ? rawPhotos : (slug === 'demo' ? createDemoFallbackPhotos() : [])
+    const photoList = rawPhotos.length > 0 ? rawPhotos : (isDevDemo() ? createDemoFallbackPhotos() : [])
 
     photoList.forEach((p, i) => {
+      const photoItem = p as any
       const w = 80
       const aspectRatio = (p.width && p.height) ? (p.width / p.height) : (4 / 3)
       const h = Math.round(w / aspectRatio)
       const geometry = new THREE.PlaneGeometry(w, h)
       let material: THREE.Material
 
-      if (p.thumbnailUrl) {
-        const texture = textureLoader.load(p.thumbnailUrl)
+      if (photoItem.thumbnailUrl) {
+        const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl)
         texture.colorSpace = THREE.SRGBColorSpace
-        material = new THREE.MeshBasicMaterial({
+        
+        // 使用 MeshStandardMaterial 以支持动态光照
+        // 优化参数确保照片在各种光照下都清晰可辨
+        material = new THREE.MeshStandardMaterial({
           map: texture,
-          side: THREE.DoubleSide
+          side: THREE.DoubleSide,
+          // 低金属度，照片不应有金属光泽
+          metalness: 0.0,
+          // 中等粗糙度，略带哑光质感，避免高光过亮
+          roughness: 0.7,
+          // 轻微的环境光遮蔽，增加深度感
+          aoMapIntensity: 0.3,
+          // 确保照片在暗光下仍可见
+          emissive: new THREE.Color(0x000000),
+          emissiveIntensity: 0.0
         })
       } else {
-        material = new THREE.MeshBasicMaterial({
+        // 占位颜色也使用 MeshStandardMaterial
+        material = new THREE.MeshStandardMaterial({
           color: new THREE.Color().setHSL((i * 0.15) % 1, 0.6, 0.5),
-          side: THREE.DoubleSide
+          side: THREE.DoubleSide,
+          metalness: 0.0,
+          roughness: 0.7
         })
       }
 
       const mesh = new THREE.Mesh(geometry, material)
       mesh.userData = {
         index: i,
-        title: p.title || `Photo ${i + 1}`,
-        thumbnailUrl: p.thumbnailUrl,
-        width: p.width,
-        height: p.height
+        title: photoItem.title || `Photo ${i + 1}`,
+        thumbnailUrl: photoItem.thumbnailUrl,
+        mediumUrl: photoItem.mediumUrl,
+        textureUrl: photoItem.textureUrl,
+        url: photoItem.url || photoItem.thumbnailUrl,
+        width: photoItem.width,
+        height: photoItem.height
       }
       meshes.push(mesh)
     })
 
     engine.setPhotos(meshes)
-    await engine.init(slug)
+    try {
+      await engine.init(slug)
+    } catch (err) {
+      if (!isEmbedPreview()) throw err
+      await engine.init()
+    }
     engine.start()
+    notifyParentReady()
 
     // 监听 APM 探针
     engine.getEventBus().on('metrics:update', (metrics: EngineMetrics) => {
       apmMetrics.value = metrics
     })
 
+    webglLostHandler = () => fallbackTo2D('3D 渲染连接中断，已切换到经典画廊，照片仍可正常浏览。')
+    engine.getEventBus().on('webgl:lost', webglLostHandler)
+
     // 绑定 3D 悬停与交互
     bindCanvasInteractions()
   } catch (err) {
     console.error('Failed to init 3D engine:', err)
+    fallbackTo2D(
+      err instanceof WebGLUnavailableError
+        ? '当前设备无法使用 3D，已切换到经典画廊，照片仍可正常浏览。'
+        : '3D 画廊暂时无法启动，已切换到经典画廊，照片仍可正常浏览。'
+    )
   }
+}
+
+function fallbackTo2D(message: string) {
+  if (webglFallbackMessage.value && viewMode.value === '2d') return
+  destroy3DEngine()
+  webglFallbackMessage.value = message
+  viewMode.value = '2d'
 }
 
 function bindCanvasInteractions() {
@@ -191,12 +303,13 @@ function bindCanvasInteractions() {
 
   let pointerDownPos = { x: 0, y: 0 }
 
-  canvas.addEventListener('pointerdown', (e) => {
+  canvasPointerDownHandler = (e) => {
     pointerDownPos = { x: e.clientX, y: e.clientY }
-  })
+  }
 
-  canvas.addEventListener('pointermove', (e) => {
-    if (!engine) return
+  canvasPointerMoveHandler = (e) => {
+    // Touch pointers are reserved for OrbitControls gestures; hover is mouse-only.
+    if (e.pointerType !== 'mouse' || !engine) return
     const rect = canvas.getBoundingClientRect()
     mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
     mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
@@ -213,7 +326,7 @@ function bindCanvasInteractions() {
           lastHoveredMesh.scale.set(1, 1, 1)
         }
         lastHoveredMesh = hit
-        hit.scale.set(1.08, 1.08, 1.08)
+        hit.scale.set(1.08, 1.08, 1)
       }
 
       hoveredPhoto.value = {
@@ -229,9 +342,9 @@ function bindCanvasInteractions() {
       canvas.style.cursor = 'default'
       hoveredPhoto.value = null
     }
-  })
+  }
 
-  canvas.addEventListener('click', (e) => {
+  canvasClickHandler = (e) => {
     // 过滤拖拽旋转操作
     const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y)
     if (dist > 6) return
@@ -247,15 +360,24 @@ function bindCanvasInteractions() {
     if (intersects.length > 0) {
       const hit = intersects[0].object as THREE.Mesh
       const idx = hit.userData.index
+      
+      // 触发照片点击事件，让光照系统响应
+      engine.getEventBus().emit('photo:click', { photo: hit })
+      
       flyToPhotoAndFocus(hit, () => {
         openLightbox(idx)
       })
     }
-  })
+  }
+
+  canvas.addEventListener('pointerdown', canvasPointerDownHandler)
+  canvas.addEventListener('pointermove', canvasPointerMoveHandler)
+  canvas.addEventListener('click', canvasClickHandler)
 }
 
 /**
  * 电影级相机平滑飞行聚焦 (Cinematic Smooth Flight)
+ * 使用 Quartic Ease-Out 曲线，提供更流畅的电影感
  */
 function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
   if (!engine) return
@@ -269,23 +391,26 @@ function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
   mesh.getWorldPosition(targetWorldPos)
 
   const normal = new THREE.Vector3(0, 0, 1).applyEuler(mesh.rotation)
+  // 相机位置稍微抬升，给予仰视感
   const targetCamPos = targetWorldPos.clone().add(normal.multiplyScalar(220))
+  targetCamPos.y += 15 // 轻微抬升
 
   const startCamPos = camera.position.clone()
   const startTarget = controls.target.clone()
 
   let startTime = performance.now()
-  const duration = 1200 // 1.2s 电影级俯冲曲线
+  const duration = 1400 // 1.4s 更从容的电影级俯冲曲线
 
   function step(now: number) {
     const elapsed = now - startTime
     const t = Math.min(1, elapsed / duration)
-    // easeInOutCubic
-    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+    
+    // Quartic Ease-Out - 更强的减速效果，更有电影感
+    const ease = 1 - Math.pow(1 - t, 4)
 
     camera.position.lerpVectors(startCamPos, targetCamPos, ease)
-    controls.target.lerpVectors(startTarget, targetWorldPos, ease)
-    controls.update()
+    controls!.target.lerpVectors(startTarget, targetWorldPos, ease)
+    controls!.update()
 
     if (t < 1) {
       requestAnimationFrame(step)
@@ -342,6 +467,11 @@ function toggleGyro() {
   }
 }
 
+// 演示内容只在本地开发构建可访问，生产环境不会显示 demo 相册。
+function isDevDemo() {
+  return import.meta.env.DEV && slug === 'demo'
+}
+
 function createDemoFallbackPhotos() {
   return Array.from({ length: 12 }).map((_, i) => ({
     title: `Demo Photo ${i + 1}`,
@@ -353,6 +483,24 @@ function createDemoFallbackPhotos() {
 }
 
 function destroy3DEngine() {
+  const canvas = canvasRef.value
+  if (canvas) {
+    if (canvasPointerDownHandler) canvas.removeEventListener('pointerdown', canvasPointerDownHandler)
+    if (canvasPointerMoveHandler) canvas.removeEventListener('pointermove', canvasPointerMoveHandler)
+    if (canvasClickHandler) canvas.removeEventListener('click', canvasClickHandler)
+  }
+
+  if (engine && webglLostHandler) {
+    engine.getEventBus().off('webgl:lost', webglLostHandler)
+  }
+
+  canvasPointerDownHandler = null
+  canvasPointerMoveHandler = null
+  canvasClickHandler = null
+  webglLostHandler = null
+  hoveredPhoto.value = null
+  lastHoveredMesh = null
+
   if (engine) {
     engine.stop()
     engine.dispose()
@@ -408,16 +556,57 @@ async function selectPreset(presetName: string) {
     <PasswordPrompt
       v-else-if="viewer.needsPassword.value"
       :is-unlocking="viewer.unlocking.value"
+      :error="viewer.error.value"
       @unlock="handleUnlock"
     />
 
-    <!-- 3. 空相册状态 -->
+    <!-- 3. Admin 嵌入预览：草稿/未公开时仍渲染 WebGL 沙盒 -->
+    <div v-else-if="isEmbedPreview() && viewMode === '3d'" class="gallery-viewport embed-preview">
+      <div class="canvas-container">
+        <canvas ref="canvasRef" class="webgl-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- 3D 预览失败时，嵌入页也保留可浏览的照片网格 -->
+    <div v-else-if="isEmbedPreview() && viewMode === '2d'" class="gallery-viewport embed-preview embed-fallback-viewport">
+      <div v-if="webglFallbackMessage" class="webgl-fallback-banner" role="status">
+        <Icon name="grid" :size="16" />
+        <span>{{ webglFallbackMessage }}</span>
+      </div>
+      <main class="editorial-main embed-fallback-main">
+        <section class="editorial-photo-grid" aria-label="照片墙">
+          <article
+            v-for="(photo, idx) in viewer.photos.value"
+            :key="photo.sortOrder ?? idx"
+            class="editorial-photo-card"
+            @click="openLightbox(idx)"
+          >
+            <div class="photo-img-frame">
+              <img :src="photo.thumbnailUrl || ''" :alt="photo.title || 'Photograph'" loading="lazy" />
+              <div class="card-overlay">
+                <span class="photo-caption">{{ photo.title || `Photograph ${idx + 1}` }}</span>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+      <LightboxModal
+        :show="showLightbox"
+        :photos="viewer.photos.value"
+        :current-index="lightboxIndex"
+        :allow-download="viewer.allowDownload.value"
+        @close="showLightbox = false"
+        @select="idx => lightboxIndex = idx"
+      />
+    </div>
+
+    <!-- 4. 空相册状态 -->
     <EmptyState
       v-else-if="viewer.isEmpty.value"
       :message="viewer.gallery.value?.title ? `“${viewer.gallery.value.title}” 暂无照片` : undefined"
     />
 
-    <!-- 4. 错误状态 -->
+    <!-- 5. 错误状态 -->
     <ErrorState
       v-else-if="viewer.state.value === 'not_found'"
       title="相册空间未找到"
@@ -441,6 +630,12 @@ async function selectPreset(presetName: string) {
 
     <!-- 5. 就绪：沉浸式双模画廊 -->
     <div v-else-if="viewer.isReady.value" class="gallery-viewport">
+      <div v-if="webglFallbackMessage" class="webgl-fallback-banner" role="status">
+        <Icon name="grid" :size="16" />
+        <span>{{ webglFallbackMessage }}</span>
+        <button type="button" @click="webglFallbackMessage = ''">知道了</button>
+      </div>
+
       <!-- 浮动毛玻璃 HUD 控制台 -->
       <header class="floating-hud">
         <!-- Brand & Gallery Info -->
@@ -451,7 +646,7 @@ async function selectPreset(presetName: string) {
           </div>
           <div class="gallery-title-chip">
             <span class="chip-title">{{ viewer.gallery.value?.title || 'Moments in Light' }}</span>
-            <span class="chip-count">{{ viewer.photos.value.length }} 张照片</span>
+            <span class="chip-count">{{ viewer.total.value }} 张照片</span>
           </div>
         </div>
 
@@ -604,6 +799,15 @@ async function selectPreset(presetName: string) {
         <div class="spatial-tips">
           <p>单击照片聚焦飞入 · 按住左键旋转视角 · 滚轮缩放星云</p>
         </div>
+        <button
+          v-if="viewer.hasMore.value"
+          class="load-more-floating"
+          type="button"
+          :disabled="viewer.loadingMore.value"
+          @click="viewer.loadMore"
+        >
+          {{ viewer.loadingMore.value ? '正在加载…' : '加载更多照片' }}
+        </button>
       </div>
 
       <!-- Mode 2: 2D Editorial Curated Wall -->
@@ -611,7 +815,7 @@ async function selectPreset(presetName: string) {
         <div class="editorial-hero">
           <p class="hero-kicker">CURATED EXHIBITION</p>
           <h1 class="hero-title">{{ viewer.gallery.value?.title || 'Moments in Light' }}</h1>
-          <p class="hero-meta">{{ viewer.photos.value.length }} PHOTOGRAPHS · HIGH FIDELITY GALLERY</p>
+          <p class="hero-meta">{{ viewer.total.value }} PHOTOGRAPHS · HIGH FIDELITY GALLERY</p>
         </div>
 
         <section class="editorial-photo-grid" aria-label="照片墙">
@@ -622,13 +826,22 @@ async function selectPreset(presetName: string) {
             @click="openLightbox(idx)"
           >
             <div class="photo-img-frame">
-              <img :src="photo.thumbnailUrl" :alt="photo.title || 'Photograph'" loading="lazy" />
+              <img :src="photo.thumbnailUrl || ''" :alt="photo.title || 'Photograph'" loading="lazy" />
               <div class="card-overlay">
                 <span class="photo-caption">{{ photo.title || `Photograph ${idx + 1}` }}</span>
               </div>
             </div>
           </article>
         </section>
+        <button
+          v-if="viewer.hasMore.value"
+          class="load-more-btn"
+          type="button"
+          :disabled="viewer.loadingMore.value"
+          @click="viewer.loadMore"
+        >
+          {{ viewer.loadingMore.value ? '正在加载…' : '加载更多照片' }}
+        </button>
       </main>
 
       <!-- Lightbox High-Res Viewer Modal -->
@@ -636,6 +849,7 @@ async function selectPreset(presetName: string) {
         :show="showLightbox"
         :photos="viewer.photos.value"
         :current-index="lightboxIndex"
+        :allow-download="viewer.allowDownload.value"
         @close="showLightbox = false"
         @select="idx => lightboxIndex = idx"
       />
@@ -1023,6 +1237,67 @@ async function selectPreset(presetName: string) {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.webgl-fallback-banner {
+  position: fixed;
+  top: 78px;
+  left: 50%;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(620px, calc(100vw - 32px));
+  padding: 10px 12px 10px 14px;
+  color: #d1fae5;
+  background: rgba(8, 31, 24, 0.92);
+  border: 1px solid rgba(52, 211, 153, 0.34);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+  font-size: 12px;
+}
+
+.webgl-fallback-banner button {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 4px 8px;
+  color: #a7f3d0;
+  background: transparent;
+  border: 1px solid rgba(167, 243, 208, 0.35);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.webgl-fallback-banner button:hover,
+.webgl-fallback-banner button:focus-visible {
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.2);
+  outline: none;
+}
+
+.embed-preview {
+  position: fixed;
+  inset: 0;
+  background: #0b1220;
+}
+
+.embed-preview .canvas-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.embed-fallback-viewport {
+  overflow-y: auto;
+}
+
+.embed-fallback-main {
+  min-height: 100%;
+  padding-top: 100px;
+}
+
 /* ==========================================
    5. 3D WebGL Canvas Viewport
    ========================================== */
@@ -1055,6 +1330,32 @@ async function selectPreset(presetName: string) {
   color: #94a3b8;
   pointer-events: none;
   letter-spacing: 0.03em;
+}
+
+.load-more-floating {
+  position: absolute;
+  right: 50%;
+  bottom: 76px;
+  z-index: 2;
+  padding: 9px 16px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 10px;
+  color: #a7f3d0;
+  background: rgba(10, 20, 16, 0.82);
+  transform: translateX(50%);
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+}
+
+.load-more-floating:hover:not(:disabled),
+.load-more-floating:focus-visible {
+  outline: none;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.load-more-floating:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 /* ==========================================
@@ -1099,6 +1400,28 @@ async function selectPreset(presetName: string) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
+}
+
+.load-more-btn {
+  display: block;
+  margin: 28px auto 0;
+  padding: 10px 20px;
+  border: 1px solid rgba(16, 185, 129, 0.34);
+  border-radius: 10px;
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.1);
+  font-size: 13px;
+}
+
+.load-more-btn:hover:not(:disabled),
+.load-more-btn:focus-visible {
+  outline: none;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.load-more-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .editorial-photo-card {

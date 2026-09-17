@@ -18,13 +18,15 @@ public class M3ShareLinkConfig {
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
             TokenGenerator tokenGenerator,
-            @Value("${gallery.public.base-url:https://gallery.vie-vibe.cn}") String publicBaseUrl
+            @Value("${gallery.public.base-url:http://localhost:5174}") String publicBaseUrl,
+            WorkspaceAuthorizationPolicy authorization
     ) {
         return new ShareLinkFacade(
                 shareLinkRepository,
                 galleryRepository,
                 tokenGenerator,
-                publicBaseUrl
+                publicBaseUrl,
+                authorization
         );
     }
 
@@ -36,7 +38,10 @@ public class M3ShareLinkConfig {
             StorageObjectRepository storageObjectRepository,
             ObjectStoragePort objectStoragePort,
             PasswordHasher passwordHasher,
-            TokenGenerator tokenGenerator
+            TokenGenerator tokenGenerator,
+            PhotoAssetVariantRepository assetVariants,
+            CreatorPreviewTokens previewTokens,
+            ViewerConfigVersionRepository viewerConfigVersionRepository
     ) {
         return new PublicAccessFacade(
                 galleryRepository,
@@ -45,18 +50,33 @@ public class M3ShareLinkConfig {
                 storageObjectRepository,
                 objectStoragePort,
                 passwordHasher,
-                tokenGenerator
+                tokenGenerator,
+                assetVariants,
+                previewTokens,
+                viewerConfigVersionRepository
         );
+    }
+
+    @Bean
+    public GalleryTexturePolicy galleryTexturePolicy(
+            GalleryViewerConfigRepository configRepository,
+            GalleryRepository galleryRepository
+    ) {
+        return new DefaultGalleryTexturePolicy(configRepository, galleryRepository);
     }
 
     @Bean
     public GalleryViewerConfigFacade galleryViewerConfigFacade(
             GalleryViewerConfigRepository galleryViewerConfigRepository,
-            GalleryRepository galleryRepository
+            ViewerConfigVersionRepository viewerConfigVersionRepository,
+            GalleryRepository galleryRepository,
+            WorkspaceAuthorizationPolicy authorization
     ) {
         return new GalleryViewerConfigFacade(
                 galleryViewerConfigRepository,
-                galleryRepository
+                viewerConfigVersionRepository,
+                galleryRepository,
+                authorization
         );
     }
 }

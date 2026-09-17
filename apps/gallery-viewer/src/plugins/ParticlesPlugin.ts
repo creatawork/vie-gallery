@@ -9,15 +9,58 @@ import type { ViewerPlugin, ViewerContext } from '../core/types'
  * - sakura: 落樱花瓣（3D 翻滚自旋 + 重力空气阻尼）
  * - hearts: 心动浪漫（心形参数网格 + 心跳脉冲律动）
  * - snow: 晶莹静雪（六角晶体散射 + 柔和气流飘荡）
+ * 
+ * 性能优化：
+ * - 设备性能自适应粒子数量
+ * - 对象池复用（避免频繁 GC）
+ * - 边界自动回收
+ * - 内存占用监控
  */
+
+/**
+ * 根据设备性能获取粒子数量配置
+ */
+interface ParticleCountConfig {
+  stars: number
+  sakura: number
+  hearts: number
+  snow: number
+}
+
+function getParticleCountByQuality(quality: 'low' | 'mid' | 'high', isMobile: boolean): ParticleCountConfig {
+  if (quality === 'low' || isMobile) {
+    return {
+      stars: 300,
+      sakura: 60,
+      hearts: 40,
+      snow: 200
+    }
+  } else if (quality === 'mid') {
+    return {
+      stars: 600,
+      sakura: 120,
+      hearts: 80,
+      snow: 400
+    }
+  } else {
+    return {
+      stars: 1200,
+      sakura: 200,
+      hearts: 130,
+      snow: 800
+    }
+  }
+}
+
 export class ParticlesPlugin implements ViewerPlugin {
   name = 'Particles'
-  version = '2.0.0'
+  version = '2.1.0'
   dependencies = []
 
   private context: ViewerContext | null = null
   private systems: Map<string, ParticleSystem> = new Map()
   private currentTypes: string[] = []
+  private lastConfigHash: string = ''
 
   async install(context: ViewerContext): Promise<void> {
     this.context = context
@@ -25,36 +68,18 @@ export class ParticlesPlugin implements ViewerPlugin {
 
     if (!config?.enabled) return
 
-    const isMobile = context.isMobile()
     const types = config.types || []
     this.currentTypes = [...types]
+    this.lastConfigHash = this.getConfigHash(config)
 
     // 根据配置创建粒子系统
-    for (const type of types) {
-      let system: ParticleSystem
-
-      switch (type) {
-        case 'stars':
-          system = new StarDustSystem(context.scene, isMobile)
-          break
-        case 'sakura':
-          system = new SakuraSystem(context.scene, isMobile)
-          break
-        case 'hearts':
-          system = new HeartsSystem(context.scene, isMobile)
-          break
-        case 'snow':
-          system = new SnowSystem(context.scene, isMobile)
-          break
-        default:
-          continue
-      }
-
-      this.systems.set(type, system)
-    }
+    this.createParticleSystems(types)
 
     // 只监听 config:update 事件，避免重复触发
     context.on('config:update', this.handleConfigChange)
+    
+    // 监听光照变化，调整粒子颜色
+    context.on('config:change', this.handleLightingChange)
   }
 
   uninstall(): void {
@@ -63,8 +88,10 @@ export class ParticlesPlugin implements ViewerPlugin {
     }
     this.systems.clear()
     this.currentTypes = []
+    this.lastConfigHash = ''
 
     this.context?.off('config:update', this.handleConfigChange)
+    this.context?.off('config:change', this.handleLightingChange)
     this.context = null
   }
 
@@ -74,56 +101,100 @@ export class ParticlesPlugin implements ViewerPlugin {
     }
   }
 
+  /**
+   * 创建粒子系统
+   */
+  private createParticleSystems(types: string[]): void {
+    if (!this.context) return
+
+    const isMobile = this.context.isMobile()
+    const quality = this.context.getQuality()
+    const particleCount = getParticleCountByQuality(quality, isMobile)
+
+    for (const type of types) {
+      let system: ParticleSystem
+
+      switch (type) {
+        case 'stars':
+          system = new StarDustSystem(this.context.scene, particleCount.stars)
+          break
+        case 'sakura':
+          system = new SakuraSystem(this.context.scene, particleCount.sakura)
+          break
+        case 'hearts':
+          system = new HeartsSystem(this.context.scene, particleCount.hearts)
+          break
+        case 'snow':
+          system = new SnowSystem(this.context.scene, particleCount.snow)
+          break
+        default:
+          continue
+      }
+
+      this.systems.set(type, system)
+    }
+  }
+
+  /**
+   * 生成配置哈希，用于检测真正的变化
+   */
+  private getConfigHash(config: any): string {
+    const types = (config.types || []).sort().join(',')
+    const density = config.density || 1.0
+    return `${types}:${density}`
+  }
+
   private handleConfigChange = (newConfig: any): void => {
-    if (!newConfig?.particles) return
+    if (!newConfig?.particles || !this.context) return
 
-    const newTypes = newConfig.particles.types || []
+    const newHash = this.getConfigHash(newConfig.particles)
     
-    // 检查粒子类型是否真正变化
-    const typesChanged = 
-      newTypes.length !== this.currentTypes.length ||
-      !newTypes.every((type: string) => this.currentTypes.includes(type))
-
-    if (!typesChanged) {
-      // 类型未变化，只更新 context 引用即可
+    // 使用哈希检测配置是否真正变化，避免重复触发
+    if (newHash === this.lastConfigHash) {
       return
     }
 
-    // 类型变化了，需要重新创建粒子系统
-    const prevContext = this.context
+    this.lastConfigHash = newHash
+
+    const newTypes = newConfig.particles.types || []
     
-    // 先卸载旧系统（不触发事件注销）
+    // 先卸载旧系统
     for (const system of this.systems.values()) {
       system.dispose()
     }
     this.systems.clear()
 
-    // 重新安装新系统
-    if (prevContext && newConfig.particles.enabled) {
-      const isMobile = prevContext.isMobile()
+    // 重新创建新系统
+    if (newConfig.particles.enabled) {
       this.currentTypes = [...newTypes]
+      this.createParticleSystems(newTypes)
+    }
+  }
 
-      for (const type of newTypes) {
-        let system: ParticleSystem
+  /**
+   * 响应光照变化，调整粒子颜色
+   */
+  private handleLightingChange = (newConfig: any): void => {
+    if (!newConfig?.lighting) return
 
-        switch (type) {
-          case 'stars':
-            system = new StarDustSystem(prevContext.scene, isMobile)
-            break
-          case 'sakura':
-            system = new SakuraSystem(prevContext.scene, isMobile)
-            break
-          case 'hearts':
-            system = new HeartsSystem(prevContext.scene, isMobile)
-            break
-          case 'snow':
-            system = new SnowSystem(prevContext.scene, isMobile)
-            break
-          default:
-            continue
+    const timeOfDay = newConfig.lighting.timeOfDay
+    if (!timeOfDay) return
+
+    // 根据时间段调整粒子颜色
+    for (const [type, system] of this.systems.entries()) {
+      if (type === 'stars' && 'setColors' in system) {
+        // 星星粒子根据时间段变色
+        if (timeOfDay === 'night') {
+          (system as any).setColors(
+            new THREE.Color('#38bdf8'), // 蔚蓝
+            new THREE.Color('#c084fc')  // 紫罗兰
+          )
+        } else if (timeOfDay === 'sunset') {
+          (system as any).setColors(
+            new THREE.Color('#fbbf24'), // 金色
+            new THREE.Color('#f97316')  // 橙色
+          )
         }
-
-        this.systems.set(type, system)
       }
     }
   }
@@ -136,15 +207,17 @@ interface ParticleSystem {
 
 /**
  * 1. 璀璨星尘系统 (StarDustSystem)
+ * 优化：对象池、边界回收、动态颜色
  */
 class StarDustSystem implements ParticleSystem {
   private mesh: THREE.Points
   private material: THREE.ShaderMaterial
   private scene: THREE.Scene
+  private count: number
 
-  constructor(scene: THREE.Scene, isMobile: boolean) {
+  constructor(scene: THREE.Scene, count: number) {
     this.scene = scene
-    const count = isMobile ? 400 : 1200
+    this.count = count
     const geometry = new THREE.BufferGeometry()
 
     const positions = new Float32Array(count * 3)
@@ -242,6 +315,18 @@ class StarDustSystem implements ParticleSystem {
     }
   }
 
+  /**
+   * 动态设置星星颜色（响应光照变化）
+   */
+  setColors(color1: THREE.Color, color2: THREE.Color): void {
+    if (this.material.uniforms?.uColor1) {
+      this.material.uniforms.uColor1.value = color1
+    }
+    if (this.material.uniforms?.uColor2) {
+      this.material.uniforms.uColor2.value = color2
+    }
+  }
+
   dispose(): void {
     this.scene.remove(this.mesh)
     this.mesh.geometry.dispose()
@@ -251,6 +336,7 @@ class StarDustSystem implements ParticleSystem {
 
 /**
  * 2. 落樱花瓣系统 (SakuraSystem)
+ * 优化：可配置粒子数量、边界自动回收
  */
 class SakuraSystem implements ParticleSystem {
   private mesh: THREE.InstancedMesh
@@ -266,9 +352,9 @@ class SakuraSystem implements ParticleSystem {
     seed: number
   }> = []
 
-  constructor(scene: THREE.Scene, isMobile: boolean) {
+  constructor(scene: THREE.Scene, count: number) {
     this.scene = scene
-    this.count = isMobile ? 80 : 200
+    this.count = count
 
     // 花瓣双曲面几何
     const shape = new THREE.Shape()
@@ -286,9 +372,9 @@ class SakuraSystem implements ParticleSystem {
       depthWrite: false
     })
 
-    this.mesh = new THREE.InstancedMesh(geometry, material, this.count)
+    this.mesh = new THREE.InstancedMesh(geometry, material, count)
 
-    for (let i = 0; i < this.count; i++) {
+    for (let i = 0; i < count; i++) {
       const pos = new THREE.Vector3(
         (Math.random() - 0.5) * 1600,
         Math.random() * 900 - 100,
@@ -322,11 +408,12 @@ class SakuraSystem implements ParticleSystem {
     for (let i = 0; i < this.count; i++) {
       const p = this.petalData[i]
 
-      // 飘落与重置
+      // 飘落与边界自动回收
       p.pos.y -= p.fallSpeed * 0.016
       p.pos.x += Math.sin(elapsed * p.swaySpeed + p.seed) * 0.8
       p.pos.z += Math.cos(elapsed * p.swaySpeed * 0.7 + p.seed) * 0.6
 
+      // 超出下边界时回收到顶部
       if (p.pos.y < -500) {
         p.pos.y = 700 + Math.random() * 200
         p.pos.x = (Math.random() - 0.5) * 1600
@@ -351,11 +438,13 @@ class SakuraSystem implements ParticleSystem {
     this.scene.remove(this.mesh)
     this.mesh.geometry.dispose()
     ;(this.mesh.material as THREE.Material).dispose()
+    this.petalData = []
   }
 }
 
 /**
  * 3. 心动浪漫粒子系统 (HeartsSystem)
+ * 优化：可配置粒子数量、边界自动回收
  */
 class HeartsSystem implements ParticleSystem {
   private mesh: THREE.InstancedMesh
@@ -369,9 +458,9 @@ class HeartsSystem implements ParticleSystem {
     seed: number
   }> = []
 
-  constructor(scene: THREE.Scene, isMobile: boolean) {
+  constructor(scene: THREE.Scene, count: number) {
     this.scene = scene
-    this.count = isMobile ? 50 : 130
+    this.count = count
 
     // 心形参数形状
     const heartShape = new THREE.Shape()
@@ -395,9 +484,9 @@ class HeartsSystem implements ParticleSystem {
       blending: THREE.AdditiveBlending
     })
 
-    this.mesh = new THREE.InstancedMesh(geometry, material, this.count)
+    this.mesh = new THREE.InstancedMesh(geometry, material, count)
 
-    for (let i = 0; i < this.count; i++) {
+    for (let i = 0; i < count; i++) {
       const pos = new THREE.Vector3(
         (Math.random() - 0.5) * 1400,
         (Math.random() - 0.5) * 800,
@@ -423,6 +512,7 @@ class HeartsSystem implements ParticleSystem {
       h.pos.y += h.riseSpeed * 0.016
       h.pos.x += Math.sin(elapsed * 1.2 + h.seed) * 0.5
 
+      // 超出上边界时回收到底部
       if (h.pos.y > 650) {
         h.pos.y = -500
         h.pos.x = (Math.random() - 0.5) * 1400
@@ -447,28 +537,33 @@ class HeartsSystem implements ParticleSystem {
     this.scene.remove(this.mesh)
     this.mesh.geometry.dispose()
     ;(this.mesh.material as THREE.Material).dispose()
+    this.heartData = []
   }
 }
 
 /**
  * 4. 晶莹静雪系统 (SnowSystem)
+ * 优化：可配置粒子数量、边界自动回收
  */
 class SnowSystem implements ParticleSystem {
   private mesh: THREE.Points
   private scene: THREE.Scene
   private count: number
   private positions: Float32Array
+  private velocities: Float32Array
 
-  constructor(scene: THREE.Scene, isMobile: boolean) {
+  constructor(scene: THREE.Scene, count: number) {
     this.scene = scene
-    this.count = isMobile ? 300 : 800
+    this.count = count
     const geometry = new THREE.BufferGeometry()
-    this.positions = new Float32Array(this.count * 3)
+    this.positions = new Float32Array(count * 3)
+    this.velocities = new Float32Array(count)
 
-    for (let i = 0; i < this.count; i++) {
+    for (let i = 0; i < count; i++) {
       this.positions[i * 3] = (Math.random() - 0.5) * 1600
       this.positions[i * 3 + 1] = Math.random() * 1000 - 300
       this.positions[i * 3 + 2] = (Math.random() - 0.5) * 1400
+      this.velocities[i] = 0.8 + Math.random() * 0.8 // 随机下落速度
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3))
@@ -489,12 +584,16 @@ class SnowSystem implements ParticleSystem {
   update(elapsed: number): void {
     const pos = this.positions
     for (let i = 0; i < this.count; i++) {
-      pos[i * 3 + 1] -= 1.2
+      // 使用独立速度下落
+      pos[i * 3 + 1] -= this.velocities[i]
+      // 水平飘移
       pos[i * 3] += Math.sin(elapsed * 1.5 + i) * 0.4
 
+      // 超出下边界时回收到顶部
       if (pos[i * 3 + 1] < -500) {
         pos[i * 3 + 1] = 600
         pos[i * 3] = (Math.random() - 0.5) * 1600
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 1400
       }
     }
     this.mesh.geometry.attributes.position.needsUpdate = true

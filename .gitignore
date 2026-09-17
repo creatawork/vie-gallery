@@ -30,5 +30,13 @@ cookies.txt
 *.timestamp*
 test_sample.jpg
 .playwright-mcp/
+current-*.png
+.impeccable/
+test-results/
+playwright-report/
 
 
+
+# 添加验收截图和测试目录到 gitignore
+acceptance-images/
+gui-test-screenshots/

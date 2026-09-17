@@ -1,109 +1,181 @@
 # VIE Gallery
 
-多租户照片展示与分享平台。项目基于 `E:/workspace/vie-mei` 的现有视觉实现进行重构，部署目标为 `gallery.vie-vibe.cn`。
+VIE Gallery 是一个面向个人用户和创作者的照片相册产品：保存原始照片，整理相册记录，创作 2D/3D 展示体验，通过受控链接分享给访客，并在工作台中持续管理和更新。
 
-## 定位
+## 当前阶段
 
-- 公开用户可以创建照片空间并生成专属分享链接
-- 管理端使用 Vue 3 + TypeScript
-- 后端使用 Spring Boot，统一处理用户、租户、相册、照片、分享链接和对象存储
-- 公开展示页保留原项目的 Three.js 3D 照片墙作为可选展示模式
+**个人相册 V1 Ready 已于 2026-09-12 签字验收通过**，验收报告见 [`docs/v1-ready-signoff.md`](docs/v1-ready-signoff.md)。
 
-## URL 规划
+**当前执行路线**：V1 后一个月核心任务路线图 [`docs/v1-post-one-month-roadmap.md`](docs/v1-post-one-month-roadmap.md)（2026-09-17 至 2026-10-17），聚焦功能完善、效果提升、代码质量和信息安全。
 
-```text
-vie-vibe.cn                         个人主页与项目介绍
-gallery.vie-vibe.cn                 照片平台入口
-gallery.vie-vibe.cn/app             登录后的管理端
-gallery.vie-vibe.cn/g/{slug}        公开照片空间
-api.gallery.vie-vibe.cn             后端 API（可选独立域名）
-```
+历史规划文档：
+- [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)：个人相册 V1 总规划（已完成）
+- [`docs/v1-closeout-execution-tasks.md`](docs/v1-closeout-execution-tasks.md)：V1 收口执行清单（已完成）
+- [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)：V1 后长期任务清单（参考）
 
-第一版采用路径分享链接。泛域名子域名分享作为后续能力，不作为 MVP 前置条件。
+### 阶段状态
 
-## 当前重构原则
+- M3.5 公开访问稳定化：核心完成。
+- M4 发布与 SEO：核心完成。
+- M5 成员与授权：核心完成。
+- M6 上传任务中心：完成并通过真实环境验收。
+- M6.5 发布前硬化：完成；账户密码恢复已闭环（WP-9）。
+- M7.1 配置版本化：已完成真实环境验收。
+- M7.2 TEXTURE 与资源变体：已完成真实环境验收。
+- M7.3 Viewer 性能与兼容：部分完成（LOD / 低 FPS 阶梯降级 / WebGL 回退属 V1 后）。
+- M7.4 CDN 与社交预览：未完成（V1 后）。
+- **M7.5 综合回归：✅ 已完成（2026-09-12，本机 Docker + 自动化门禁）**。
 
-1. 保留原项目的页面视觉和 3D 展示效果。
-2. 重写认证、租户隔离、相册持久化和文件访问边界。
-3. 相册和照片数据统一进入关系数据库，不再以 JSON 或内存对象作为主数据源。
-4. 图片文件放在对象存储，数据库只保存对象元数据和 key。
-5. 管理接口和公开展示接口分离。
-6. 所有租户上下文从登录身份或分享令牌取得，不接受客户端传入的 `userId` 作为身份依据。
+M7 历史证据见 [`docs/m7-testing-results.md`](docs/m7-testing-results.md)。V1 Ready 以 `v1-ready-signoff.md` 为准。
 
-## MVP
-
-- 注册、登录、退出
-- 创建照片空间
-- 创建相册
-- 单张和批量上传照片
-- 图片缩略图和基础元数据
-- 公开/私密/密码访问
-- 生成、撤销和过期分享链接
-- 保留原 3D 展示页作为公开空间展示模式
-- 管理端照片排序、封面设置和软删除
-
-## 后续能力
-
-- AI 自动标签、智能选封面和重复照片检测
-- 相册协作与成员权限
-- 定时备份和存储配额
-- 自定义主题和模板
-- 自定义子域名
-
-## 目录规划
+## 当前用户路径
 
 ```text
-vie-gallery/
-├── apps/
-│   ├── gallery-api/       # Spring Boot API
-│   ├── gallery-admin/     # Vue 管理端
-│   └── gallery-viewer/    # 公开展示页，复用 Three.js 视觉层
-├── docs/
-│   └── reconstruction-plan.md
-└── infra/                 # Docker、反向代理和部署配置
+注册/登录 → /app/ → 创建或选择相册 → /app/galleries/:id
+                                      ├─ 上传、处理、整理照片
+                                      ├─ 配置 2D/3D 展示并保存草稿
+                                      ├─ 内部预览草稿（不改变公开 URL）
+                                      ├─ 发布和回滚配置
+                                      └─ 生成分享链接 → /g/:slug?t=<token>
 ```
 
-## 测试
+访客路径：
 
-项目包含完整的 MCP 测试套件，支持自动化 API 测试和浏览器端到端测试。
+```text
+/g/:slug                  已发布的 PUBLIC 相册
+/g/:slug?t=<token>        已发布的 PRIVATE 或受保护相册
+```
 
-### 快速测试
+创作者内部预览：
+
+```text
+POST /api/galleries/{id}/preview-token
+→ /g/:slug?preview=<token>     15 分钟内可看草稿馆和当前配置草稿
+```
+
+未发布相册对无预览令牌的访客仍返回 404。当前 PRIVATE 语义是“仅持有有效分享 Token 的访客可访问”；登录用户直接访问 PRIVATE 属于上线后的后期能力。
+
+## 主要目录
+
+```text
+apps/
+├── gallery-api/       # Spring Boot 多模块 API
+├── gallery-admin/     # Vue 3 + TypeScript 创作者工作台
+└── gallery-viewer/    # Vue 3 + Three.js 公开展示端
+packages/
+└── gallery-contracts/ # 前后端共享 TypeScript 契约
+infra/                 # Docker Compose、Nginx 和本地依赖
+docs/                  # 当前规划、测试证据和历史归档
+```
+
+## 当前 API 概览
+
+管理端：
+
+```text
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/me
+GET  /api/galleries
+GET  /api/galleries/{id}
+POST /api/galleries
+POST /api/galleries/{id}/photos
+GET  /api/galleries/{id}/photos
+PATCH /api/photos/{id}
+DELETE /api/photos/{id}
+POST /api/galleries/{id}/preview-token
+POST /api/galleries/{id}/publish
+POST /api/galleries/{id}/unpublish
+POST /api/galleries/{id}/share-links
+GET  /api/galleries/{id}/share-links
+DELETE /api/share-links/{id}
+GET  /api/galleries/{id}/viewer-config
+PUT  /api/galleries/{id}/viewer-config
+POST /api/galleries/{id}/viewer-config/publish
+GET  /api/galleries/{id}/viewer-config/versions
+POST /api/galleries/{id}/viewer-config/rollback
+GET  /api/galleries/{id}/photo-tasks
+```
+
+公开端：
+
+```text
+GET  /api/public/g/{slug}
+POST /api/public/g/{slug}/unlock
+GET  /api/public/g/{slug}/photos?page=0&pageSize=50
+GET  /api/public/g/{slug}/viewer-config
+```
+
+公开端可通过 `X-Preview-Token` 或 `?preview=` 携带创作者预览令牌。有效令牌可读取对应草稿馆的照片和当前配置草稿；过期、错馆或缺失令牌时，未发布相册仍按不存在处理。公开照片和 `photoCount` 只包含 `READY` 且未软删除的照片。新分享链接统一使用 query Token；Viewer 暂时兼容旧的 `token` 参数和 `#s=` 格式。
+
+## 本地启动
+
+要求：Docker Compose、Java 17、Node.js 18+、npm、curl；ImageMagick 仅用于 CLI 测试生成测试图片。
 
 ```bash
-# 1. 启动所有服务
-cd infra
-docker-compose up -d
+# 构建后端（从仓库根目录）
+cd apps/gallery-api
+mvn -DskipTests package
 
-# 2. 运行自动化测试
-bash test-mcp-flow.sh
+# 启动 MySQL、Redis、MinIO 和 API
+cd ../../infra
+docker compose up -d
 
-# 3. 启动前端（可选）
+# 启动 Admin 与 Viewer（另开终端）
+cd ..
 bash start-frontend.sh
 ```
 
-### 测试文档
-
-- **[QUICK-START.txt](QUICK-START.txt)** - 快速启动参考卡片（⭐推荐）
-- **[TEST-SUMMARY.md](TEST-SUMMARY.md)** - 测试总结和概览
-- **[TESTING-HOST.md](TESTING-HOST.md)** - 主机端详细执行指南
-- **[docs/testing-guide.md](docs/testing-guide.md)** - 完整测试使用指南
-- **[docs/mcp-test-guide.md](docs/mcp-test-guide.md)** - API 测试详细文档
-
-### 测试脚本
-
-- `test-mcp-flow.sh` - 自动化 API 测试（13 个端点）
-- `test-browser-mcp.sh` - 浏览器 MCP 测试准备
-- `quick-test.sh` - 交互式测试控制台
-
-### 服务地址
+本地宿主端口由 `infra/.env` 控制，当前默认值如下：
 
 | 服务 | 地址 | 说明 |
-|------|------|------|
-| API | http://localhost:8080 | Spring Boot 后端 |
-| Admin UI | http://localhost:5173 | Vue 管理端 |
-| Viewer | http://localhost:5174 | 公开展示页 |
-| MinIO Console | http://localhost:9001 | 对象存储控制台 |
+| --- | --- | --- |
+| API | <http://localhost:8088> | 宿主端口；容器内部为 8080 |
+| Admin | <http://localhost:5173> | 创作者工作台 |
+| Viewer | <http://localhost:5174> | 公开展示端 |
+| MySQL | `localhost:3307` | 宿主端口；容器内部为 3306 |
+| Redis | `localhost:6379` | Session 和任务状态 |
+| MinIO API | <http://localhost:9000> | 本地对象存储 |
+| MinIO Console | <http://localhost:9001> | 对象存储控制台 |
 
-## 参考项目
+如果修改 `infra/.env`，同步设置 `API_BASE`、`ADMIN_UI`、`VIEWER_UI` 或让脚本读取对应环境变量。
 
-旧项目位于 `E:/workspace/vie-mei`。它作为视觉和数据迁移参考，不直接作为新平台的业务基础。
+## 测试与验收
+
+唯一的当前测试入口是 [`docs/testing-guide.md`](docs/testing-guide.md)。常用命令：
+
+```bash
+# 后端测试
+cd apps/gallery-api && mvn test
+
+# 前端构建
+cd ../gallery-admin && npm install && npm run build
+cd ../gallery-viewer && npm install && npm run build
+
+# 服务启动后运行当前 API CLI 流程
+cd ../..
+bash test-mcp-flow.sh
+```
+
+当前 M6/M6.5 和 M7.1/M7.2 的真实环境证据已记录；M7.3/M7.4/M7.5、完整集成测试、密码重置和备份恢复仍是个人相册 V1 上线前工作，详见 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)。
+
+## 文档入口
+
+### 当前开发
+- **[V1 后一个月任务路线图](docs/v1-post-one-month-roadmap.md)**：当前执行规划（2026-09-17 至 2026-10-17）
+- [`docs/testing-guide.md`](docs/testing-guide.md)：测试和验收指南
+- [`docs/operations-recovery.md`](docs/operations-recovery.md)：运维恢复手册
+
+### V1 验收与规划
+- [`docs/v1-ready-signoff.md`](docs/v1-ready-signoff.md)：V1 Ready 验收报告（2026-09-12）
+- [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)：个人相册 V1 总规划
+- [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)：V1 后长期任务清单
+
+### 技术与历史
+- [`docs/m7-testing-results.md`](docs/m7-testing-results.md)：M7 测试证据
+- [`docs/security-verification-v1.md`](docs/security-verification-v1.md)：安全验证记录
+- [`docs/archive/README.md`](docs/archive/README.md)：历史资料归档
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)：提交与协作约定
+
+历史阶段的设计和故障记录位于 `docs/archive/`，不作为当前 API、端口、产品状态或开发步骤依据。

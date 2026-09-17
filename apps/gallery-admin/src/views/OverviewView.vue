@@ -1,194 +1,304 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 import type { Gallery } from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import Icon from '../components/Icon.vue'
-import ConfirmModal from '../components/ConfirmModal.vue'
-import LightboxModal from '../components/LightboxModal.vue'
+import { openCreatorPreview } from '../lib/preview'
+import { useModalFocus } from '../composables/useModalFocus'
+
+const FALLBACK_COVERS = [
+  '/covers/forest.png',
+  '/covers/lake.png',
+  '/covers/coast.png',
+  '/covers/courtyard.png',
+  '/covers/stream.png',
+  '/covers/gallery.png',
+  '/covers/bamboo.png'
+]
+
+type StatusFilter = 'ALL' | 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
+type SortOption = 'updated' | 'created' | 'name'
 
 const router = useRouter()
 const toast = useToast()
-const { currentUser, setUser, logout } = useAuth()
+const { currentUser, setUser, logout, can, userDisplayName, userInitial, isOwner } = useAuth()
+const canCreateGallery = can('GALLERY_CREATE')
 
-// ==========================================
-// 1. 用户与鉴权状态
-// ==========================================
-const authMode = ref<'login' | 'register'>('login')
+const authMode = ref<'login' | 'register' | 'forgot'>('login')
 const authForm = ref({
-  email: 'tester@example.com',
-  password: 'Password123456',
-  displayName: 'Admin Tester'
+  email: '',
+  password: '',
+  displayName: ''
 })
 const authLoading = ref(false)
 const authError = ref('')
+const forgotEmail = ref('')
+const forgotLoading = ref(false)
+const forgotSuccess = ref(false)
 
-// ==========================================
-// 2. 空间与照片状态
-// ==========================================
 const galleries = ref<Gallery[]>([])
 const loading = ref(false)
-const selectedGalleryId = ref<string | null>(null)
-const photos = ref<any[]>([])
-const uploading = ref(false)
-const uploadProgress = ref(0)
-const uploadStatusText = ref('')
-const isDragOver = ref(false)
+const loadError = ref('')
 
-// Lightbox state
-const showLightbox = ref(false)
-const lightboxIndex = ref(0)
+const searchQuery = ref('')
+const statusFilter = ref<StatusFilter>('ALL')
+const sortBy = ref<SortOption>('updated')
+const viewMode = ref<'grid' | 'list'>('grid')
+const menuId = ref<string | null>(null)
+const userMenuOpen = ref(false)
 
-// Confirm photo delete
-const photoToDelete = ref<any | null>(null)
-const deletingPhoto = ref(false)
-
-// ==========================================
-// 3. 新建空间表单
-// ==========================================
 const showCreateModal = ref(false)
-const createForm = ref({
-  name: '',
-  slug: '',
-  visibility: 'PUBLIC'
-})
+const createForm = ref({ name: '', slug: '', visibility: 'PUBLIC' })
 const creating = ref(false)
 const createError = ref('')
+const slugSeed = ref(makeSlugSeed())
+const { root: createModalRoot } = useModalFocus(showCreateModal, {
+  onEscape: () => { if (!creating.value) showCreateModal.value = false },
+  disabled: creating
+})
 
-// ==========================================
-// 4. 分享链接 Modal
-// ==========================================
-const showShareModal = ref(false)
-const shareLinkData = ref<{ shareUrl: string; expiresAt?: string } | null>(null)
-const generatingShare = ref(false)
-const copied = ref(false)
+function makeSlugSeed() {
+  return `space-${Date.now().toString(36)}`
+}
 
-const selectedGallery = computed(() =>
-  galleries.value.find(g => g.id === selectedGalleryId.value) || null
-)
+function openCreateModal() {
+  slugSeed.value = makeSlugSeed()
+  showCreateModal.value = true
+}
 
-// ==========================================
-// 5. 鉴权与生命周期
-// ==========================================
-async function checkAuth() {
-  try {
-    const res = await apiFetch('/api/me')
-    if (res.ok) {
-      const data = await res.json()
-      setUser(data)
-      await loadGalleries()
-    } else {
-      setUser(null)
+const statusCounts = computed(() => {
+  const all = galleries.value.length
+  const draft = galleries.value.filter(g => g.status === 'DRAFT').length
+  const published = galleries.value.filter(g => g.status === 'PUBLISHED').length
+  const archived = galleries.value.filter(g => g.status === 'ARCHIVED').length
+  return { all, draft, published, archived }
+})
+
+const filteredGalleries = computed(() => {
+  const list = galleries.value.filter(g => {
+    if (statusFilter.value !== 'ALL' && g.status !== statusFilter.value) return false
+    if (!searchQuery.value.trim()) return true
+    const query = searchQuery.value.trim().toLowerCase()
+    return g.name.toLowerCase().includes(query) || g.slug.toLowerCase().includes(query)
+  })
+
+  return list.slice().sort((a, b) => {
+    if (sortBy.value === 'name') {
+      return a.name.localeCompare(b.name, 'zh-CN')
     }
-  } catch (e) {
-    setUser(null)
+    if (sortBy.value === 'created') {
+      const ta = new Date(a.createdAt).getTime() || 0
+      const tb = new Date(b.createdAt).getTime() || 0
+      return tb - ta
+    }
+    // Default: 'updated'
+    const ta = new Date(a.updatedAt || a.createdAt).getTime() || 0
+    const tb = new Date(b.updatedAt || b.createdAt).getTime() || 0
+    return tb - ta
+  })
+})
+
+function coverFor(gallery: Gallery) {
+  if (gallery.coverThumbnailUrl) return gallery.coverThumbnailUrl
+  let hash = 0
+  for (const ch of gallery.id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
+  return FALLBACK_COVERS[hash % FALLBACK_COVERS.length]
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return '刚刚'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '刚刚'
+  const now = Date.now()
+  const diff = now - date.getTime()
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`
+  if (diff < 86400_000 * 7) return `${Math.floor(diff / 86400_000)} 天前`
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function visibilityLabel(gallery: Gallery) {
+  if (gallery.visibility === 'PUBLIC') return '公开'
+  if (gallery.visibility === 'PASSWORD') return '密码保护'
+  return '私密'
+}
+
+function statusLabel(gallery: Gallery) {
+  return gallery.status === 'PUBLISHED' ? '已发布' : gallery.status === 'ARCHIVED' ? '已归档' : '草稿'
+}
+
+function toggleCardMenu(id: string, event: Event) {
+  event.stopPropagation()
+  menuId.value = menuId.value === id ? null : id
+  userMenuOpen.value = false
+}
+
+function closeMenus() {
+  menuId.value = null
+  userMenuOpen.value = false
+}
+
+async function handleLogout() {
+  await logout()
+  toast.info('已安全退出登录')
+}
+
+onMounted(() => document.addEventListener('click', closeMenus))
+onUnmounted(() => document.removeEventListener('click', closeMenus))
+
+function navigateToWorkspace(id: string) {
+  router.push({ name: 'gallery-workspace', params: { id } })
+}
+
+function navigateToConfig(id: string) {
+  router.push({ name: 'gallery-config', params: { id } })
+}
+
+async function openViewer(gallery: Gallery) {
+  try {
+    await openCreatorPreview(gallery.id, gallery.slug)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '暂时无法打开内部预览，请稍后重试。')
   }
 }
+
+async function loadGalleries() {
+  if (!currentUser.value) return
+  loading.value = true
+  loadError.value = ''
+  try {
+    const response = await apiFetch('/api/galleries')
+    if (!response.ok) throw new Error(response.status === 401 ? '登录已失效，请重新登录。' : response.status === 403 ? '你没有权限查看这些空间。' : '空间列表加载失败，请稍后重试。')
+    galleries.value = await response.json() as Gallery[]
+  } catch (error) {
+    galleries.value = []
+    loadError.value = error instanceof Error ? error.message : '空间列表加载失败，请稍后重试。'
+    if (loadError.value.includes('登录已失效')) {
+      logout()
+    }
+    toast.error(loadError.value)
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(currentUser, user => {
+  if (user) {
+    loadGalleries()
+  } else {
+    galleries.value = []
+    loadError.value = ''
+  }
+}, { immediate: true })
 
 async function handleAuthSubmit() {
   authLoading.value = true
   authError.value = ''
   try {
     const url = authMode.value === 'register' ? '/api/auth/register' : '/api/auth/login'
-    const body: any = {
+    const body: Record<string, string> = {
       email: authForm.value.email.trim(),
       password: authForm.value.password
     }
-    if (authMode.value === 'register') {
-      body.displayName = authForm.value.displayName.trim()
-    }
+    if (authMode.value === 'register') body.displayName = authForm.value.displayName.trim()
 
-    const res = await apiFetch(url, {
+    const response = await apiFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      authError.value = err.message || (authMode.value === 'register' ? '注册失败' : '登录失败')
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string }
+      const raw = body.message || ''
+      if (raw.toLowerCase().includes('invalid credentials')) {
+        authError.value = '邮箱或密码不正确。'
+      } else {
+        authError.value = raw || (authMode.value === 'register' ? '注册失败，请检查填写内容。' : '登录失败，请检查邮箱和密码。')
+      }
       toast.error(authError.value)
       return
     }
-
-    const data = await res.json()
-    setUser(data)
+    setUser(await response.json())
     toast.success(authMode.value === 'register' ? '注册成功，欢迎进入！' : '登录成功')
-    await loadGalleries()
-  } catch (e: any) {
-    authError.value = e.message || '网络连接异常'
+  } catch (error) {
+    authError.value = error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
     toast.error(authError.value)
   } finally {
     authLoading.value = false
   }
 }
 
-async function handleLogout() {
-  await logout()
-  galleries.value = []
-  photos.value = []
-  selectedGalleryId.value = null
-  toast.info('已安全退出登录')
-}
-
-// ==========================================
-// 6. 相册空间管理
-// ==========================================
-async function loadGalleries() {
-  loading.value = true
+async function handleForgotPassword() {
+  const email = forgotEmail.value.trim()
+  if (!email) return
+  forgotLoading.value = true
+  authError.value = ''
   try {
-    const response = await apiFetch('/api/galleries')
-    if (response.ok) {
-      galleries.value = (await response.json()) as Gallery[]
-      if (galleries.value.length > 0 && !selectedGalleryId.value) {
-        selectGallery(galleries.value[0].id)
-      }
+    const response = await apiFetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    })
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({})) as { message?: string }
+      throw new Error(data.message || '请求发送重置邮件失败。')
     }
+    forgotSuccess.value = true
+    toast.success('若该邮箱已注册，系统已向您的邮箱发送重置链接。')
+  } catch (error) {
+    authError.value = error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
+    toast.error(authError.value)
   } finally {
-    loading.value = false
-  }
-}
-
-async function selectGallery(id: string) {
-  selectedGalleryId.value = id
-  await loadPhotos(id)
-}
-
-async function loadPhotos(id: string) {
-  const r = await apiFetch(`/api/galleries/${id}/photos`)
-  if (r.ok) {
-    photos.value = await r.json()
+    forgotLoading.value = false
   }
 }
 
 function handleNameInput() {
-  // 自动生成 slug
-  if (!createForm.value.slug || createForm.value.slug === slugify(createForm.value.name.slice(0, -1))) {
+  const previous = slugify(createForm.value.name.slice(0, -1))
+  if (!createForm.value.slug || createForm.value.slug === previous) {
     createForm.value.slug = slugify(createForm.value.name)
   }
 }
 
 function slugify(text: string) {
-  return text
-    .toString()
+  const ascii = text
     .toLowerCase()
     .trim()
     .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
+    .replace(/[^\w-]+/g, '-')
     .replace(/--+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+  return ascii || slugSeed.value
 }
 
 async function handleCreateGallery() {
-  if (!createForm.value.name.trim() || !createForm.value.slug.trim()) {
-    createError.value = '请填写空间名称和标识符 (Slug)'
+  if (!canCreateGallery.value) {
+    toast.error('当前角色没有创建空间的权限。')
+    return
+  }
+  if (!createForm.value.name.trim()) {
+    createError.value = '请填写空间名称。'
+    return
+  }
+  if (!createForm.value.slug.trim()) {
+    createForm.value.slug = slugify(createForm.value.name)
+  }
+  if (!createForm.value.slug.trim()) {
+    createError.value = '请填写访问地址，可用字母、数字和连字符。'
     return
   }
   creating.value = true
   createError.value = ''
   try {
-    const res = await apiFetch('/api/galleries', {
+    const response = await apiFetch('/api/galleries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -197,292 +307,107 @@ async function handleCreateGallery() {
         visibility: createForm.value.visibility
       })
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      createError.value = err.message || '创建空间失败'
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string }
+      createError.value = body.message || '创建空间失败，请稍后重试。'
       toast.error(createError.value)
       return
     }
-    const newGallery = await res.json()
+    const newGallery = await response.json() as Gallery
     showCreateModal.value = false
     createForm.value = { name: '', slug: '', visibility: 'PUBLIC' }
-    toast.success(`空间 “${newGallery.name}” 创建成功！`)
-    await loadGalleries()
-    selectGallery(newGallery.id)
-  } catch (e: any) {
-    createError.value = e.message || '网络请求失败'
+    toast.success(`空间“${newGallery.name}”创建成功！`)
+    navigateToWorkspace(newGallery.id)
+  } catch (error) {
+    createError.value = error instanceof Error ? error.message : '网络请求失败，请稍后重试。'
+    toast.error(createError.value)
   } finally {
     creating.value = false
   }
 }
-
-// ==========================================
-// 7. 照片上传 (支持拖拽 & 任务轮询)
-// ==========================================
-async function handleDrop(e: DragEvent) {
-  isDragOver.value = false
-  if (!e.dataTransfer?.files?.length || !selectedGalleryId.value) return
-  await processUploadFiles(e.dataTransfer.files)
-}
-
-async function handleFileInput(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files?.length || !selectedGalleryId.value) return
-  await processUploadFiles(input.files)
-  input.value = ''
-}
-
-async function processUploadFiles(files: FileList) {
-  if (!selectedGalleryId.value) return
-  uploading.value = true
-  uploadProgress.value = 10
-  uploadStatusText.value = `正在上传 ${files.length} 张照片...`
-
-  try {
-    const form = new FormData()
-    Array.from(files).forEach(f => form.append('files', f))
-    
-    const response = await apiFetch(`/api/galleries/${selectedGalleryId.value}/photos`, {
-      method: 'POST',
-      body: form
-    })
-    
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      toast.error(err.message || '照片上传失败')
-      return
-    }
-
-    const result = (await response.json()) as { items?: { taskId: string }[] }
-    uploadProgress.value = 40
-    uploadStatusText.value = '服务器正在处理并生成高保真缩略图...'
-
-    if (result.items && result.items.length > 0) {
-      const totalTasks = result.items.length
-      let finished = 0
-      
-      for (const item of result.items) {
-        for (let i = 0; i < 30; i++) {
-          await new Promise(r => setTimeout(r, 800))
-          const task = await apiFetch(`/api/photos/tasks/${item.taskId}`)
-          if (!task.ok) break
-          const state = (await task.json()) as { status: string }
-          if (['SUCCEEDED', 'FAILED'].includes(state.status)) {
-            finished++
-            uploadProgress.value = 40 + Math.round((finished / totalTasks) * 55)
-            break
-          }
-        }
-      }
-    }
-
-    uploadProgress.value = 100
-    toast.success(`成功上传并处理 ${files.length} 张照片！`)
-    await loadPhotos(selectedGalleryId.value)
-  } catch (err: any) {
-    toast.error(err.message || '上传异常')
-  } finally {
-    setTimeout(() => {
-      uploading.value = false
-      uploadProgress.value = 0
-      uploadStatusText.value = ''
-    }, 600)
-  }
-}
-
-// ==========================================
-// 8. 照片操作 (封面 / 删除 / Lightbox)
-// ==========================================
-function openLightbox(index: number) {
-  lightboxIndex.value = index
-  showLightbox.value = true
-}
-
-async function handleSetCover(photo: any) {
-  try {
-    const res = await apiFetch(`/api/photos/${photo.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cover: true })
-    })
-    if (res.ok) {
-      toast.success('已设为相册封面！')
-      if (selectedGalleryId.value) {
-        await loadPhotos(selectedGalleryId.value)
-      }
-    } else {
-      toast.error('设置封面失败')
-    }
-  } catch (e: any) {
-    toast.error(e.message || '网络请求失败')
-  }
-}
-
-function promptDeletePhoto(photo: any) {
-  photoToDelete.value = photo
-}
-
-async function confirmDeletePhoto() {
-  if (!photoToDelete.value) return
-  deletingPhoto.value = true
-  try {
-    const res = await apiFetch(`/api/photos/${photoToDelete.value.id}`, {
-      method: 'DELETE'
-    })
-    if (res.ok) {
-      toast.success('照片已成功删除')
-      if (showLightbox.value) {
-        showLightbox.value = false
-      }
-      if (selectedGalleryId.value) {
-        await loadPhotos(selectedGalleryId.value)
-      }
-    } else {
-      toast.error('删除照片失败')
-    }
-  } catch (e: any) {
-    toast.error(e.message || '网络请求失败')
-  } finally {
-    deletingPhoto.value = false
-    photoToDelete.value = null
-  }
-}
-
-// ==========================================
-// 9. 分享链接与外部跳转
-// ==========================================
-async function openShareModal() {
-  if (!selectedGalleryId.value) return
-  generatingShare.value = true
-  showShareModal.value = true
-  copied.value = false
-  try {
-    const res = await apiFetch(`/api/galleries/${selectedGalleryId.value}/share-links`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const baseViewer = `${window.location.protocol}//${window.location.hostname}:5174`
-      const gSlug = selectedGallery.value?.slug || ''
-      shareLinkData.value = {
-        shareUrl: `${baseViewer}/g/${gSlug}?t=${data.rawToken}`,
-        expiresAt: data.expiresAt
-      }
-    }
-  } catch (e) {
-    toast.error('生成分享链接失败')
-  } finally {
-    generatingShare.value = false
-  }
-}
-
-async function copyShareUrl() {
-  if (!shareLinkData.value?.shareUrl) return
-  try {
-    await navigator.clipboard.writeText(shareLinkData.value.shareUrl)
-    copied.value = true
-    toast.success('分享链接已复制到剪贴板！')
-    setTimeout(() => {
-      copied.value = false
-    }, 2500)
-  } catch (e) {
-    toast.error('复制失败，请手动选择复制')
-  }
-}
-
-function openViewer(slug?: string) {
-  const s = slug || selectedGallery.value?.slug
-  if (!s) return
-  const baseViewer = `${window.location.protocol}//${window.location.hostname}:5174`
-  window.open(`${baseViewer}/g/${s}`, '_blank')
-}
-
-function goToConfig(galleryId?: string) {
-  const gid = galleryId || selectedGalleryId.value
-  if (!gid) return
-  router.push(`/galleries/${gid}/config`)
-}
-
-checkAuth()
 </script>
 
 <template>
-  <!-- 未登录状态：高端毛玻璃鉴权卡片 -->
-  <div v-if="!currentUser" class="auth-wrapper">
-    <div class="auth-glow"></div>
+  <!-- Fullscreen Immersive Login / Register (Guest Mode) -->
+  <div v-if="!currentUser" class="auth-immersive">
+    <div class="auth-scene" aria-hidden="true">
+      <div class="auth-brand-mark">VIE GALLERY</div>
+    </div>
     <div class="auth-card">
       <div class="auth-header">
-        <div class="brand-badge">
-          <Icon name="gallery" :size="24" />
-        </div>
-        <h2>VIE Gallery Console</h2>
-        <p>{{ authMode === 'register' ? '注册新管理员工作区，开启沉浸式相册' : '登录你的创作者管理后台' }}</p>
+        <div class="brand-badge"><Icon name="gallery" :size="22" /></div>
+        <h2>VIE GALLERY</h2>
+        <p>{{ authMode === 'register' ? '注册新创作者工作区，开启沉浸式相册' : authMode === 'forgot' ? '输入注册邮箱，获取重置密码链接' : '登录你的创作者管理后台' }}</p>
       </div>
-
-      <div class="auth-tabs">
-        <button
-          :class="{ active: authMode === 'login' }"
-          @click="authMode = 'login'; authError = ''"
-        >
-          账号登录
-        </button>
-        <button
-          :class="{ active: authMode === 'register' }"
-          @click="authMode = 'register'; authError = ''"
-        >
-          注册账户
-        </button>
+      <div v-if="authMode !== 'forgot'" class="auth-tabs">
+        <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'; authError = ''">账号登录</button>
+        <button :class="{ active: authMode === 'register' }" type="button" @click="authMode = 'register'; authError = ''">注册账户</button>
       </div>
+      <div v-if="authError" class="form-error"><Icon name="alert-circle" :size="16" /><span>{{ authError }}</span></div>
 
-      <div v-if="authError" class="form-error">
-        <Icon name="alert-circle" :size="16" />
-        <span>{{ authError }}</span>
-      </div>
-
-      <form @submit.prevent="handleAuthSubmit">
-        <div v-if="authMode === 'register'" class="form-group">
-          <label class="form-label">用户名称</label>
-          <input
-            id="auth-display-name"
-            v-model="authForm.displayName"
-            placeholder="例如：Alex Chen"
-            class="form-input"
-            required
-          />
+      <!-- Forgot Password Form -->
+      <template v-if="authMode === 'forgot'">
+        <div v-if="forgotSuccess" class="forgot-success-banner">
+          <Icon name="check" :size="20" />
+          <div>
+            <strong>重置邮件已发送</strong>
+            <p>若该邮箱已注册，系统已向您的邮箱发送重置链接。请查收邮件或日志中的重置令牌完成密码重置。</p>
+          </div>
         </div>
-
-        <div class="form-group">
-          <label class="form-label">电子邮箱</label>
-          <input
-            id="auth-email"
-            v-model="authForm.email"
-            type="email"
-            placeholder="name@example.com"
-            class="form-input"
-            required
-          />
+        <form v-else @submit.prevent="handleForgotPassword">
+          <div class="form-group auth-field">
+            <label class="form-label" for="forgot-email">注册电子邮箱</label>
+            <div class="auth-input-wrap">
+              <Icon name="users" :size="16" class="auth-input-icon" />
+              <input id="forgot-email" v-model="forgotEmail" type="email" placeholder="name@example.com" class="form-input" required />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary auth-submit" :disabled="forgotLoading">
+            <Icon v-if="forgotLoading" name="refresh" :size="16" class="spin" />
+            <span>{{ forgotLoading ? '正在发送…' : '发送重置密码邮件' }}</span>
+          </button>
+        </form>
+        <div class="forgot-footer">
+          <button class="link-btn" type="button" @click="authMode = 'login'; forgotSuccess = false; authError = ''">
+            想起密码了？返回登录
+          </button>
         </div>
+      </template>
 
-        <div class="form-group">
-          <label class="form-label">密码 (至少 12 位)</label>
-          <input
-            id="auth-password"
-            v-model="authForm.password"
-            type="password"
-            placeholder="••••••••••••"
-            class="form-input"
-            required
-          />
+      <!-- Login / Register Form -->
+      <form v-else @submit.prevent="handleAuthSubmit">
+        <div v-if="authMode === 'register'" class="form-group auth-field">
+          <label class="form-label" for="auth-display-name">用户名称</label>
+          <div class="auth-input-wrap">
+            <Icon name="user" :size="16" class="auth-input-icon" />
+            <input id="auth-display-name" v-model="authForm.displayName" placeholder="例如：Alex Chen" class="form-input" required />
+          </div>
         </div>
-
-        <button
-          id="btn-auth-submit"
-          type="submit"
-          class="btn btn-primary auth-submit"
-          :disabled="authLoading"
-        >
+        <div class="form-group auth-field">
+          <label class="form-label" for="auth-email">电子邮箱</label>
+          <div class="auth-input-wrap">
+            <Icon name="users" :size="16" class="auth-input-icon" />
+            <input id="auth-email" v-model="authForm.email" type="email" placeholder="name@example.com" class="form-input" required />
+          </div>
+        </div>
+        <div class="form-group auth-field">
+          <div class="field-label-row">
+            <label class="form-label" for="auth-password">密码（至少 12 位）</label>
+            <button
+              v-if="authMode === 'login'"
+              type="button"
+              class="forgot-link-btn"
+              @click="authMode = 'forgot'; authError = ''; forgotSuccess = false"
+            >
+              忘记密码？
+            </button>
+          </div>
+          <div class="auth-input-wrap">
+            <Icon name="lock" :size="16" class="auth-input-icon" />
+            <input id="auth-password" v-model="authForm.password" type="password" placeholder="至少 12 位密码" class="form-input" minlength="12" required />
+          </div>
+        </div>
+        <button id="btn-auth-submit" type="submit" class="btn btn-primary auth-submit" :disabled="authLoading">
           <Icon v-if="authLoading" name="refresh" :size="16" class="spin" />
           <span>{{ authLoading ? '认证中…' : (authMode === 'register' ? '创建并进入工作区' : '登录控制台') }}</span>
         </button>
@@ -490,239 +415,293 @@ checkAuth()
     </div>
   </div>
 
-  <!-- 已登录状态：全新相册控制台工作区 -->
-  <div v-else class="dashboard-root">
-    <!-- Top Workspace Header -->
-    <header class="page-header">
-      <div class="header-left">
-        <h1 class="page-title">相册空间管理</h1>
-        <p class="page-subtitle">管理你的全部 3D 沉浸式相册，支持高清批量上传与实时参数调优</p>
-      </div>
+  <!-- 我的空间 -->
+  <div v-else class="space-page">
+    <div class="space-scene" aria-hidden="true"></div>
 
-      <div class="header-right">
-        <button id="btn-open-create-modal" class="btn btn-primary" @click="showCreateModal = true">
-          <Icon name="plus" :size="16" />
-          <span>新建空间</span>
-        </button>
+    <header class="space-nav">
+      <RouterLink to="/" class="space-brand">
+        <span class="fold-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
+            <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
+            <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
+          </svg>
+        </span>
+        <span class="space-brand-name">VIE Gallery</span>
+      </RouterLink>
+
+      <nav class="space-tabs" aria-label="主导航">
+        <RouterLink to="/" class="space-tab is-active">
+          <Icon name="home" :size="16" />
+          <span>我的空间</span>
+        </RouterLink>
+        <RouterLink v-if="isOwner" to="/members" class="space-tab">
+          <Icon name="users" :size="16" />
+          <span>成员管理</span>
+        </RouterLink>
+      </nav>
+
+      <div class="space-user" @click.stop="userMenuOpen = !userMenuOpen">
+        <div class="space-avatar">{{ userInitial }}</div>
+        <span class="space-user-name">{{ userDisplayName }}</span>
+        <Icon name="chevron-down" :size="14" />
+        <div v-if="userMenuOpen" class="space-user-menu" @click.stop>
+          <button type="button" @click="handleLogout">退出登录</button>
+        </div>
       </div>
     </header>
 
-    <!-- Stat Bar & Filter -->
-    <section class="stat-toolbar">
-      <div class="stat-pills">
-        <div class="stat-pill">
-          <Icon name="gallery" :size="16" />
-          <span class="stat-label">空间总数</span>
-          <span class="stat-value">{{ galleries.length }}</span>
-        </div>
-        <div v-if="selectedGallery" class="stat-pill active">
-          <Icon name="photo" :size="16" />
-          <span class="stat-label">当前相册照片</span>
-          <span class="stat-value">{{ photos.length }}</span>
-        </div>
+    <div class="space-body">
+      <div class="space-heading">
+        <h1>我的空间</h1>
+        <p>在这里创建、管理和编辑您的 3D 沉浸式画廊空间</p>
       </div>
 
-      <button class="btn btn-ghost refresh-btn" :disabled="loading" @click="loadGalleries">
-        <Icon name="refresh" :size="15" :class="{ spin: loading }" />
-        <span>{{ loading ? '刷新中…' : '刷新数据' }}</span>
-      </button>
-    </section>
-
-    <!-- Gallery Cards Grid -->
-    <section class="gallery-grid" aria-live="polite">
-      <article
-        v-for="gallery in galleries"
-        :key="gallery.id"
-        class="gallery-card"
-        :class="{ selected: gallery.id === selectedGalleryId }"
-        @click="selectGallery(gallery.id)"
-      >
-        <div class="card-visual">
-          <div class="card-glow"></div>
-          <div class="card-pattern">
-            <Icon name="gallery" :size="36" />
-          </div>
-          <div class="card-top-badges">
-            <span class="badge" :class="gallery.visibility === 'PUBLIC' ? 'badge-public' : 'badge-private'">
-              <Icon :name="gallery.visibility === 'PUBLIC' ? 'globe' : 'lock'" :size="12" />
-              <span>{{ gallery.visibility }}</span>
-            </span>
-          </div>
-        </div>
-
-        <div class="card-body">
-          <div class="card-info">
-            <h3 class="gallery-title">{{ gallery.name }}</h3>
-            <div class="slug-row">
-              <code class="slug-tag">/g/{{ gallery.slug }}</code>
-            </div>
-          </div>
-
-          <div class="card-actions" @click.stop>
-            <button class="icon-action-btn" title="3D 空间配置" @click="goToConfig(gallery.id)">
-              <Icon name="sliders" :size="16" />
-            </button>
-            <button class="icon-action-btn" title="在 3D Viewer 中预览" @click="openViewer(gallery.slug)">
-              <Icon name="external" :size="16" />
-            </button>
-          </div>
-        </div>
-      </article>
-
-      <!-- Empty Gallery State -->
-      <div v-if="!loading && galleries.length === 0" class="empty-state">
-        <div class="empty-icon-box">
-          <Icon name="gallery" :size="32" />
-        </div>
-        <h3>还没有创建照片空间</h3>
-        <p>创建你的第一个相册空间，支持 3D 粒子星空、螺旋布局与无缝高保真展示。</p>
-        <button class="btn btn-primary" @click="showCreateModal = true">
-          <Icon name="plus" :size="16" />
-          <span>立即新建空间</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- Active Gallery Detail & Photos Panel -->
-    <section v-if="selectedGallery" class="photo-management-panel">
-      <div class="panel-header">
-        <div class="panel-left">
-          <div class="gallery-title-row">
-            <h2>{{ selectedGallery.name }}</h2>
-            <span class="badge" :class="selectedGallery.visibility === 'PUBLIC' ? 'badge-public' : 'badge-private'">
-              <Icon :name="selectedGallery.visibility === 'PUBLIC' ? 'globe' : 'lock'" :size="12" />
-              <span>{{ selectedGallery.visibility }}</span>
-            </span>
-          </div>
-          <p class="panel-meta">
-            <span>访问路由: <code>/g/{{ selectedGallery.slug }}</code></span>
-            <span class="divider">·</span>
-            <span>包含 {{ photos.length }} 张照片</span>
-          </p>
-        </div>
-
-        <div class="panel-actions">
-          <button class="btn btn-secondary" title="配置 3D 布局与粒子特效" @click="goToConfig()">
-            <Icon name="sliders" :size="16" />
-            <span>3D 视觉配置</span>
-          </button>
-          <button id="btn-share-link" class="btn btn-secondary" @click="openShareModal">
-            <Icon name="share" :size="16" />
-            <span>分享链接</span>
-          </button>
-          <button id="btn-open-viewer" class="btn btn-primary" @click="openViewer()">
-            <Icon name="external" :size="16" />
-            <span>3D 空间漫游</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Drag & Drop Upload Zone -->
-      <div
-        class="upload-dropzone"
-        :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
-        @dragover.prevent="isDragOver = true"
-        @dragleave.prevent="isDragOver = false"
-        @drop.prevent="handleDrop"
-      >
-        <div v-if="!uploading" class="dropzone-content">
-          <div class="upload-icon-circle">
-            <Icon name="upload" :size="24" />
-          </div>
-          <div class="dropzone-text">
-            <h4>拖拽照片至此处上传，或 <label class="file-picker-link">点击选择文件<input type="file" multiple accept="image/jpeg,image/png,image/webp" hidden @change="handleFileInput" /></label></h4>
-            <p>支持 JPG、PNG、WebP 高清图像 · 自动生成多尺度微距缩略图与 WebGL 3D 纹理</p>
-          </div>
-        </div>
-
-        <div v-else class="upload-progress-box">
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" :style="{ width: `${uploadProgress}%` }"></div>
-          </div>
-          <div class="progress-status">
-            <span>{{ uploadStatusText }}</span>
-            <span class="progress-percentage">{{ uploadProgress }}%</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Photo Grid Stream -->
-      <div v-if="photos.length > 0" class="photo-grid">
-        <article
-          v-for="(photo, idx) in photos"
-          :key="photo.id"
-          class="photo-card"
-          @click="openLightbox(idx)"
+      <div class="space-toolbar">
+        <button
+          v-if="canCreateGallery"
+          id="btn-open-create-modal"
+          class="space-create-btn"
+          type="button"
+          @click="openCreateModal"
         >
-          <div class="photo-img-box">
-            <img v-if="photo.thumbnailUrl" :src="photo.thumbnailUrl" :alt="photo.title || 'Photo'" loading="lazy" />
-            <div v-else class="empty-thumb-pattern">
-              <Icon name="photo" :size="24" />
-            </div>
+          <Icon name="plus" :size="16" />
+          <span>新建空间</span>
+        </button>
 
-            <!-- Cover Badge -->
-            <div v-if="photo.cover" class="photo-cover-tag">
-              <Icon name="star" :size="12" />
-              <span>封面</span>
-            </div>
+        <!-- 状态筛选 Chips -->
+        <div class="status-filter-group">
+          <button
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'ALL' }"
+            type="button"
+            @click="statusFilter = 'ALL'"
+          >
+            全部 ({{ statusCounts.all }})
+          </button>
+          <button
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'DRAFT' }"
+            type="button"
+            @click="statusFilter = 'DRAFT'"
+          >
+            草稿 ({{ statusCounts.draft }})
+          </button>
+          <button
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'PUBLISHED' }"
+            type="button"
+            @click="statusFilter = 'PUBLISHED'"
+          >
+            已发布 ({{ statusCounts.published }})
+          </button>
+          <button
+            v-if="statusCounts.archived > 0"
+            class="status-tab-btn"
+            :class="{ active: statusFilter === 'ARCHIVED' }"
+            type="button"
+            @click="statusFilter = 'ARCHIVED'"
+          >
+            已归档 ({{ statusCounts.archived }})
+          </button>
+        </div>
 
-            <!-- Hover Action Overlay -->
-            <div class="photo-hover-overlay" @click.stop>
-              <div class="overlay-top">
-                <button
-                  class="photo-action-btn"
-                  :title="photo.cover ? '当前相册封面' : '设为相册封面'"
-                  :class="{ active: photo.cover }"
-                  @click="handleSetCover(photo)"
-                >
-                  <Icon name="star" :size="15" />
-                </button>
-                <button
-                  class="photo-action-btn btn-danger"
-                  title="删除照片"
-                  @click="promptDeletePhoto(photo)"
-                >
-                  <Icon name="trash" :size="15" />
-                </button>
-              </div>
-              <div class="overlay-bottom">
-                <span class="photo-size">{{ Math.round((photo.byteSize || 0) / 1024) }} KB</span>
-              </div>
-            </div>
+        <div class="space-toolbar-right">
+          <!-- 排序方式 -->
+          <div class="sort-selector">
+            <select v-model="sortBy" class="sort-select" aria-label="排序方式">
+              <option value="updated">最近更新</option>
+              <option value="created">最近创建</option>
+              <option value="name">名称排序</option>
+            </select>
           </div>
 
-          <div class="photo-info-bar">
-            <span class="photo-name">{{ photo.title || '未命名照片' }}</span>
-            <span class="status-dot" :class="`dot-${photo.status?.toLowerCase()}`" :title="`状态: ${photo.status}`"></span>
+          <div class="view-toggle" role="group" aria-label="展示方式">
+            <button
+              class="view-btn"
+              :class="{ active: viewMode === 'grid' }"
+              type="button"
+              title="网格视图"
+              @click="viewMode = 'grid'"
+            >
+              <Icon name="grid" :size="15" />
+            </button>
+            <button
+              class="view-btn"
+              :class="{ active: viewMode === 'list' }"
+              type="button"
+              title="列表视图"
+              @click="viewMode = 'list'"
+            >
+              <Icon name="list" :size="15" />
+            </button>
+          </div>
+
+          <div class="search-box">
+            <Icon name="search" :size="16" class="search-icon" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="search-input"
+              placeholder="搜索空间名称或地址"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div v-if="loadError" class="space-error" role="alert">
+        <Icon name="alert-circle" :size="16" />
+        <span>{{ loadError }}</span>
+        <button class="btn btn-secondary btn-sm" type="button" @click="loadGalleries">重试</button>
+      </div>
+
+      <div v-if="!loading && !loadError && viewMode === 'grid' && filteredGalleries.length" class="space-grid">
+        <article
+          v-for="gallery in filteredGalleries"
+          :key="gallery.id"
+          class="space-card"
+          tabindex="0"
+          @click="navigateToWorkspace(gallery.id)"
+          @keydown.enter="navigateToWorkspace(gallery.id)"
+        >
+          <div class="card-cover">
+            <img :src="coverFor(gallery)" class="cover-image" :alt="gallery.name" loading="lazy" />
+            <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : gallery.visibility === 'PASSWORD' ? 'is-password' : 'is-private'">
+              {{ visibilityLabel(gallery) }}
+            </span>
+            <span v-if="gallery.hasUnpublishedConfig" class="badge-draft-config">
+              待发布配置
+            </span>
+          </div>
+          <div class="card-body">
+            <div class="card-title-row">
+              <h2>{{ gallery.name }}</h2>
+            </div>
+
+            <!-- 卡片 Meta 数据摘要 -->
+            <div class="card-metrics-row">
+              <span class="metric-item">{{ gallery.photoCount ?? 0 }} 张照片</span>
+              <span v-if="gallery.processingCount && gallery.processingCount > 0" class="metric-badge processing">
+                {{ gallery.processingCount }} 处理中
+              </span>
+              <span v-if="gallery.failedPhotoCount && gallery.failedPhotoCount > 0" class="metric-badge failed">
+                {{ gallery.failedPhotoCount }} 失败
+              </span>
+            </div>
+
+            <p class="card-date">更新于 {{ formatTime(gallery.updatedAt || gallery.createdAt) }}</p>
+
+            <div class="card-foot">
+              <span class="status-meta">
+                <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
+                <span>{{ statusLabel(gallery) }}</span>
+              </span>
+              <div class="more-wrap">
+                <button
+                  class="more-btn"
+                  type="button"
+                  aria-label="更多操作"
+                  @click="toggleCardMenu(gallery.id, $event)"
+                >
+                  <Icon name="more" :size="16" />
+                </button>
+                <div v-if="menuId === gallery.id" class="card-menu" @click.stop>
+                  <button type="button" @click="navigateToWorkspace(gallery.id)">进入工作区</button>
+                  <button type="button" @click="navigateToConfig(gallery.id)">展厅配置</button>
+                  <button type="button" @click="openViewer(gallery)">预览展厅</button>
+                </div>
+              </div>
+            </div>
           </div>
         </article>
+
+        <button
+          v-if="canCreateGallery"
+          class="create-card"
+          type="button"
+          @click="openCreateModal"
+        >
+          <span class="create-plus">
+            <Icon name="plus" :size="22" />
+          </span>
+          <strong>新建空间</strong>
+          <span>创建一个新的 3D 画廊空间</span>
+        </button>
       </div>
 
-      <!-- Empty Photos -->
-      <div v-else class="empty-photos-panel">
-        <div class="empty-photo-icon">
-          <Icon name="photo" :size="32" />
-        </div>
-        <h4>相册内暂无照片</h4>
-        <p>通过上方拖拽区域或点击上传，即刻生成绚丽的 3D 照片空间。</p>
+      <div v-else-if="filteredGalleries.length" class="space-list">
+        <button
+          v-for="gallery in filteredGalleries"
+          :key="gallery.id"
+          class="list-row"
+          type="button"
+          @click="navigateToWorkspace(gallery.id)"
+        >
+          <img :src="coverFor(gallery)" class="list-thumb" :alt="gallery.name" />
+          <div class="list-copy">
+            <div class="list-head-row">
+              <strong>{{ gallery.name }}</strong>
+              <span v-if="gallery.hasUnpublishedConfig" class="badge-draft-config-inline">待发布配置</span>
+            </div>
+            <div class="list-meta-line">
+              <span>{{ gallery.photoCount ?? 0 }} 张照片</span>
+              <span v-if="gallery.processingCount && gallery.processingCount > 0" class="metric-badge processing-sm">{{ gallery.processingCount }} 处理中</span>
+              <span v-if="gallery.failedPhotoCount && gallery.failedPhotoCount > 0" class="metric-badge failed-sm">{{ gallery.failedPhotoCount }} 失败</span>
+              <span>更新于 {{ formatTime(gallery.updatedAt || gallery.createdAt) }}</span>
+            </div>
+          </div>
+          <span class="status-meta">
+            <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
+            <span>{{ statusLabel(gallery) }}</span>
+          </span>
+          <span class="vis-tag" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : gallery.visibility === 'PASSWORD' ? 'is-password' : 'is-private'">
+            {{ visibilityLabel(gallery) }}
+          </span>
+        </button>
       </div>
-    </section>
 
-    <!-- Modal 1: 新建空间弹窗 -->
+      <div v-else-if="galleries.length && !filteredGalleries.length" class="space-empty">
+        <h3>未找到匹配的空间</h3>
+        <p>没有找到与当前筛选或 “{{ searchQuery }}” 相关的空间。</p>
+        <button class="btn btn-secondary" type="button" @click="searchQuery = ''; statusFilter = 'ALL'">重置筛选</button>
+      </div>
+
+      <div v-else-if="loading" class="space-empty">
+        <h2>正在加载空间…</h2>
+      </div>
+
+      <div v-else-if="!galleries.length && !loadError" class="space-empty">
+        <h2>还没有画廊空间</h2>
+        <p>创建第一个 3D 展厅，上传照片后即可配置氛围并分享给访客。</p>
+        <button v-if="canCreateGallery" class="space-create-btn" type="button" @click="openCreateModal">
+          <Icon name="plus" :size="16" />
+          <span>创建第一组照片</span>
+        </button>
+      </div>
+    </div>
+
     <Transition name="modal-fade">
       <div v-if="showCreateModal" class="modal-backdrop" @click.self="!creating && (showCreateModal = false)">
-        <div class="modal-card">
+        <div
+          ref="createModalRoot"
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-title"
+          tabindex="-1"
+        >
           <div class="modal-header-row">
             <div class="modal-title-box">
               <div class="modal-icon-bubble">
                 <Icon name="plus" :size="20" />
               </div>
               <div>
-                <h3>新建照片空间</h3>
-                <p>创建一个全新的相册空间并配置独特的视觉主题</p>
+                <h2 id="create-title">新建空间</h2>
+                <p>创建一个新的 3D 画廊空间</p>
               </div>
             </div>
-            <button class="modal-close" @click="showCreateModal = false">
+            <button class="modal-close" type="button" aria-label="关闭" :disabled="creating" @click="showCreateModal = false">
               <Icon name="x" :size="18" />
             </button>
           </div>
@@ -734,42 +713,37 @@ checkAuth()
 
           <form @submit.prevent="handleCreateGallery">
             <div class="form-group">
-              <label class="form-label">空间名称</label>
+              <label class="form-label" for="input-gallery-name">空间名称</label>
               <input
                 id="input-gallery-name"
                 v-model="createForm.name"
-                placeholder="例如：自然风光与星空探索"
+                placeholder="例如：晨雾森林"
                 class="form-input"
-                autofocus
                 required
                 @input="handleNameInput"
               />
             </div>
-
             <div class="form-group">
-              <label class="form-label">标识符 (Slug URL)</label>
+              <label class="form-label" for="input-gallery-slug">访问地址</label>
               <input
                 id="input-gallery-slug"
                 v-model="createForm.slug"
-                placeholder="例如：nature-cosmos"
+                placeholder="例如：morning-forest"
                 class="form-input"
                 required
               />
-              <span class="field-hint">公开访问路径: <code>/g/{{ createForm.slug || 'slug' }}</code></span>
+              <p class="form-hint">用于访客链接，可用字母、数字和连字符。中文名称会自动生成可用地址。</p>
             </div>
-
             <div class="form-group">
-              <label class="form-label">访问权限 (Visibility)</label>
+              <label class="form-label" for="select-gallery-visibility">访问权限</label>
               <select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input">
-                <option value="PUBLIC">公开展示 (PUBLIC - 所有人可通过链接访问)</option>
-                <option value="PRIVATE">私密相册 (PRIVATE - 需凭专用分享 Token 访问)</option>
+                <option value="PUBLIC">公开</option>
+                <option value="PRIVATE">私密</option>
+                <option value="PASSWORD">密码保护</option>
               </select>
             </div>
-
             <div class="modal-actions">
-              <button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">
-                取消
-              </button>
+              <button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">取消</button>
               <button id="btn-create-submit" type="submit" class="btn btn-primary" :disabled="creating">
                 <Icon v-if="creating" name="refresh" :size="16" class="spin" />
                 <span>{{ creating ? '创建中…' : '立即创建' }}</span>
@@ -779,947 +753,970 @@ checkAuth()
         </div>
       </div>
     </Transition>
-
-    <!-- Modal 2: 分享链接弹窗 -->
-    <Transition name="modal-fade">
-      <div v-if="showShareModal" class="modal-backdrop" @click.self="showShareModal = false">
-        <div class="modal-card">
-          <div class="modal-header-row">
-            <div class="modal-title-box">
-              <div class="modal-icon-bubble share-bubble">
-                <Icon name="share" :size="20" />
-              </div>
-              <div>
-                <h3>分享相册空间</h3>
-                <p>生成专属的安全访问链接与他人共享</p>
-              </div>
-            </div>
-            <button class="modal-close" @click="showShareModal = false">
-              <Icon name="x" :size="18" />
-            </button>
-          </div>
-
-          <div v-if="generatingShare" class="generating-box">
-            <Icon name="refresh" :size="24" class="spin" />
-            <p>正在生成加密分享凭证...</p>
-          </div>
-
-          <div v-else-if="shareLinkData" class="share-content">
-            <div class="link-display-group">
-              <input :value="shareLinkData.shareUrl" readonly class="form-input share-url-input" />
-              <button class="btn btn-primary copy-btn" @click="copyShareUrl">
-                <Icon :name="copied ? 'check' : 'copy'" :size="16" />
-                <span>{{ copied ? '已复制' : '复制链接' }}</span>
-              </button>
-            </div>
-            <div class="share-tips">
-              <Icon name="lock" :size="14" />
-              <span>任何拥有此加密链接的用户均可进入 3D 沉浸式相册浏览照片。</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Confirm Photo Delete Dialog -->
-    <ConfirmModal
-      :show="!!photoToDelete"
-      title="删除确认"
-      message="确定要永久删除这张照片吗？此操作无法恢复。"
-      confirm-text="确认删除"
-      :danger="true"
-      :loading="deletingPhoto"
-      @confirm="confirmDeletePhoto"
-      @cancel="photoToDelete = null"
-    />
-
-    <!-- Fullscreen Lightbox Viewer -->
-    <LightboxModal
-      :show="showLightbox"
-      :photos="photos"
-      :current-index="lightboxIndex"
-      @close="showLightbox = false"
-      @select="idx => lightboxIndex = idx"
-      @set-cover="handleSetCover"
-      @delete="promptDeletePhoto"
-    />
   </div>
 </template>
 
 <style scoped>
-/* ==========================================
-   1. 登录与注册毛玻璃卡片
-   ========================================== */
-.auth-wrapper {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 80vh;
-  padding: 24px;
+/* ==========================================================================
+   1. Guest Auth Immersive Layout (Preserved from polished Login spec)
+   ========================================================================== */
+.auth-immersive {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  min-height: 100dvh;
+  overflow: hidden;
+  background-color: #c8e6d8;
+  background-image: url('/login-bg-c.jpg');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
 }
 
-.auth-glow {
+.auth-scene {
   position: absolute;
-  width: 380px;
-  height: 380px;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%);
-  filter: blur(40px);
-  z-index: 0;
+  inset: 0;
   pointer-events: none;
+  overflow: hidden;
+}
+
+.auth-brand-mark {
+  position: absolute;
+  left: 8%;
+  bottom: 9%;
+  font-size: clamp(26px, 4.2vw, 48px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.42);
+  text-transform: uppercase;
+  user-select: none;
+  text-shadow: 0 8px 28px rgba(6, 40, 28, 0.35);
 }
 
 .auth-card {
   position: relative;
   z-index: 1;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: var(--radius-xl);
-  padding: 38px;
-  width: min(450px, 100%);
-  box-shadow: var(--shadow-xl);
+  align-self: center;
+  margin: 24px 56px 24px 16px;
+  width: min(440px, calc(100vw - 48px));
+  padding: 38px 36px 34px;
+  border-radius: 22px;
+  color: #e8f5ef;
+  background: linear-gradient(155deg, rgba(14, 28, 24, 0.88), rgba(8, 20, 16, 0.92) 48%, rgba(6, 24, 18, 0.9));
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border: 1px solid rgba(167, 243, 208, 0.2);
+  box-shadow:
+    0 28px 64px rgba(4, 20, 14, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 1px 0 rgba(255, 255, 255, 0.1) inset;
 }
 
 .auth-header {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
-.brand-badge {
+.auth-card .brand-badge {
   display: inline-grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
-  color: #ffffff;
-  border-radius: 14px;
+  width: 48px;
+  height: 48px;
   margin-bottom: 14px;
-  box-shadow: 0 8px 18px rgba(16, 185, 129, 0.3);
+  border-radius: 14px;
+  color: #042f1e;
+  background: linear-gradient(135deg, #a7f3d0, #34d399 55%, #10b981);
+  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.35);
 }
 
 .auth-header h2 {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-primary);
   margin-bottom: 6px;
-  letter-spacing: -0.01em;
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  color: #f0fdf4;
 }
 
 .auth-header p {
-  font-size: 13.5px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(209, 250, 229, 0.72);
 }
 
 .auth-tabs {
   display: flex;
-  background: #f1f5f3;
-  border-radius: var(--radius-md);
-  padding: 4px;
-  margin-bottom: 20px;
+  gap: 28px;
+  margin-bottom: 22px;
+  padding: 0 2px;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .auth-tabs button {
-  flex: 1;
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 13.5px;
-  color: var(--text-secondary);
-  transition: all 0.15s ease;
+  position: relative;
+  flex: 0 0 auto;
+  padding: 10px 2px 12px;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: rgba(226, 245, 234, 0.48);
+  background: transparent;
+  transition: color 0.18s ease;
+}
+
+.auth-tabs button::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.18s ease;
 }
 
 .auth-tabs button.active {
-  background: #ffffff;
-  color: var(--brand-primary);
-  box-shadow: var(--shadow-xs);
+  color: #6ee7b7;
+  background: transparent;
+  box-shadow: none;
 }
 
-.form-error {
+.auth-tabs button.active::after {
+  background: linear-gradient(90deg, #a7f3d0, #34d399);
+}
+
+.auth-card .form-error {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #dc2626;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
   font-size: 13px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.auth-card .form-label {
+  color: rgba(220, 252, 231, 0.82);
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.forgot-link-btn {
+  background: none;
+  border: none;
+  color: #6ee7b7;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.forgot-link-btn:hover {
+  text-decoration: underline;
+}
+
+.forgot-success-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #d1fae5;
   margin-bottom: 16px;
+}
+
+.forgot-success-banner strong {
+  display: block;
+  font-size: 14px;
+  color: #6ee7b7;
+  margin-bottom: 4px;
+}
+
+.forgot-success-banner p {
+  font-size: 12.5px;
+  color: #a7f3d0;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.forgot-footer {
+  text-align: center;
+  margin-top: 16px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #6ee7b7;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.auth-input-wrap {
+  position: relative;
+}
+
+.auth-input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(167, 243, 208, 0.7);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.auth-card .form-input {
+  padding-left: 38px;
+  color: #f0fdf4;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(167, 243, 208, 0.18);
+  box-shadow: none;
+}
+
+.auth-card .form-input::placeholder {
+  color: rgba(167, 243, 208, 0.35);
+}
+
+.auth-card .form-input:focus {
+  border-color: rgba(52, 211, 153, 0.65);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .auth-submit {
   width: 100%;
-  margin-top: 10px;
-  padding: 12px;
+  margin-top: 8px;
+  padding: 13px 16px;
   font-size: 15px;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  color: #042f1e !important;
+  background: linear-gradient(135deg, #d9f99d, #6ee7b7 42%, #34d399) !important;
+  box-shadow: 0 10px 28px rgba(52, 211, 153, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.25) inset !important;
 }
 
-/* ==========================================
-   2. 控制台主页面
-   ========================================== */
-.dashboard-root {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
+.auth-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #ecfccb, #86efac 45%, #10b981) !important;
+  box-shadow: 0 14px 32px rgba(52, 211, 153, 0.48), 0 0 0 1px rgba(255, 255, 255, 0.3) inset !important;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
+/* ==========================================================================
+   2. 我的空间 Layout
+   ========================================================================== */
+.space-page {
+  position: relative;
+  min-height: 100dvh;
+  color: #111827;
+  overflow-x: hidden;
+}
+
+.space-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: #dce8e2;
+  background-image: url('/overview-bg.png');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+}
+
+.space-scene::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.space-nav,
+.space-body {
+  position: relative;
+}
+
+/* 导航必须高于正文，否则用户下拉菜单会被 space-body 盖住无法点击。 */
+.space-nav {
+  z-index: 50;
+}
+
+.space-body {
+  z-index: 1;
+}
+
+.space-nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 8px 0;
+  width: min(1240px, calc(100% - 48px));
+  margin: 18px auto 0;
+  padding: 10px 22px;
+  height: 64px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: 0 10px 32px rgba(15, 40, 28, 0.08);
 }
 
-.page-title {
-  font-size: 26px;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: #0f172a;
-  margin-bottom: 4px;
-}
-
-.page-subtitle {
-  font-size: 13.5px;
-  color: var(--text-tertiary);
-}
-
-.header-right {
-  display: flex;
+.space-brand {
+  display: inline-flex;
   align-items: center;
   gap: 10px;
+  justify-self: start;
 }
 
-/* Stat Toolbar */
-.stat-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+.fold-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
 }
 
-.stat-pills {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.fold-mark svg {
+  width: 30px;
+  height: 30px;
 }
 
-.stat-pill {
+.space-brand-name {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: #111827;
+}
+
+.space-tabs {
   display: flex;
+  align-items: stretch;
+  gap: 8px;
+  height: 100%;
+}
+
+.space-tab {
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: var(--radius-full);
-  font-size: 13px;
-  color: var(--text-secondary);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
-  backdrop-filter: blur(10px) saturate(150%);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.stat-pill:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
-}
-
-.stat-pill.active {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(209, 250, 229, 0.7));
-  color: #047857;
-  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.12);
-}
-
-.stat-value {
-  font-weight: 750;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
-}
-
-.stat-pill.active .stat-value {
-  color: #047857;
-}
-
-/* ==========================================
-   3. 相册卡片网格 - 现代化清新设计
-   ========================================== */
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
-}
-
-.gallery-card {
-  position: relative;
-  background: linear-gradient(145deg, #ffffff 0%, #fafcfb 100%);
-  border: 1.5px solid rgba(16, 185, 129, 0.08);
-  border-radius: 20px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 
-    0 4px 12px rgba(15, 23, 42, 0.04),
-    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-  display: flex;
-  flex-direction: column;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.gallery-card::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 20px;
-  padding: 1.5px;
-  background: linear-gradient(145deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.05));
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.35s ease;
-  pointer-events: none;
-}
-
-.gallery-card:hover {
-  transform: translateY(-6px) scale(1.01);
-  box-shadow: 
-    0 20px 40px rgba(16, 185, 129, 0.12),
-    0 8px 16px rgba(15, 23, 42, 0.06),
-    0 0 0 1px rgba(16, 185, 129, 0.1) inset;
-  border-color: rgba(16, 185, 129, 0.2);
-}
-
-.gallery-card:hover::before {
-  opacity: 1;
-}
-
-.gallery-card.selected {
-  border-color: rgba(16, 185, 129, 0.35);
-  background: linear-gradient(145deg, #ecfdf5 0%, #f0fdf4 100%);
-  box-shadow: 
-    0 0 0 3px rgba(16, 185, 129, 0.15),
-    0 12px 32px rgba(16, 185, 129, 0.18),
-    0 0 0 1px rgba(16, 185, 129, 0.2) inset;
-}
-
-.card-visual {
-  position: relative;
-  aspect-ratio: 16/9;
-  background: 
-    linear-gradient(135deg, rgba(236, 253, 245, 0.6) 0%, rgba(209, 250, 229, 0.4) 100%),
-    linear-gradient(45deg, #d1fae5 25%, transparent 25%, transparent 75%, #d1fae5 75%, #d1fae5),
-    linear-gradient(45deg, #d1fae5 25%, transparent 25%, transparent 75%, #d1fae5 75%, #d1fae5);
-  background-size: 100% 100%, 20px 20px, 20px 20px;
-  background-position: 0 0, 0 0, 10px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.card-visual::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 30% 50%, rgba(16, 185, 129, 0.08) 0%, transparent 60%);
-  pointer-events: none;
-}
-
-.card-pattern {
-  color: rgba(5, 150, 105, 0.15);
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  filter: drop-shadow(0 2px 8px rgba(16, 185, 129, 0.1));
-}
-
-.gallery-card:hover .card-pattern {
-  transform: scale(1.15) rotate(5deg);
-  color: rgba(16, 185, 129, 0.35);
-  filter: drop-shadow(0 4px 12px rgba(16, 185, 129, 0.2));
-}
-
-.card-top-badges {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 2;
-}
-
-.card-body {
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.95) 100%);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.gallery-title {
-  font-size: 16px;
-  font-weight: 650;
-  color: #0f172a;
-  margin-bottom: 6px;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
-}
-
-.slug-tag {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: #059669;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(16, 185, 129, 0.15);
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-
-.card-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.icon-action-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  color: #64748b;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-
-.icon-action-btn:hover {
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  border-color: rgba(16, 185, 129, 0.3);
-  color: #059669;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
-}
-
-/* Empty State */
-.empty-state {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: 72px 28px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9) 0%, rgba(250, 252, 251, 0.7) 100%);
-  border: 2px dashed rgba(203, 213, 225, 0.6);
-  border-radius: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.empty-icon-box {
-  width: 72px;
-  height: 72px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  color: #059669;
-  display: grid;
-  place-items: center;
-  margin-bottom: 20px;
-  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.15);
-}
-
-.empty-state h3 {
-  font-size: 19px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 8px;
-  letter-spacing: -0.02em;
-}
-
-.empty-state p {
+  padding: 0 14px;
+  color: #9ca3af;
   font-size: 14px;
-  color: var(--text-secondary);
-  max-width: 460px;
-  margin-bottom: 24px;
-  line-height: 1.6;
+  font-weight: 650;
+  height: 100%;
 }
 
-/* ==========================================
-   4. 照片管理面板与拖拽上传 - 现代化设计
-   ========================================== */
-.photo-management-panel {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(250, 252, 251, 0.9) 100%);
-  border: 1.5px solid rgba(226, 232, 240, 0.6);
-  border-radius: 24px;
-  padding: 32px;
-  box-shadow: 
-    0 8px 24px rgba(15, 23, 42, 0.05),
-    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  backdrop-filter: blur(20px) saturate(120%);
-  -webkit-backdrop-filter: blur(20px) saturate(120%);
+.space-tab.is-active,
+.space-tab.router-link-active {
+  color: #00b88f;
 }
 
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 18px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
-}
-
-.gallery-title-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 8px;
-}
-
-.gallery-title-row h2 {
-  font-size: 24px;
-  font-weight: 750;
-  color: #0f172a;
-  letter-spacing: -0.02em;
-}
-
-.panel-meta {
-  font-size: 13.5px;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.panel-meta code {
-  font-family: var(--font-mono);
-  background: linear-gradient(135deg, rgba(236, 253, 245, 0.7), rgba(209, 250, 229, 0.5));
-  padding: 3px 8px;
-  border-radius: 6px;
-  color: #047857;
-  font-weight: 550;
-  border: 1px solid rgba(16, 185, 129, 0.15);
-}
-
-.divider {
-  opacity: 0.4;
-}
-
-.panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-/* Dropzone - 现代化拖拽上传区 */
-.upload-dropzone {
-  border: 2px dashed rgba(203, 213, 225, 0.6);
-  border-radius: 18px;
-  padding: 40px 28px;
-  text-align: center;
-  background: linear-gradient(135deg, rgba(250, 252, 251, 0.5) 0%, rgba(248, 250, 252, 0.3) 100%);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-}
-
-.upload-dropzone::before {
-  content: '';
+.space-tab.is-active::after,
+.space-tab.router-link-exact-active::after {
+  content: "";
   position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.03) 0%, transparent 70%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  height: 3px;
+  border-radius: 999px;
+  background: #00b88f;
 }
 
-.upload-dropzone:hover::before {
-  opacity: 1;
-}
-
-.upload-dropzone.drag-over {
-  border-color: rgba(16, 185, 129, 0.6);
-  background: linear-gradient(135deg, rgba(236, 253, 245, 0.6) 0%, rgba(209, 250, 229, 0.4) 100%);
-  transform: scale(1.005);
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.08);
-}
-
-.upload-dropzone.is-uploading {
-  border-style: solid;
-  border-color: rgba(16, 185, 129, 0.4);
-  background: linear-gradient(135deg, rgba(240, 253, 244, 0.8) 0%, rgba(236, 253, 245, 0.6) 100%);
-}
-
-.dropzone-content {
-  display: flex;
-  flex-direction: column;
+.space-user {
+  position: relative;
+  z-index: 20;
+  display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
+  justify-self: end;
+  padding: 4px;
+  cursor: pointer;
+  color: #374151;
 }
 
-.upload-icon-circle {
-  width: 60px;
-  height: 60px;
+.space-avatar {
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  color: #059669;
   display: grid;
   place-items: center;
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.15);
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.upload-dropzone:hover .upload-icon-circle {
-  transform: scale(1.08) translateY(-2px);
-  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.25);
-}
-
-.dropzone-text h4 {
-  font-size: 15.5px;
-  font-weight: 650;
-  color: #0f172a;
-  margin-bottom: 6px;
-  letter-spacing: -0.01em;
-}
-
-.file-picker-link {
-  color: #059669;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: color 0.2s ease;
-}
-
-.file-picker-link:hover {
-  color: #047857;
-}
-
-.dropzone-text p {
+  background: #12b981;
+  color: #fff;
   font-size: 13px;
-  color: var(--text-tertiary);
-  line-height: 1.5;
-}
-
-.upload-progress-box {
-  max-width: 520px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.progress-bar-track {
-  height: 10px;
-  background: rgba(226, 232, 240, 0.5);
-  border-radius: 6px;
-  overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(203, 213, 225, 0.3) inset;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
-  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
-  position: relative;
-  overflow: hidden;
-}
-
-.progress-bar-fill::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-.progress-status {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13.5px;
-  color: var(--text-secondary);
-}
-
-.progress-percentage {
   font-weight: 750;
-  color: #047857;
-  letter-spacing: -0.02em;
 }
 
-/* Photo Grid - 现代化清新设计 */
-.photo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 20px;
+.space-user-name {
+  font-size: 14px;
+  font-weight: 650;
 }
 
-.photo-card {
-  position: relative;
-  border: 1.5px solid rgba(226, 232, 240, 0.6);
-  border-radius: 16px;
-  overflow: hidden;
-  background: linear-gradient(145deg, #ffffff 0%, #fafcfb 100%);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 
-    0 2px 8px rgba(15, 23, 42, 0.04),
-    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-}
-
-.photo-card::before {
-  content: '';
+.space-user-menu {
   position: absolute;
-  inset: -1px;
-  border-radius: 16px;
-  padding: 1.5px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(59, 130, 246, 0.1));
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.3s ease;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 140px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+
+.space-user-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.space-user-menu button:hover {
+  background: #f3f4f6;
+}
+
+.space-body {
+  width: min(1240px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 28px 0 72px;
+}
+
+.space-heading h1 {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.space-heading p {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.space-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0;
+  flex-wrap: wrap;
+}
+
+.space-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: #00b88f;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 20px rgba(0, 184, 143, 0.28);
+  border: none;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.space-create-btn:hover {
+  background: #00a67f;
+}
+
+.status-filter-group {
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 4px;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+
+.status-tab-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.status-tab-btn:hover {
+  color: #00b88f;
+}
+
+.status-tab-btn.active {
+  background: #00b88f;
+  color: #fff;
+}
+
+.space-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.sort-select {
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+  cursor: pointer;
+}
+
+.sort-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #00b88f;
+}
+
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.88);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+
+.view-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: none;
+  color: #9ca3af;
+  background: transparent;
+  cursor: pointer;
+}
+
+.view-btn.active {
+  background: #00b88f;
+  color: #fff;
+}
+
+.search-box {
+  position: relative;
+  width: 240px;
+}
+
+.search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
   pointer-events: none;
 }
 
-.photo-card:hover {
-  transform: translateY(-4px) scale(1.01);
-  box-shadow: 
-    0 16px 32px rgba(16, 185, 129, 0.1),
-    0 6px 12px rgba(15, 23, 42, 0.06),
-    0 0 0 1px rgba(16, 185, 129, 0.15) inset;
-  border-color: rgba(16, 185, 129, 0.3);
+.search-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 16px 0 38px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  font-size: 13px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
 
-.photo-card:hover::before {
-  opacity: 1;
+.search-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 184, 143, 0.18);
 }
 
-.photo-img-box {
-  position: relative;
-  aspect-ratio: 4/3;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+.space-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.space-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.space-card {
+  background: #fff;
+  border-radius: 16px;
   overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(15, 40, 28, 0.07);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
-.photo-img-box img {
+.space-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 32px rgba(15, 40, 28, 0.12);
+}
+
+.card-cover {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: #e8f5ef;
+}
+
+.cover-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
-  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.photo-card:hover .photo-img-box img {
-  transform: scale(1.05);
-}
-
-.empty-thumb-pattern {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  color: rgba(5, 150, 105, 0.3);
-}
-
-.photo-cover-tag {
+.vis-tag {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 11px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.95));
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 650;
-  border-radius: 8px;
-  box-shadow: 
-    0 4px 12px rgba(16, 185, 129, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
-  z-index: 2;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  top: 12px;
+  left: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
 }
 
-.photo-hover-overlay {
+.vis-tag.is-public {
+  background: rgba(255, 255, 255, 0.92);
+  color: #00b88f;
+}
+
+.vis-tag.is-private {
+  background: rgba(255, 255, 255, 0.92);
+  color: #4b5563;
+}
+
+.vis-tag.is-password {
+  background: rgba(255, 255, 255, 0.92);
+  color: #b45309;
+}
+
+.badge-draft-config {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.7) 0%, rgba(15, 23, 42, 0.85) 100%);
-  backdrop-filter: blur(4px) saturate(120%);
-  -webkit-backdrop-filter: blur(4px) saturate(120%);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 12px;
-  opacity: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 3;
+  top: 12px;
+  right: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  background: #fef3c7;
+  color: #b45309;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
-.photo-card:hover .photo-hover-overlay {
-  opacity: 1;
+.badge-draft-config-inline {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  background: #fef3c7;
+  color: #b45309;
 }
 
-.overlay-top {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+.card-body {
+  padding: 14px 16px 12px;
 }
 
-.photo-action-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.95);
-  color: #475569;
-  display: grid;
-  place-items: center;
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  border: 1px solid rgba(226, 232, 240, 0.5);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.photo-action-btn:hover {
-  background: #ffffff;
-  transform: scale(1.1) translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-}
-
-.photo-action-btn.active {
-  background: linear-gradient(135deg, #10b981, #059669);
-  color: #ffffff;
-  border-color: rgba(16, 185, 129, 0.3);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-}
-
-.photo-action-btn.btn-danger:hover {
-  background: linear-gradient(135deg, #fee2e2, #fecaca);
-  color: #dc2626;
-  border-color: rgba(220, 38, 38, 0.3);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
-}
-
-.overlay-bottom {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11.5px;
-  color: rgba(248, 250, 252, 0.95);
-  font-weight: 500;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.photo-info-bar {
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.95) 100%);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.photo-name {
-  font-size: 13px;
-  font-weight: 550;
-  color: #0f172a;
+.card-title-row h2 {
+  font-size: 16px;
+  font-weight: 750;
+  color: #111827;
+  margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: -0.01em;
+}
+
+.card-metrics-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.metric-item {
+  font-weight: 600;
+}
+
+.metric-badge {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.metric-badge.processing,
+.metric-badge.processing-sm {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.metric-badge.failed,
+.metric-badge.failed-sm {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.card-date {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.status-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 650;
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
-  transition: all 0.2s ease;
+  background: #d1d5db;
 }
 
-.photo-card:hover .status-dot {
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.7);
+.status-dot.is-live {
+  background: #00b88f;
 }
 
-.dot-ready {
-  background: linear-gradient(135deg, #10b981, #059669);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.5);
+.status-dot.is-draft {
+  background: #f59e0b;
 }
 
-.dot-processing {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.5);
+.more-wrap {
+  position: relative;
 }
 
-.dot-failed {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.5);
+.more-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #9ca3af;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
-.empty-photos-panel {
-  text-align: center;
-  padding: 56px 28px;
-  color: var(--text-tertiary);
+.more-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.card-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 132px;
+  padding: 6px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  z-index: 30;
+}
+
+.card-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.card-menu button:hover {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.create-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: linear-gradient(145deg, rgba(250, 252, 251, 0.6) 0%, rgba(248, 250, 252, 0.3) 100%);
-  border-radius: 18px;
-  border: 1px solid rgba(226, 232, 240, 0.5);
+  justify-content: center;
+  gap: 8px;
+  min-height: 268px;
+  border-radius: 16px;
+  border: 1.5px dashed #7dd3b5;
+  background: rgba(236, 253, 245, 0.62);
+  color: #00b88f;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.empty-photo-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
-  color: rgba(5, 150, 105, 0.55);
+.create-card strong {
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.create-card span:last-child {
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.create-plus {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.1);
+  background: rgba(0, 184, 143, 0.14);
+  color: #047857;
+  margin-bottom: 4px;
 }
 
-.empty-photos-panel h4 {
-  font-size: 16.5px;
-  font-weight: 650;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-  letter-spacing: -0.01em;
+.create-card:hover {
+  background: rgba(220, 252, 231, 0.78);
 }
 
-/* ==========================================
-   5. 通用 Modal 弹窗 - 现代化设计
-   ========================================== */
+.space-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 14px;
+  border: none;
+  text-align: left;
+  box-shadow: 0 4px 16px rgba(15, 40, 28, 0.06);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.list-row:hover {
+  transform: translateX(2px);
+}
+
+.list-thumb {
+  width: 72px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.list-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+}
+
+.list-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-head-row strong {
+  font-size: 14px;
+  color: #111827;
+}
+
+.list-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.list-row .vis-tag {
+  position: static;
+}
+
+.space-empty {
+  text-align: center;
+  padding: 64px 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+}
+
+.space-empty h2,
+.space-empty h3 {
+  font-size: 20px;
+  color: #111827;
+}
+
+.space-empty p {
+  margin: 8px 0 16px;
+  color: #6b7280;
+}
+
+.form-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(12px) saturate(120%);
-  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: grid;
   place-items: center;
   z-index: 1000;
@@ -1727,23 +1724,21 @@ checkAuth()
 }
 
 .modal-card {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(250, 252, 251, 0.96) 100%);
-  border: 1.5px solid rgba(255, 255, 255, 0.8);
-  border-radius: 24px;
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  background: #fff;
+  border-radius: 22px;
   padding: 32px;
-  width: min(520px, 100%);
-  box-shadow: 
-    0 32px 64px -12px rgba(15, 23, 42, 0.25),
-    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  width: min(480px, 100%);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.22);
 }
 
 .modal-header-row {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .modal-title-box {
@@ -1753,98 +1748,56 @@ checkAuth()
 }
 
 .modal-icon-bubble {
-  width: 46px;
-  height: 46px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #ecfdf5;
   color: #059669;
   display: grid;
   place-items: center;
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.18);
 }
 
-.modal-icon-bubble.share-bubble {
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  color: #2563eb;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.18);
-}
-
-.modal-title-box h3 {
+.modal-title-box h2 {
   font-size: 18px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 3px;
-  letter-spacing: -0.02em;
+  font-weight: 750;
+  color: #111827;
+  margin: 0;
 }
 
 .modal-title-box p {
   font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
+  color: #6b7280;
+  margin: 0;
 }
 
 .modal-close {
-  color: #94a3b8;
+  color: #9ca3af;
   padding: 6px;
   border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.modal-close:hover {
-  color: var(--text-primary);
-  background: #f1f5f9;
-}
-
-.field-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-.field-hint code {
-  font-family: var(--font-mono);
-  color: #065f46;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 24px;
+  margin-top: 8px;
 }
 
-.link-display-group {
+.space-page .form-error {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-bottom: 14px;
-}
-
-.share-url-input {
-  font-family: var(--font-mono);
+  padding: 10px 12px;
+  border-radius: 10px;
   font-size: 13px;
+  color: #dc2626;
+  background: #fef2f2;
 }
 
-.share-tips {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  background: #f8fafc;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-}
-
-.generating-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px;
-  gap: 12px;
-  color: var(--text-secondary);
-}
-
-/* Animations */
 .spin {
   animation: spin 0.8s linear infinite;
 }
@@ -1858,9 +1811,48 @@ checkAuth()
   transition: all 0.2s ease;
 }
 
+.modal-backdrop.modal-fade-leave-active {
+  pointer-events: none;
+}
+
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
-  transform: scale(0.96);
+}
+
+@media (max-width: 1180px) {
+  .space-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .space-nav {
+    grid-template-columns: auto 1fr auto;
+    width: calc(100% - 24px);
+    padding: 8px 12px;
+  }
+
+  .space-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .space-body {
+    width: calc(100% - 24px);
+  }
+}
+
+@media (max-width: 640px) {
+  .space-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .space-tabs span {
+    display: none;
+  }
+
+  .search-box {
+    width: 160px;
+  }
 }
 </style>
