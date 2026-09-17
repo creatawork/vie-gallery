@@ -377,6 +377,7 @@ function bindCanvasInteractions() {
 
 /**
  * 电影级相机平滑飞行聚焦 (Cinematic Smooth Flight)
+ * 使用 Quartic Ease-Out 曲线，提供更流畅的电影感
  */
 function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
   if (!engine) return
@@ -390,19 +391,22 @@ function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
   mesh.getWorldPosition(targetWorldPos)
 
   const normal = new THREE.Vector3(0, 0, 1).applyEuler(mesh.rotation)
+  // 相机位置稍微抬升，给予仰视感
   const targetCamPos = targetWorldPos.clone().add(normal.multiplyScalar(220))
+  targetCamPos.y += 15 // 轻微抬升
 
   const startCamPos = camera.position.clone()
   const startTarget = controls.target.clone()
 
   let startTime = performance.now()
-  const duration = 1200 // 1.2s 电影级俯冲曲线
+  const duration = 1400 // 1.4s 更从容的电影级俯冲曲线
 
   function step(now: number) {
     const elapsed = now - startTime
     const t = Math.min(1, elapsed / duration)
-    // easeInOutCubic
-    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+    
+    // Quartic Ease-Out - 更强的减速效果，更有电影感
+    const ease = 1 - Math.pow(1 - t, 4)
 
     camera.position.lerpVectors(startCamPos, targetCamPos, ease)
     controls!.target.lerpVectors(startTarget, targetWorldPos, ease)

@@ -149,6 +149,9 @@ export class ViewerEngine {
     // 光照插件（默认启用）
     pluginsToInstall.push('Lighting')
 
+    // 照片淡入淡出动画（默认启用）
+    pluginsToInstall.push('PhotoFade')
+
     // 背景插件
     if (config.background.type === 'sky') {
       pluginsToInstall.push('SkyDome')

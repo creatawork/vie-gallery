@@ -3,6 +3,7 @@ export { LayoutPlugin } from './LayoutPlugin'
 export { GradientBackgroundPlugin } from './GradientBackgroundPlugin'
 export { ClickRipplePlugin } from './ClickRipplePlugin'
 export { LightingPlugin } from './LightingPlugin'
+export { PhotoFadePlugin } from './PhotoFadePlugin'
 
 // Visual effects plugins (from vie-mei)
 export { SkyDomePlugin } from './SkyDomePlugin'
@@ -32,6 +33,7 @@ export const pluginRegistry = {
   GradientBackground: () => import('./GradientBackgroundPlugin').then(m => new m.GradientBackgroundPlugin()),
   ClickRipple: () => import('./ClickRipplePlugin').then(m => new m.ClickRipplePlugin()),
   Lighting: () => import('./LightingPlugin').then(m => new m.LightingPlugin()),
+  PhotoFade: () => import('./PhotoFadePlugin').then(m => new m.PhotoFadePlugin()),
 
   // Visual effects
   SkyDome: () => import('./SkyDomePlugin').then(m => new m.SkyDomePlugin()),
