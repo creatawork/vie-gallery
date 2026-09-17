@@ -200,7 +200,10 @@ function ensureConfigDefaults() {
   if (!config.effects) config.effects = {} as any
   if (!config.effects.bloom) config.effects.bloom = { enabled: true, strength: 0.75, radius: 0.5, threshold: 0.18 }
   if (!config.effects.fog) config.effects.fog = { enabled: false, color: '#0f172a', density: 0.0008 }
+  if (config.effects.photoFloat === undefined) config.effects.photoFloat = false
   if (!config.layout) config.layout = { mode: 'sphere' }
+  if (!config.interaction) config.interaction = { clickRipple: true }
+  if (!config.camera) config.camera = { autoRotate: false }
 }
 
 function deepMerge(target: any, source: any) {
@@ -308,9 +311,11 @@ const config = reactive({
   particles: { enabled: true, types: ['stars'] as string[], density: 1.0 },
   effects: {
     bloom: { enabled: true, strength: 1.3, radius: 0.5, threshold: 0.18 },
-    fog: { enabled: true, color: '#e8f0ea', density: 0.0007 }
+    fog: { enabled: true, color: '#e8f0ea', density: 0.0007 },
+    photoFloat: false
   },
   interaction: { clickRipple: true },
+  camera: { autoRotate: false },
   audio: { bgm: { enabled: true }, sfx: { enabled: true } },
   theme: { engine: 'custom', accent: ACCENTS[0] }
 })
@@ -520,8 +525,11 @@ function applyPreset(name: string) {
       particles: { enabled: false, types: [], density: 1 },
       effects: {
         bloom: { enabled: false, strength: 0.4, radius: 0.4, threshold: 0.3 },
-        fog: { enabled: false, color: '#e8f0ea', density: 0 }
+        fog: { enabled: false, color: '#e8f0ea', density: 0 },
+        photoFloat: false
       },
+      interaction: { clickRipple: true },
+      camera: { autoRotate: false },
       audio: { bgm: { enabled: false }, sfx: { enabled: true } }
     },
     'forest-dream': {
@@ -535,8 +543,11 @@ function applyPreset(name: string) {
       particles: { enabled: true, types: ['sakura', 'stars'], density: 1 },
       effects: {
         bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
-        fog: { enabled: true, color: '#163124', density: 0.0006 }
+        fog: { enabled: true, color: '#163124', density: 0.0006 },
+        photoFloat: true
       },
+      interaction: { clickRipple: true },
+      camera: { autoRotate: false },
       audio: { bgm: { enabled: true }, sfx: { enabled: true } }
     },
     'starry-night': {
@@ -550,8 +561,11 @@ function applyPreset(name: string) {
       particles: { enabled: true, types: ['stars'], density: 1.2 },
       effects: {
         bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
-        fog: { enabled: false, color: '#0f172a', density: 0 }
+        fog: { enabled: false, color: '#0f172a', density: 0 },
+        photoFloat: false
       },
+      interaction: { clickRipple: true },
+      camera: { autoRotate: false },
       audio: { bgm: { enabled: true }, sfx: { enabled: true } }
     },
     'ocean-breeze': {
@@ -565,8 +579,11 @@ function applyPreset(name: string) {
       particles: { enabled: false, types: [], density: 1 },
       effects: {
         bloom: { enabled: false, strength: 0.4, radius: 0.4, threshold: 0.25 },
-        fog: { enabled: true, color: '#0c4a6e', density: 0.0008 }
+        fog: { enabled: true, color: '#0c4a6e', density: 0.0008 },
+        photoFloat: false
       },
+      interaction: { clickRipple: true },
+      camera: { autoRotate: true },
       audio: { bgm: { enabled: true }, sfx: { enabled: true } }
     },
     'sunset-glow': {
@@ -580,8 +597,11 @@ function applyPreset(name: string) {
       particles: { enabled: true, types: ['sakura'], density: 0.8 },
       effects: {
         bloom: { enabled: true, strength: 0.85, radius: 0.6, threshold: 0.2 },
-        fog: { enabled: true, color: '#7c2d12', density: 0.0005 }
+        fog: { enabled: true, color: '#7c2d12', density: 0.0005 },
+        photoFloat: true
       },
+      interaction: { clickRipple: true },
+      camera: { autoRotate: false },
       audio: { bgm: { enabled: true }, sfx: { enabled: true } }
     },
     romantic: {
@@ -595,8 +615,11 @@ function applyPreset(name: string) {
       particles: { enabled: true, types: ['hearts'], density: 1 },
       effects: {
         bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
-        fog: { enabled: false, color: '#4a0e2e', density: 0 }
+        fog: { enabled: false, color: '#4a0e2e', density: 0 },
+        photoFloat: true
       },
+      interaction: { clickRipple: true },
+      camera: { autoRotate: false },
       audio: { bgm: { enabled: true }, sfx: { enabled: true } }
     }
   }
@@ -1067,6 +1090,44 @@ onUnmounted(() => {
             </div>
             <label class="switch">
               <input v-model="config.interaction.clickRipple" type="checkbox" :disabled="!canConfigWrite" @change="scheduleAutoSave" />
+              <span></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div class="slider-row">
+              <Icon name="move" :size="15" />
+              <span>
+                照片悬浮
+                <span class="help-tip" title="照片轻微浮动，增加动态感">ⓘ</span>
+              </span>
+            </div>
+            <label class="switch">
+              <input 
+                v-model="config.effects.photoFloat" 
+                type="checkbox" 
+                :disabled="!canConfigWrite" 
+                @change="scheduleAutoSave" 
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div class="slider-row">
+              <Icon name="compass" :size="15" />
+              <span>
+                自动漫游
+                <span class="help-tip" title="相机自动缓慢旋转，展示全景">ⓘ</span>
+              </span>
+            </div>
+            <label class="switch">
+              <input 
+                v-model="config.camera.autoRotate" 
+                type="checkbox" 
+                :disabled="!canConfigWrite" 
+                @change="scheduleAutoSave" 
+              />
               <span></span>
             </label>
           </div>
@@ -1788,11 +1849,19 @@ onUnmounted(() => {
 .config-page.is-full .config-split {
   grid-template-columns: 1fr;
   margin: 0;
-  height: 100dvh;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
 }
 
 .config-page.is-full .preview-pane {
   border-radius: 0;
+  height: 100vh;
+  width: 100vw;
 }
 
 @media (max-width: 980px) {
