@@ -60,6 +60,8 @@ export interface ViewerConfig {
       strength?: number
       radius?: number
       threshold?: number
+      /** 效果预设：fresh | warm | deep | minimal */
+      preset?: 'fresh' | 'warm' | 'deep' | 'minimal'
     }
     postGrade?: {
       enabled: boolean
@@ -70,6 +72,8 @@ export interface ViewerConfig {
       enabled: boolean
       color?: string
       density?: number
+      /** 效果预设：fresh | warm | deep | minimal */
+      preset?: 'fresh' | 'warm' | 'deep' | 'minimal'
     }
     godRays?: {
       enabled: boolean

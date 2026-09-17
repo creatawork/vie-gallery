@@ -5,17 +5,19 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import type { ViewerPlugin, ViewerContext } from '../core/types'
+import { getEffectPreset, getAutoEffectPreset, type EffectPreset } from '../presets/effectPresets'
 
 /**
  * Cinematic Grading Shader (电影暗角与色彩增强着色器)
+ * 优化：可配置参数，支持预设切换
  */
 const CinematicColorGradingShader = {
   uniforms: {
     tDiffuse: { value: null },
-    uVignetteDarkness: { value: 0.8 },
+    uVignetteDarkness: { value: 0.7 },
     uVignetteOffset: { value: 1.1 },
-    uContrast: { value: 1.05 },
-    uSaturation: { value: 1.08 }
+    uContrast: { value: 1.08 },
+    uSaturation: { value: 1.15 }
   },
   vertexShader: `
     varying vec2 vUv;
@@ -58,24 +60,35 @@ const CinematicColorGradingShader = {
 /**
  * Bloom Plugin - 生产级电影后处理与辉光滤镜插件
  *
+ * v2.1.0 优化:
+ * - 支持效果预设 (fresh/warm/deep/minimal)
+ * - 降采样优化 (减少性能开销)
+ * - 低端设备自动降低质量
+ * - 与光照系统协调
+ * 
  * 结合 UnrealBloomPass 与 Cinematic Color Grading Shader，
  * 带来柔和的高光散射与影院级画面暗角。
  */
 export class BloomPlugin implements ViewerPlugin {
   name = 'Bloom'
-  version = '2.0.0'
+  version = '2.1.0'
   dependencies = []
 
   private context: ViewerContext | null = null
   private composer: EffectComposer | null = null
   private bloomPass: UnrealBloomPass | null = null
   private gradingPass: ShaderPass | null = null
+  private currentPreset: string = 'warm'
 
   async install(context: ViewerContext): Promise<void> {
     this.context = context
     const config = context.config.effects?.bloom
 
     if (!config?.enabled) return
+
+    // 根据设备性能调整降采样
+    const quality = context.getQuality()
+    const resolution = this.getResolutionByQuality(quality)
 
     // 1. 创建 EffectComposer
     this.composer = new EffectComposer(context.renderer)
@@ -85,12 +98,14 @@ export class BloomPlugin implements ViewerPlugin {
     this.composer.addPass(renderPass)
 
     // 3. BloomPass - 柔和辉光
-    const strength = config.strength ?? 0.65
-    const radius = config.radius ?? 0.5
-    const threshold = config.threshold ?? 0.18
+    // 使用预设或配置值
+    const preset = this.getPresetFromConfig(config)
+    const strength = config.strength ?? preset.bloom.strength
+    const radius = config.radius ?? preset.bloom.radius
+    const threshold = config.threshold ?? preset.bloom.threshold
 
     this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      resolution,
       strength,
       radius,
       threshold
@@ -99,14 +114,21 @@ export class BloomPlugin implements ViewerPlugin {
 
     // 4. Cinematic Grading Pass - 电影暗角与胶片色彩增强
     this.gradingPass = new ShaderPass(CinematicColorGradingShader)
+    
+    // 应用预设的调色参数
+    if (preset.grading) {
+      this.applyGradingPreset(preset.grading)
+    }
+    
     this.composer.addPass(this.gradingPass)
 
     // 5. OutputPass - 伽马校正与高动态色彩映射输出
     const outputPass = new OutputPass()
     this.composer.addPass(outputPass)
 
-    // 只监听 config:update 事件，避免重复触发
+    // 监听配置和光照变化
     context.on('config:update', this.handleConfigChange)
+    context.on('config:change', this.handleLightingChange)
     context.on('resize', this.handleResize)
   }
 
@@ -116,6 +138,7 @@ export class BloomPlugin implements ViewerPlugin {
     }
 
     this.context?.off('config:update', this.handleConfigChange)
+    this.context?.off('config:change', this.handleLightingChange)
     this.context?.off('resize', this.handleResize)
 
     this.context = null
@@ -132,8 +155,59 @@ export class BloomPlugin implements ViewerPlugin {
     if (this.composer) {
       this.composer.setSize(width, height)
     }
-    if (this.bloomPass) {
-      this.bloomPass.resolution.set(width, height)
+    if (this.bloomPass && this.context) {
+      const quality = this.context.getQuality()
+      const resolution = this.getResolutionByQuality(quality)
+      this.bloomPass.resolution.copy(resolution)
+    }
+  }
+
+  /**
+   * 根据设备质量获取渲染分辨率
+   * 使用降采样减少计算量
+   */
+  private getResolutionByQuality(quality: 'low' | 'mid' | 'high'): THREE.Vector2 {
+    const width = window.innerWidth
+    const height = window.innerHeight
+    
+    if (quality === 'low') {
+      // 低端设备：降采样到 50%
+      return new THREE.Vector2(width * 0.5, height * 0.5)
+    } else if (quality === 'mid') {
+      // 中端设备：降采样到 75%
+      return new THREE.Vector2(width * 0.75, height * 0.75)
+    } else {
+      // 高端设备：全分辨率
+      return new THREE.Vector2(width, height)
+    }
+  }
+
+  /**
+   * 从配置获取预设
+   */
+  private getPresetFromConfig(config: any): EffectPreset {
+    const presetName = config.preset || 'warm'
+    return getEffectPreset(presetName)
+  }
+
+  /**
+   * 应用调色预设
+   */
+  private applyGradingPreset(grading: NonNullable<EffectPreset['grading']>): void {
+    if (!this.gradingPass) return
+    
+    const uniforms = this.gradingPass.uniforms
+    if (uniforms.uVignetteDarkness) {
+      uniforms.uVignetteDarkness.value = grading.vignetteDarkness
+    }
+    if (uniforms.uVignetteOffset) {
+      uniforms.uVignetteOffset.value = grading.vignetteOffset
+    }
+    if (uniforms.uContrast) {
+      uniforms.uContrast.value = grading.contrast
+    }
+    if (uniforms.uSaturation) {
+      uniforms.uSaturation.value = grading.saturation
     }
   }
 
@@ -151,6 +225,43 @@ export class BloomPlugin implements ViewerPlugin {
       if (config.threshold !== undefined) {
         this.bloomPass.threshold = config.threshold
       }
+      
+      // 如果配置了预设，应用预设参数
+      if (config.preset && config.preset !== this.currentPreset) {
+        const preset = getEffectPreset(config.preset)
+        this.bloomPass.strength = preset.bloom.strength
+        this.bloomPass.radius = preset.bloom.radius
+        this.bloomPass.threshold = preset.bloom.threshold
+        
+        if (preset.grading) {
+          this.applyGradingPreset(preset.grading)
+        }
+        
+        this.currentPreset = config.preset
+      }
+    }
+  }
+
+  /**
+   * 响应光照变化，自动调整效果预设
+   */
+  private handleLightingChange = (data: any): void => {
+    const lighting = data.lighting
+    if (!lighting || !lighting.timeOfDay) return
+    
+    // 根据时间段自动推荐效果预设
+    const preset = getAutoEffectPreset(lighting.timeOfDay)
+    
+    if (this.bloomPass && preset.name !== this.currentPreset) {
+      this.bloomPass.strength = preset.bloom.strength
+      this.bloomPass.radius = preset.bloom.radius
+      this.bloomPass.threshold = preset.bloom.threshold
+      
+      if (preset.grading) {
+        this.applyGradingPreset(preset.grading)
+      }
+      
+      this.currentPreset = preset.name
     }
   }
 
