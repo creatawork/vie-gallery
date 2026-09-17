@@ -1847,30 +1847,43 @@ onUnmounted(() => {
 }
 
 .config-page.is-full .config-split {
-  grid-template-columns: 1fr;
-  margin: 0;
-  padding: 0;
-  height: 100vh;
-  width: 100vw;
-  position: fixed;
-  top: 0;
-  left: 0;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  grid-template-columns: 1fr !important;
   z-index: 9999;
 }
 
 .config-page.is-full .preview-pane {
-  border-radius: 0;
-  height: 100vh;
-  width: 100vw;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .config-page.is-full .live-preview {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  inset: 0;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  inset: 0 !important;
 }
 
 @media (max-width: 980px) {
