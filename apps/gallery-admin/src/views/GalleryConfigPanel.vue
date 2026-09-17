@@ -34,9 +34,9 @@ const ATMOSPHERE_PRESETS = [
 ] as const
 
 const BG_TYPES = [
-  { id: 'sky', label: '天穹' },
-  { id: 'gradient', label: '渐变' },
-  { id: 'none', label: '纯色' }
+  { id: 'sky', label: '3D 天空盒', hint: '沉浸式全景' },
+  { id: 'gradient', label: '渐变背景', hint: '色彩过渡' },
+  { id: 'none', label: '纯色背景', hint: '极简空间' }
 ] as const
 
 const SKY_THEMES = [
@@ -990,23 +990,27 @@ onUnmounted(() => {
             />
           </div>
 
-          <label class="field-label">背景模式</label>
-          <div class="chip-row">
+          <label class="field-label">
+            背景模式
+            <span class="help-tip" title="选择展厅空间的背景渲染方式">ⓘ</span>
+          </label>
+          <div class="bg-mode-grid">
             <button
               v-for="item in BG_TYPES"
               :key="item.id"
-              class="chip"
+              class="mode-card"
               :class="{ active: config.background.type === item.id }"
               type="button"
               :disabled="!canConfigWrite"
               @click="setBackgroundType(item.id)"
             >
-              {{ item.label }}
+              <strong>{{ item.label }}</strong>
+              <small>{{ item.hint }}</small>
             </button>
           </div>
 
           <template v-if="config.background.type === 'sky'">
-            <label class="field-label">天穹主题</label>
+            <label class="field-label">3D 背景图</label>
             <div class="chip-row">
               <button
                 v-for="item in SKY_THEMES"
@@ -1882,5 +1886,51 @@ onUnmounted(() => {
   opacity: 1;
   color: #10b981;
   border-color: #10b981;
+}
+
+.bg-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: 12px;
+  border: 1px solid #eef0f2;
+  background: #f8fafc;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.mode-card:hover:not(:disabled) {
+  border-color: #d1d5db;
+}
+
+.mode-card.active {
+  background: #ecfdf5;
+  border-color: #00b88f;
+  box-shadow: 0 0 0 1px #00b88f;
+}
+
+.mode-card strong {
+  font-size: 12px;
+  font-weight: 650;
+  color: #111827;
+}
+
+.mode-card small {
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+.mode-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
