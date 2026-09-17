@@ -37,3 +37,6 @@ playwright-report/
 
 
 
+# 添加验收截图和测试目录到 gitignore
+acceptance-images/
+gui-test-screenshots/

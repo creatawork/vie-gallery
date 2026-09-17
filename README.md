@@ -4,9 +4,14 @@ VIE Gallery 是一个面向个人用户和创作者的照片相册产品：保�
 
 ## 当前阶段
 
-当前唯一有效的产品与工程路线是 [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)；V1 收口执行清单见 [`docs/v1-closeout-execution-tasks.md`](docs/v1-closeout-execution-tasks.md)。**个人相册 V1 Ready 已于 2026-09-12 签字**，验收报告见 [`docs/v1-ready-signoff.md`](docs/v1-ready-signoff.md)。
+**个人相册 V1 Ready 已于 2026-09-12 签字验收通过**，验收报告见 [`docs/v1-ready-signoff.md`](docs/v1-ready-signoff.md)。
 
-下一阶段任务见 [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)（M7.3/M7.4 等 V1 后演进）。
+**当前执行路线**：V1 后一个月核心任务路线图 [`docs/v1-post-one-month-roadmap.md`](docs/v1-post-one-month-roadmap.md)（2026-09-17 至 2026-10-17），聚焦功能完善、效果提升、代码质量和信息安全。
+
+历史规划文档：
+- [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)：个人相册 V1 总规划（已完成）
+- [`docs/v1-closeout-execution-tasks.md`](docs/v1-closeout-execution-tasks.md)：V1 收口执行清单（已完成）
+- [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)：V1 后长期任务清单（参考）
 
 ### 阶段状态
 
@@ -157,10 +162,20 @@ bash test-mcp-flow.sh
 
 ## 文档入口
 
-- [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)：个人相册 V1 唯一产品与工程总规划
-- [`docs/testing-guide.md`](docs/testing-guide.md)：当前运行、测试和上线验收入口
-- [`docs/m7-testing-results.md`](docs/m7-testing-results.md)：M7 当前真实环境验收证据
-- [`docs/archive/README.md`](docs/archive/README.md)：历史资料边界和回溯说明
+### 当前开发
+- **[V1 后一个月任务路线图](docs/v1-post-one-month-roadmap.md)**：当前执行规划（2026-09-17 至 2026-10-17）
+- [`docs/testing-guide.md`](docs/testing-guide.md)：测试和验收指南
+- [`docs/operations-recovery.md`](docs/operations-recovery.md)：运维恢复手册
+
+### V1 验收与规划
+- [`docs/v1-ready-signoff.md`](docs/v1-ready-signoff.md)：V1 Ready 验收报告（2026-09-12）
+- [`docs/personal-album-v1-plan.md`](docs/personal-album-v1-plan.md)：个人相册 V1 总规划
+- [`docs/personal-album-v1-next-tasks.md`](docs/personal-album-v1-next-tasks.md)：V1 后长期任务清单
+
+### 技术与历史
+- [`docs/m7-testing-results.md`](docs/m7-testing-results.md)：M7 测试证据
+- [`docs/security-verification-v1.md`](docs/security-verification-v1.md)：安全验证记录
+- [`docs/archive/README.md`](docs/archive/README.md)：历史资料归档
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)：提交与协作约定
 
 历史阶段的设计和故障记录位于 `docs/archive/`，不作为当前 API、端口、产品状态或开发步骤依据。

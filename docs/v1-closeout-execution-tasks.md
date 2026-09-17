@@ -1,11 +1,22 @@
 # 个人相册 V1 上线收口执行任务
 
-> **文档定位**：在 `feat/gallery-workspace-slice` 基线上，按固定顺序完成 V1 Ready 收口；**不扩展新产品功能**。
+> **文档状态**：✅ 已完成（2026-09-12 签字验收）  
+> **当前路线**：V1 后任务见 [`v1-post-one-month-roadmap.md`](v1-post-one-month-roadmap.md)  
+> **原文档定位**：在 `feat/gallery-workspace-slice` 基线上，按固定顺序完成 V1 Ready 收口；**不扩展新产品功能**。
 >
 > **创建日期**：2026-09-10  
 > **基线分支**：`feat/gallery-workspace-slice` / `52301a7`  
-> **上位规划**：[`personal-album-v1-plan.md`](personal-album-v1-plan.md)、[`personal-album-v1-next-tasks.md`](personal-album-v1-next-tasks.md)  
-> **阶段计划**：[`superpowers/plans/2026-09-10-personal-album-v1-phase-3-implementation.md`](superpowers/plans/2026-09-10-personal-album-v1-phase-3-implementation.md)
+> **验收报告**：[`v1-ready-signoff.md`](v1-ready-signoff.md)
+
+---
+
+## 📌 完成状态总结
+
+所有 WP-6 至 WP-9、Security Check 和 M7.5 任务已于 2026-09-12 完成并通过验收。所有执行任务达到 V1 Ready 标准。
+
+---
+
+## 原文档内容（保留作为历史记录）
 
 ---
 

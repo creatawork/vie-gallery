@@ -1,0 +1,59 @@
+docs: 落地 V1 后一个月任务路线图并优化文档结构
+
+## 新增核心文档
+
+- v1-post-one-month-roadmap.md (27KB)
+  VIE Gallery V1 后一个月核心任务路线图（2026-09-17 至 2026-10-17）
+  聚焦：功能完善、效果提升、代码质量、信息安全
+  工作包：WP-10 至 WP-17，覆盖 Viewer 效果、列表策展、分享增强、
+  访客体验、创作工具、代码重构、安全加固、性能优化
+
+- docs/README.md (新建)
+  文档导航中心，提供分类索引、使用指南、模板和归档标准
+
+- docs/UPDATE-SUMMARY-2026-09-17.md
+  本次文档更新的详细总结
+
+## 更新现有文档
+
+- README.md
+  突出 V1 Ready 完成状态，指向新的一个月路线图
+  重组文档入口为：当前开发/V1 验收/规划参考/技术历史
+
+- docs/personal-album-v1-next-tasks.md
+  添加状态说明，标记为长期参考清单，指向当前路线图
+
+- docs/personal-album-v1-plan.md
+  添加完成状态标记，指向新路线图
+
+- docs/v1-closeout-execution-tasks.md
+  添加完成状态标记和验收信息
+
+- docs/archive/README.md
+  更新归档目录说明，新增设计与验收分类
+
+## 归档文档
+
+- docs/p0-02-consistency-design.md → docs/archive/
+  (P0-02 上传/对象/任务/配额一致性设计，已完成实施)
+
+- docs/p1-06-acceptance.md → docs/archive/
+  (P1-06 Viewer WebGL 保底和设备策略验收记录，已完成)
+
+## 配置更新
+
+- .gitignore
+  排除 acceptance-images/ 和 gui-test-screenshots/ 验收截图目录
+
+## 统计
+
+- 9 个文件变更
+- 新增 785 行（核心路线图）
+- 新增 154 行（文档导航）
+- 优化文档结构，提升可发现性和可维护性
+
+---
+
+相关：V1 Ready 验收已完成（2026-09-12），进入 V1 后优化阶段
+规划优先级：P0（最高）
+执行周期：4 周
