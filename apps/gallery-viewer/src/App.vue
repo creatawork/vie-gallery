@@ -1279,14 +1279,22 @@ async function selectPreset(presetName: string) {
 .embed-preview {
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
   background: #0b1220;
 }
 
 .embed-preview .canvas-container {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.embed-preview .webgl-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
 }
 
 .embed-fallback-viewport {
