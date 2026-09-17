@@ -57,8 +57,6 @@ const FOG_COLORS = ['#e8f0ea', '#163124', '#0c4a6e', '#7c2d12', '#0f172a', '#4a0
 
 const ACCENTS = ['#9FE8C8', '#D4C4F0', '#A8D4F0', '#F5C9A8', '#F5E6A8']
 
-const FLOOR_OPTIONS = ['磨砂水磨石', '原木地板', '抛光大理石']
-const WALL_OPTIONS = ['微质感涂料', '清水混凝土', '艺术灰泥']
 
 const loading = ref(true)
 const saving = ref(false)
@@ -85,8 +83,6 @@ const bloomOn = ref(true)
 const bloomRadius = ref(50)
 const bloomThreshold = ref(18)
 const audioOn = ref(true)
-const floorMaterial = ref(FLOOR_OPTIONS[0])
-const wallMaterial = ref(WALL_OPTIONS[0])
 const lastSavedLabel = ref('')
 const lastSaveFailed = ref(false)
 const loadError = ref('')
@@ -190,9 +186,7 @@ function getCleanConfig() {
     },
     theme: {
       engine: config.theme?.engine || 'custom',
-      accent: accent.value,
-      floor: floorMaterial.value,
-      wall: wallMaterial.value
+      accent: accent.value
     }
   }
 }
@@ -236,8 +230,6 @@ function syncAtmosphereFromConfig() {
   if (config.theme?.accent && ACCENTS.includes(config.theme.accent)) {
     accent.value = config.theme.accent
   }
-  if (typeof config.theme?.floor === 'string') floorMaterial.value = config.theme.floor
-  if (typeof config.theme?.wall === 'string') wallMaterial.value = config.theme.wall
 }
 
 function applyAtmosphereToConfig() {
@@ -252,8 +244,6 @@ function applyAtmosphereToConfig() {
   if (config.theme) {
     config.theme.engine = 'custom'
     config.theme.accent = accent.value
-    config.theme.floor = floorMaterial.value
-    config.theme.wall = wallMaterial.value
   }
 }
 
@@ -322,7 +312,7 @@ const config = reactive({
   },
   interaction: { clickRipple: true },
   audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-  theme: { engine: 'custom', accent: ACCENTS[0], floor: FLOOR_OPTIONS[0], wall: WALL_OPTIONS[0] }
+  theme: { engine: 'custom', accent: ACCENTS[0] }
 })
 
 const hasDraftChanges = computed(() => savedDraftJson.value !== JSON.stringify(getCleanConfig()))
@@ -1181,21 +1171,6 @@ onUnmounted(() => {
             :disabled="!canConfigWrite || !config.particles.enabled"
             @input="onAtmosphereInput"
           />
-        </section>
-
-        <section v-show="configTab === 'advanced'" class="side-block">
-          <h2>
-            <Icon name="grid" :size="15" />
-            纹理
-          </h2>
-          <label class="field-label">地面材质</label>
-          <select v-model="floorMaterial" class="select" :disabled="!canConfigWrite" @change="scheduleAutoSave">
-            <option v-for="item in FLOOR_OPTIONS" :key="item" :value="item">{{ item }}</option>
-          </select>
-          <label class="field-label">墙面材质</label>
-          <select v-model="wallMaterial" class="select" :disabled="!canConfigWrite" @change="scheduleAutoSave">
-            <option v-for="item in WALL_OPTIONS" :key="item" :value="item">{{ item }}</option>
-          </select>
         </section>
 
         <section v-show="configTab === 'history'" class="side-block">
