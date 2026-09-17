@@ -11,6 +11,7 @@
 | 文档 | 说明 | 状态 |
 |------|------|------|
 | **[v1-post-one-month-roadmap.md](v1-post-one-month-roadmap.md)** | **V1 后一个月任务路线图**（2026-09-17 至 2026-10-17） | ✅ 执行中 |
+| **[week1-implementation-guide.md](week1-implementation-guide.md)** | **第一周开发设计文档**（WP-10 & WP-11 详细任务清单） | 🔥 本周 |
 | [testing-guide.md](testing-guide.md) | 测试和验收指南 | ✅ 有效 |
 | [operations-recovery.md](operations-recovery.md) | 运维恢复手册 | ✅ 有效 |
 

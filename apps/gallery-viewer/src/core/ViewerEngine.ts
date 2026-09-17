@@ -146,6 +146,9 @@ export class ViewerEngine {
     // 布局插件（必需）
     pluginsToInstall.push('Layout')
 
+    // 光照插件（默认启用）
+    pluginsToInstall.push('Lighting')
+
     // 背景插件
     if (config.background.type === 'sky') {
       pluginsToInstall.push('SkyDome')

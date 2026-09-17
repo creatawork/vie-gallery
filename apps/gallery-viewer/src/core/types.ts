@@ -108,6 +108,16 @@ export interface ViewerConfig {
     }
     customColors?: ThemeColors
   }
+
+  // 光照系统
+  lighting?: {
+    /** 时间段模式：auto | sunrise | noon | sunset | night */
+    timeOfDay?: 'auto' | 'sunrise' | 'noon' | 'sunset' | 'night'
+    /** 是否根据照片主色调自动调整环境光 */
+    autoColorAdapt?: boolean
+    /** 颜色适应过渡时间（秒） */
+    transitionDuration?: number
+  }
 }
 
 /**

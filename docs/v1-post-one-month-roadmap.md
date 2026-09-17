@@ -26,7 +26,8 @@
 ## 第一周：核心功能完善 + Viewer 效果优化
 
 **执行时间**：2026-09-17 至 2026-09-23  
-**主题**：打造视觉核心竞争力
+**主题**：打造视觉核心竞争力  
+**详细设计**：见 [`week1-implementation-guide.md`](week1-implementation-guide.md)
 
 ### 🎨 WP-10：Viewer 渲染效果提升（3天）
 

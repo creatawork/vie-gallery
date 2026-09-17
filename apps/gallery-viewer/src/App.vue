@@ -220,14 +220,29 @@ async function init3DEngine() {
       if (photoItem.thumbnailUrl) {
         const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl)
         texture.colorSpace = THREE.SRGBColorSpace
-        material = new THREE.MeshBasicMaterial({
+        
+        // 使用 MeshStandardMaterial 以支持动态光照
+        // 优化参数确保照片在各种光照下都清晰可辨
+        material = new THREE.MeshStandardMaterial({
           map: texture,
-          side: THREE.DoubleSide
+          side: THREE.DoubleSide,
+          // 低金属度，照片不应有金属光泽
+          metalness: 0.0,
+          // 中等粗糙度，略带哑光质感，避免高光过亮
+          roughness: 0.7,
+          // 轻微的环境光遮蔽，增加深度感
+          aoMapIntensity: 0.3,
+          // 确保照片在暗光下仍可见
+          emissive: new THREE.Color(0x000000),
+          emissiveIntensity: 0.0
         })
       } else {
-        material = new THREE.MeshBasicMaterial({
+        // 占位颜色也使用 MeshStandardMaterial
+        material = new THREE.MeshStandardMaterial({
           color: new THREE.Color().setHSL((i * 0.15) % 1, 0.6, 0.5),
-          side: THREE.DoubleSide
+          side: THREE.DoubleSide,
+          metalness: 0.0,
+          roughness: 0.7
         })
       }
 
@@ -238,6 +253,7 @@ async function init3DEngine() {
         thumbnailUrl: photoItem.thumbnailUrl,
         mediumUrl: photoItem.mediumUrl,
         textureUrl: photoItem.textureUrl,
+        url: photoItem.url || photoItem.thumbnailUrl,
         width: photoItem.width,
         height: photoItem.height
       }
@@ -344,6 +360,10 @@ function bindCanvasInteractions() {
     if (intersects.length > 0) {
       const hit = intersects[0].object as THREE.Mesh
       const idx = hit.userData.index
+      
+      // 触发照片点击事件，让光照系统响应
+      engine.getEventBus().emit('photo:click', { photo: hit })
+      
       flyToPhotoAndFocus(hit, () => {
         openLightbox(idx)
       })
