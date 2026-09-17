@@ -1864,6 +1864,15 @@ onUnmounted(() => {
   width: 100vw;
 }
 
+.config-page.is-full .live-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  inset: 0;
+}
+
 @media (max-width: 980px) {
   .config-split {
     grid-template-columns: 1fr;
