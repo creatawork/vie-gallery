@@ -224,7 +224,7 @@ function syncAtmosphereFromConfig() {
   lightLevel.value = Math.round(((config.effects.bloom.strength || 0.75) / 1.8) * 100)
   bloomRadius.value = Math.round((config.effects.bloom.radius ?? 0.5) * 100)
   bloomThreshold.value = Math.round((config.effects.bloom.threshold ?? 0.18) * 100)
-  fogLevel.value = Math.round(((config.effects.fog.density || 0) / 0.002) * 100)
+  fogLevel.value = Math.round(((config.effects.fog.density || 0) / 0.0015) * 100)
   fogColor.value = config.effects.fog.color || '#e8f0ea'
   audioOn.value = !!config.audio.bgm.enabled
   if (config.theme?.accent && ACCENTS.includes(config.theme.accent)) {
@@ -238,7 +238,7 @@ function applyAtmosphereToConfig() {
   config.effects.bloom.radius = Math.max(0.1, bloomRadius.value / 100)
   config.effects.bloom.threshold = Math.max(0.05, bloomThreshold.value / 100)
   config.effects.fog.enabled = fogLevel.value > 0
-  config.effects.fog.density = (fogLevel.value / 100) * 0.002
+  config.effects.fog.density = (fogLevel.value / 100) * 0.0015
   config.effects.fog.color = fogColor.value
   config.audio.bgm.enabled = audioOn.value
   if (config.theme) {
@@ -1025,7 +1025,10 @@ onUnmounted(() => {
           <div class="slider-row">
             <Icon name="sun" :size="15" />
             <div class="slider-copy">
-              <span>光照强度</span>
+              <span>
+                辉光强度
+                <span class="help-tip" title="控制照片周围的光晕效果。值越高，光晕越明显">ⓘ</span>
+              </span>
               <strong>{{ lightLevel }}%</strong>
             </div>
           </div>
@@ -1854,7 +1857,30 @@ onUnmounted(() => {
     height: auto;
   }
   .preview-pane {
-    min-height: 520px;
+    height: 60dvh;
   }
+}
+
+/* 帮助提示图标 */
+.help-tip {
+  display: inline-block;
+  margin-left: 4px;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: #64748b;
+  border: 1px solid #64748b;
+  border-radius: 50%;
+  cursor: help;
+  opacity: 0.6;
+  font-style: normal;
+}
+
+.help-tip:hover {
+  opacity: 1;
+  color: #10b981;
+  border-color: #10b981;
 }
 </style>
