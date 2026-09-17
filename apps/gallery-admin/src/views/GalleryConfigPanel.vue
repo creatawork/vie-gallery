@@ -34,9 +34,9 @@ const ATMOSPHERE_PRESETS = [
 ] as const
 
 const BG_TYPES = [
-  { id: 'sky', label: '3D 天空盒', hint: '沉浸式全景' },
-  { id: 'gradient', label: '渐变背景', hint: '色彩过渡' },
-  { id: 'none', label: '纯色背景', hint: '极简空间' }
+  { id: 'sky', label: '3D 天空盒' },
+  { id: 'gradient', label: '渐变背景' },
+  { id: 'none', label: '纯色背景' }
 ] as const
 
 const SKY_THEMES = [
@@ -930,27 +930,6 @@ onUnmounted(() => {
 
         <section v-show="configTab === 'basics'" class="side-block">
           <h2>
-            <Icon name="sparkles" :size="15" />
-            一键氛围
-          </h2>
-          <div class="preset-grid">
-            <button
-              v-for="preset in ATMOSPHERE_PRESETS"
-              :key="preset.name"
-              class="preset-mini"
-              :class="{ active: config.presetName === preset.name }"
-              type="button"
-              :disabled="!canConfigWrite"
-              @click="applyPreset(preset.name)"
-            >
-              <strong>{{ preset.label }}</strong>
-              <small>{{ preset.hint }}</small>
-            </button>
-          </div>
-        </section>
-
-        <section v-show="configTab === 'basics'" class="side-block">
-          <h2>
             <Icon name="download" :size="15" />
             访客下载权限
           </h2>
@@ -972,40 +951,45 @@ onUnmounted(() => {
         <section v-show="configTab === 'atmosphere'" class="side-block">
           <h2>
             <Icon name="sparkles" :size="15" />
+            一键氛围
+          </h2>
+          <div class="preset-grid">
+            <button
+              v-for="preset in ATMOSPHERE_PRESETS"
+              :key="preset.name"
+              class="preset-mini"
+              :class="{ active: config.presetName === preset.name }"
+              type="button"
+              :disabled="!canConfigWrite"
+              @click="applyPreset(preset.name)"
+            >
+              <strong>{{ preset.label }}</strong>
+              <small>{{ preset.hint }}</small>
+            </button>
+          </div>
+        </section>
+
+        <section v-show="configTab === 'atmosphere'" class="side-block">
+          <h2>
+            <Icon name="sparkles" :size="15" />
             氛围
           </h2>
-
-          <label class="field-label">主色调</label>
-          <div class="swatches">
-            <button
-              v-for="color in ACCENTS"
-              :key="color"
-              class="swatch"
-              :class="{ active: accent === color }"
-              type="button"
-              :style="{ background: color }"
-              :aria-label="color"
-              :disabled="!canConfigWrite"
-              @click="setAccent(color)"
-            />
-          </div>
 
           <label class="field-label">
             背景模式
             <span class="help-tip" title="选择展厅空间的背景渲染方式">ⓘ</span>
           </label>
-          <div class="bg-mode-grid">
+          <div class="chip-row">
             <button
               v-for="item in BG_TYPES"
               :key="item.id"
-              class="mode-card"
+              class="chip"
               :class="{ active: config.background.type === item.id }"
               type="button"
               :disabled="!canConfigWrite"
               @click="setBackgroundType(item.id)"
             >
-              <strong>{{ item.label }}</strong>
-              <small>{{ item.hint }}</small>
+              {{ item.label }}
             </button>
           </div>
 
@@ -1023,6 +1007,11 @@ onUnmounted(() => {
               >
                 {{ item.label }}
               </button>
+            </div>
+            
+            <div class="custom-skybox-hint">
+              <Icon name="upload" :size="14" />
+              <span>自定义全景图上传功能即将推出</span>
             </div>
           </template>
 
@@ -1932,5 +1921,23 @@ onUnmounted(() => {
 .mode-card:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.custom-skybox-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.custom-skybox-hint svg {
+  flex-shrink: 0;
 }
 </style>
