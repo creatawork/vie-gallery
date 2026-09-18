@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jdk-alpine as builder
+FROM maven:3.9-eclipse-temurin-17-alpine as builder
 WORKDIR /app
 
 # Copy parent POM and API module
@@ -6,7 +6,7 @@ COPY pom.xml .
 COPY apps/gallery-api/ ./apps/gallery-api/
 
 # Build the project
-RUN cd apps/gallery-api && mvn clean package -DskipTests
+RUN mvn -f apps/gallery-api/pom.xml clean package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
