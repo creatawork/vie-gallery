@@ -105,7 +105,7 @@ services:
     ports:
       - "5173:80"
     volumes:
-      - ./admin:/usr/share/nginx/html
+      - ../admin:/usr/share/nginx/html
       - ./nginx-admin.conf:/etc/nginx/conf.d/default.conf
     networks:
       - vie-network
@@ -117,7 +117,7 @@ services:
     ports:
       - "5174:80"
     volumes:
-      - ./viewer:/usr/share/nginx/html
+      - ../viewer:/usr/share/nginx/html
       - ./nginx-viewer.conf:/etc/nginx/conf.d/default.conf
     networks:
       - vie-network
