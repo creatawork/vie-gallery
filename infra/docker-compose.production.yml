@@ -65,14 +65,29 @@ services:
       - "8088:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vie_gallery?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
-      SPRING_DATASOURCE_USERNAME: vie_user
-      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-vie_password_2026}
-      SPRING_REDIS_HOST: redis
-      SPRING_REDIS_PORT: 6379
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      # Database
+      DB_URL: jdbc:mysql://mysql:3306/vie_gallery?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+      DB_USERNAME: vie_user
+      DB_PASSWORD: ${MYSQL_PASSWORD:-vie_password_2026}
+      # Redis
+      REDIS_URL: redis://redis:6379
+      # Storage (MinIO)
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://gallery.vie-vibe.cn:9000}
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-vie-gallery}
+      # URLs
+      ADMIN_PUBLIC_BASE_URL: ${ADMIN_PUBLIC_BASE_URL:-http://gallery.vie-vibe.cn/app}
+      GALLERY_PUBLIC_BASE_URL: ${GALLERY_PUBLIC_BASE_URL:-http://gallery.vie-vibe.cn/g}
+      # Mail (optional - use dummy values for now)
+      MAIL_HOST: ${MAIL_HOST:-localhost}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@vie-vibe.cn}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
+      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-false}
     networks:
       - vie-network
     depends_on:
