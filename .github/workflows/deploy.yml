@@ -1,0 +1,128 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Admin UI
+        run: |
+          cd apps/gallery-admin
+          npm install
+          npm run build
+
+      - name: Build Viewer UI
+        run: |
+          cd apps/gallery-viewer
+          npm install
+          npm run build
+
+      - name: Build API
+        run: |
+          cd apps/gallery-api
+          mvn clean package -DskipTests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API Docker image
+        run: |
+          docker build -t vie-gallery-api:latest -f infra/Dockerfile.api .
+          docker save vie-gallery-api:latest | gzip > vie-gallery-api.tar.gz
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create deployment directories
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "mkdir -p ~/vie-gallery/{admin,viewer,infra}"
+
+      - name: Transfer Admin UI
+        run: |
+          rsync -avz --delete apps/gallery-admin/dist/ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/admin/
+
+      - name: Transfer Viewer UI
+        run: |
+          rsync -avz --delete apps/gallery-viewer/dist/ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/viewer/
+
+      - name: Transfer Infrastructure configs
+        run: |
+          scp infra/docker-compose.production.yml ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
+          scp infra/nginx-admin.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
+          scp infra/nginx-viewer.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
+          scp infra/nginx-prod.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
+
+      - name: Transfer API Docker image
+        run: |
+          scp vie-gallery-api.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/
+
+      - name: Deploy to server
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+          set -e
+          cd ~/vie-gallery
+          
+          # Load Docker image
+          docker load < vie-gallery-api.tar.gz
+          rm vie-gallery-api.tar.gz
+          
+          # Start services
+          cd infra
+          docker compose -f docker-compose.production.yml down
+          docker compose -f docker-compose.production.yml up -d
+          
+          # Wait for services to be healthy
+          echo "Waiting for services to be healthy..."
+          sleep 10
+          docker compose -f docker-compose.production.yml ps
+          
+          # Configure Nginx
+          sudo cp nginx-prod.conf /etc/nginx/sites-available/vie-gallery
+          sudo ln -sf /etc/nginx/sites-available/vie-gallery /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl reload nginx
+          
+          echo "Deployment completed successfully!"
+          ENDSSH
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          echo "Checking API health..."
+          curl -f http://${{ secrets.SERVER_HOST }}:8088/api/health || echo "API health check failed"
+          echo "Deployment verification completed"

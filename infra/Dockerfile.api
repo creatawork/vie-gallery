@@ -1,24 +1,18 @@
-# Stage 1: Build JAR
-FROM maven:3.9.6-eclipse-temurin-17 AS builder
-WORKDIR /build
-
-COPY pom.xml ./
-COPY apps/gallery-api/pom.xml ./apps/gallery-api/
-COPY apps/gallery-api/gallery-api-domain/pom.xml ./apps/gallery-api/gallery-api-domain/
-COPY apps/gallery-api/gallery-api-application/pom.xml ./apps/gallery-api/gallery-api-application/
-COPY apps/gallery-api/gallery-api-infrastructure/pom.xml ./apps/gallery-api/gallery-api-infrastructure/
-COPY apps/gallery-api/gallery-api-boot/pom.xml ./apps/gallery-api/gallery-api-boot/
-
-COPY apps/gallery-api/ ./apps/gallery-api/
-RUN mvn clean package -DskipTests -ntp
-
-# Stage 2: Production JRE
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:17-jdk-alpine as builder
 WORKDIR /app
-RUN useradd -m -u 1000 vie && chown -R vie:vie /app
-USER vie
 
-COPY --from=builder /build/apps/gallery-api/gallery-api-boot/target/gallery-api-boot-*.jar /app/gallery-api.jar
+# Copy parent POM and API module
+COPY pom.xml .
+COPY apps/gallery-api/ ./apps/gallery-api/
+
+# Build the project
+RUN cd apps/gallery-api && mvn clean package -DskipTests
+
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+# Copy the JAR from the boot module
+COPY --from=builder /app/apps/gallery-api/gallery-api-boot/target/*.jar app.jar
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/gallery-api.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]

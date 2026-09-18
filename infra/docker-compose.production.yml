@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: vie-gallery-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-vie_gallery_root_2026}
+      MYSQL_DATABASE: vie_gallery
+      MYSQL_USER: vie_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-vie_password_2026}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    networks:
+      - vie-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uvie_user", "-p${MYSQL_PASSWORD:-vie_password_2026}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vie-gallery-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - vie-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: vie-gallery-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - vie-network
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  api:
+    image: vie-gallery-api:latest
+    container_name: vie-gallery-api
+    ports:
+      - "8088:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vie_gallery?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+      SPRING_DATASOURCE_USERNAME: vie_user
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-vie_password_2026}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    networks:
+      - vie-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  admin:
+    image: nginx:alpine
+    container_name: vie-gallery-admin
+    ports:
+      - "5173:80"
+    volumes:
+      - ./admin:/usr/share/nginx/html
+      - ./nginx-admin.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - vie-network
+    restart: unless-stopped
+
+  viewer:
+    image: nginx:alpine
+    container_name: vie-gallery-viewer
+    ports:
+      - "5174:80"
+    volumes:
+      - ./viewer:/usr/share/nginx/html
+      - ./nginx-viewer.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - vie-network
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:
+
+networks:
+  vie-network:
+    driver: bridge
