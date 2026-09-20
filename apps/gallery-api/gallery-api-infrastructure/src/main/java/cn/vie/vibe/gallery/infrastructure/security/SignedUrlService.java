@@ -36,6 +36,14 @@ public class SignedUrlService {
             return baseUrl;
         }
         
+        // 如果URL已经包含云存储提供商的签名,直接返回
+        // 阿里云OSS: OSSAccessKeyId, AWS S3: AWSAccessKeyId, 等
+        if (baseUrl.contains("OSSAccessKeyId") || 
+            baseUrl.contains("AWSAccessKeyId") ||
+            baseUrl.contains("X-Amz-Algorithm")) {
+            return baseUrl; // 云存储预签名URL已足够安全,无需二次签名
+        }
+        
         long expiry = Instant.now().getEpochSecond() + expirySeconds;
         
         // 生成签名: HMAC-SHA256(baseUrl + userId + expiry)
