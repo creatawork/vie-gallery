@@ -50,6 +50,11 @@ gallery:
     access-key: ${STORAGE_ACCESS_KEY:vie_local}
     secret-key: ${STORAGE_SECRET_KEY:vie_local_secret}
     bucket: ${STORAGE_BUCKET:vie-gallery}
+    aliyun:
+      endpoint: ${ALIYUN_OSS_ENDPOINT:https://oss-cn-hangzhou.aliyuncs.com}
+      access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID}
+      access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET}
+      bucket: ${ALIYUN_OSS_BUCKET:vie-gallery}
   quota:
     max-bytes: ${QUOTA_MAX_BYTES:5368709120}
     max-photos: ${QUOTA_MAX_PHOTOS:10000}

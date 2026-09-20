@@ -11,11 +11,11 @@ import javax.crypto.spec.SecretKeySpec;
 import java.util.Base64;
 
 /**
- * 安全配置
+ * 数据加密配置
  * 提供加密器和密钥管理
  */
 @Configuration
-public class SecurityConfig {
+public class EncryptionConfig {
     
     @Value("${gallery.security.encryption.secret:#{null}}")
     private String encryptionSecret;
