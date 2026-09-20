@@ -589,7 +589,7 @@ class PublicAccessFacadeTest {
             return Optional.ofNullable(values.get(objectId)).filter(object -> object.tenantId().equals(tenantId));
         }
 
-        public int markReady(UUID tenantId, UUID objectId, String thumbnailKey, Integer width, Integer height) {
+        public int markReady(UUID tenantId, UUID objectId, String thumbnailKey, String thumbnailUrl, Integer width, Integer height) {
             return 0;
         }
 
@@ -604,7 +604,7 @@ class PublicAccessFacadeTest {
 
     private static final class FixedObjectStorage implements ObjectStoragePort {
         public StoredObject put(String key, InputStream content, String contentType, long size) {
-            return new StoredObject("bucket", key, null, size, null, null, "sha");
+            return new StoredObject("bucket", key, null, null, null, size, null, null, "sha");
         }
 
         public InputStream get(String key) {
@@ -701,7 +701,7 @@ class PublicAccessFacadeTest {
         Photo addReadyPhoto(Gallery gallery, String title) {
             UUID objectId = UUID.randomUUID();
             storage.values.put(objectId, new StorageObject(
-                    objectId, tenantId, "bucket", "object/" + title, "thumb/" + title,
+                    objectId, tenantId, "bucket", "object/" + title, "thumb/" + title, null, null,
                     "image/jpeg", 100, 1200, 800, "sha-" + title, StorageObjectStatus.READY, CREATED_AT));
             UUID photoId = UUID.randomUUID();
             Photo photo = new Photo(photoId, tenantId, gallery.id(), objectId, title,

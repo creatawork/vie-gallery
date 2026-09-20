@@ -37,7 +37,7 @@ class OrphanResourceReconcilerTest {
 
         // 1. Stale uploading object
         StorageObject staleObj = new StorageObject(
-                staleObjId, tenantId, "test-bucket", "photos/stale/original", null,
+                staleObjId, tenantId, "test-bucket", "photos/stale/original", null, null, null,
                 "image/jpeg", 2048L, 800, 600, "hash1",
                 StorageObjectStatus.UPLOADING, oneHourAgo
         );
@@ -46,7 +46,7 @@ class OrphanResourceReconcilerTest {
 
         // 2. Orphan stored object (no photo record)
         StorageObject orphanObj = new StorageObject(
-                orphanObjId, tenantId, "test-bucket", "photos/orphan/original", "photos/orphan/thumb",
+                orphanObjId, tenantId, "test-bucket", "photos/orphan/original", "photos/orphan/thumb", null, null,
                 "image/jpeg", 4096L, 1024, 768, "hash2",
                 StorageObjectStatus.READY, oneHourAgo
         );
@@ -92,7 +92,8 @@ class OrphanResourceReconcilerTest {
         }
 
         @Override
-        public int markReady(UUID tenantId, UUID objectId, String thumbnailKey, Integer width, Integer height) {
+        @Override
+        public int markReady(UUID tenantId, UUID objectId, String thumbnailKey, String thumbnailUrl, Integer width, Integer height) {
             return 1;
         }
 
@@ -107,6 +108,7 @@ class OrphanResourceReconcilerTest {
             if (obj != null) {
                 objects.put(objectId, new StorageObject(
                         obj.id(), obj.tenantId(), obj.bucket(), obj.objectKey(), obj.thumbnailKey(),
+                        obj.objectUrl(), obj.thumbnailUrl(),
                         obj.mimeType(), obj.byteSize(), obj.width(), obj.height(), obj.sha256(),
                         StorageObjectStatus.DELETED, obj.createdAt()
                 ));
