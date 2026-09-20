@@ -108,6 +108,7 @@ public class AliyunOssObjectStorage implements ObjectStoragePort {
             Date expiration = new Date(System.currentTimeMillis() + ttl.toMillis());
             GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(bucket, key);
             request.setExpiration(expiration);
+            request.setMethod(com.aliyun.oss.HttpMethod.GET); // 明确指定GET方法用于读取
             
             URL url = ossClient.generatePresignedUrl(request);
             return url.toURI();
