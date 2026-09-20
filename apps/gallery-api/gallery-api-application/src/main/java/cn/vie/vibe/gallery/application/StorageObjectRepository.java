@@ -12,7 +12,7 @@ public interface StorageObjectRepository {
 
     Optional<StorageObject> findById(UUID tenantId, UUID objectId);
 
-    int markReady(UUID tenantId, UUID objectId, String thumbnailKey, String thumbnailUrl, Integer width, Integer height);
+    int markReady(UUID tenantId, UUID objectId, String thumbnailKey, Integer width, Integer height);
 
     int markFailed(UUID tenantId, UUID objectId);
 

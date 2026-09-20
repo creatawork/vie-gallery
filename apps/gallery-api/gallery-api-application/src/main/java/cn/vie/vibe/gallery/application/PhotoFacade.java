@@ -92,9 +92,7 @@ public class PhotoFacade {
         try {
             StoredObject stored = storage.put(key, new ByteArrayInputStream(bytes), contentType, bytes.length);
             Instant now = Instant.now();
-            // 生成原图URL
-            String objectUrl = storage.createReadUrl(stored.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
-            objects.save(new StorageObject(objectId, tenant, stored.bucket(), stored.objectKey(), null, objectUrl, null, contentType,
+            objects.save(new StorageObject(objectId, tenant, stored.bucket(), stored.objectKey(), null, contentType,
                     bytes.length, image.getWidth(), image.getHeight(), contentHash, StorageObjectStatus.UPLOADING, now));
             photos.save(new Photo(photoId, tenant, galleryId, objectId, upload.filename(), 0, false, PhotoStatus.PROCESSING, now));
             tasks.save(new PhotoProcessingTask(taskId, tenant, galleryId, photoId, upload.filename(), TaskStatus.QUEUED,

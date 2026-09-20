@@ -101,21 +101,21 @@ jobs:
           docker load < vie-gallery-api.tar.gz
           rm vie-gallery-api.tar.gz
           
-          # Restart services with env file (CRITICAL: Must use --env-file)
+          # Start services
           cd infra
           docker compose -f docker-compose.production.yml down
-          docker compose -f docker-compose.production.yml --env-file .env.production up -d
+          docker compose -f docker-compose.production.yml up -d
           
           # Wait for services to be healthy
           echo "Waiting for services to be healthy..."
-          sleep 15
+          sleep 10
           docker compose -f docker-compose.production.yml ps
-          docker logs vie-gallery-api --tail=20
           
           # Configure Nginx
-          sudo cp nginx-prod.conf /etc/nginx/sites-available/vie-gallery 2>/dev/null || true
-          sudo ln -sf /etc/nginx/sites-available/vie-gallery /etc/nginx/sites-enabled/ 2>/dev/null || true
-          sudo nginx -t && sudo systemctl reload nginx || echo "Nginx config already up to date"
+          sudo cp nginx-prod.conf /etc/nginx/sites-available/vie-gallery
+          sudo ln -sf /etc/nginx/sites-available/vie-gallery /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl reload nginx
           
           echo "Deployment completed successfully!"
           ENDSSH

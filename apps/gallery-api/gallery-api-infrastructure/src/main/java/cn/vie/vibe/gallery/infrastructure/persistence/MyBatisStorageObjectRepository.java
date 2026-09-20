@@ -32,8 +32,6 @@ public class MyBatisStorageObjectRepository implements StorageObjectRepository {
                 (String) r.get("bucket"),
                 (String) r.get("objectKey"),
                 (String) r.get("thumbnailKey"),
-                (String) r.get("objectUrl"),
-                (String) r.get("thumbnailUrl"),
                 (String) r.get("mimeType"),
                 ((Number) r.get("byteSize")).longValue(),
                 (Integer) r.get("width"),
@@ -47,7 +45,6 @@ public class MyBatisStorageObjectRepository implements StorageObjectRepository {
     @Override
     public StorageObject save(StorageObject o) {
         m.insert(o.id().toString(), o.tenantId().toString(), o.bucket(), o.objectKey(), o.thumbnailKey(),
-                o.objectUrl(), o.thumbnailUrl(),
                 o.mimeType(), o.byteSize(), o.width(), o.height(), o.sha256(), o.status().name(),
                 localDateTime(o.createdAt()));
         return o;
@@ -59,8 +56,8 @@ public class MyBatisStorageObjectRepository implements StorageObjectRepository {
     }
 
     @Override
-    public int markReady(UUID t, UUID i, String k, String u, Integer w, Integer h) {
-        return m.ready(t.toString(), i.toString(), k, u, w, h);
+    public int markReady(UUID t, UUID i, String k, Integer w, Integer h) {
+        return m.ready(t.toString(), i.toString(), k, w, h);
     }
 
     @Override

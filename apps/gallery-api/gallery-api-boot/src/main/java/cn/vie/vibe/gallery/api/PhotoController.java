@@ -98,13 +98,14 @@ public class PhotoController {
         return facade.list(galleryId).stream().map(photo -> {
             var object = objects.findById(tenant, photo.storageObjectId()).orElse(null);
             
-            // 直接使用数据库中存储的URL,不再动态生成
-            String thumbnailUrl = null;
-            if (object != null && object.thumbnailUrl() != null && object.status() == StorageObjectStatus.READY) {
-                thumbnailUrl = object.thumbnailUrl();
+            // 生成带签名的安全URL
+            String secureUrl = null;
+            if (object != null && object.thumbnailKey() != null && object.status() == StorageObjectStatus.READY) {
+                String rawUrl = storage.createReadUrl(object.thumbnailKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
+                secureUrl = signedUrlService.signPhotoUrl(rawUrl, userId);
             }
             
-            return PhotoResponse.from(photo, object, thumbnailUrl);
+            return PhotoResponse.from(photo, object, secureUrl);
         }).toList();
     }
 

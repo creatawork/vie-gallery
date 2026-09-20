@@ -147,9 +147,7 @@ public class PhotoProcessingWorker implements DisposableBean {
                 }
                 tasks.progress(task.tenantId(), task.id(), workerId, 80, "FINALIZE", Instant.now());
                 requireLease(task, leaseLost);
-                // 生成缩略图URL并存储
-                String thumbnailUrl = storage.createReadUrl(key, ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
-                if (objects.markReady(task.tenantId(), object.id(), key, thumbnailUrl, result.width(), result.height()) == 0) {
+                if (objects.markReady(task.tenantId(), object.id(), key, result.width(), result.height()) == 0) {
                     throw new DomainException("STORAGE_UNAVAILABLE", "Unable to finalize thumbnail metadata");
                 }
                 requireLease(task, leaseLost);
