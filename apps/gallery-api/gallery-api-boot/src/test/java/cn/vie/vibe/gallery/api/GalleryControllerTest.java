@@ -2,6 +2,7 @@ package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.application.*;
 import cn.vie.vibe.gallery.domain.*;
+import cn.vie.vibe.gallery.infrastructure.security.SignedUrlService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -23,6 +24,7 @@ class GalleryControllerTest {
     private CreatorPreviewTokens previewTokens;
     private PhotoProcessingTaskRepository tasks;
     private GalleryViewerConfigRepository configs;
+    private SignedUrlService signedUrlService;
     private GalleryController controller;
 
     private final UUID tenantId = UUID.randomUUID();
@@ -40,8 +42,9 @@ class GalleryControllerTest {
         previewTokens = new CreatorPreviewTokens(tokenGen);
         tasks = Mockito.mock(PhotoProcessingTaskRepository.class);
         configs = Mockito.mock(GalleryViewerConfigRepository.class);
+        signedUrlService = Mockito.mock(SignedUrlService.class);
 
-        controller = new GalleryController(facade, photos, objects, storage, tenantContext, previewTokens, tasks, configs);
+        controller = new GalleryController(facade, photos, objects, storage, tenantContext, previewTokens, tasks, configs, signedUrlService);
     }
 
     @Test
