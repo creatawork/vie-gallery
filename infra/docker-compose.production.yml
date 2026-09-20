@@ -64,7 +64,7 @@ services:
     ports:
       - "8088:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: prod
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       # Database
       DB_URL: jdbc:mysql://mysql:3306/vie_gallery?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
       DB_USERNAME: vie_user
@@ -88,6 +88,15 @@ services:
       MAIL_FROM: ${MAIL_FROM:-noreply@vie-vibe.cn}
       MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
       MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-false}
+      # Security
+      GALLERY_SECURITY_ENCRYPTION_SECRET: ${GALLERY_SECURITY_ENCRYPTION_SECRET}
+      GALLERY_SECURITY_ENCRYPTION_SALT: ${GALLERY_SECURITY_ENCRYPTION_SALT}
+      GALLERY_SECURITY_JWT_SECRET: ${GALLERY_SECURITY_JWT_SECRET}
+      # Aliyun OSS
+      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT}
+      ALIYUN_OSS_ACCESS_KEY_ID: ${ALIYUN_OSS_ACCESS_KEY_ID}
+      ALIYUN_OSS_ACCESS_KEY_SECRET: ${ALIYUN_OSS_ACCESS_KEY_SECRET}
+      ALIYUN_OSS_BUCKET: ${ALIYUN_OSS_BUCKET}
     networks:
       - vie-network
     depends_on:
