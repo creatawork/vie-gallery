@@ -2,6 +2,8 @@ package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.application.*;
 import cn.vie.vibe.gallery.domain.*;
+import cn.vie.vibe.gallery.infrastructure.security.SignedUrlService;
+import cn.vie.vibe.gallery.infrastructure.security.SensitiveData;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -25,6 +27,7 @@ public class GalleryController {
     private final CreatorPreviewTokens previewTokens;
     private final PhotoProcessingTaskRepository tasks;
     private final GalleryViewerConfigRepository configs;
+    private final SignedUrlService signedUrlService;
 
     public GalleryController(
             GalleryFacade facade,
@@ -32,9 +35,10 @@ public class GalleryController {
             StorageObjectRepository objects,
             ObjectStoragePort storage,
             TenantContextResolver tenantContext,
-            CreatorPreviewTokens previewTokens
+            CreatorPreviewTokens previewTokens,
+            SignedUrlService signedUrlService
     ) {
-        this(facade, photos, objects, storage, tenantContext, previewTokens, null, null);
+        this(facade, photos, objects, storage, tenantContext, previewTokens, null, null, signedUrlService);
     }
 
     @Autowired
@@ -46,7 +50,8 @@ public class GalleryController {
             TenantContextResolver tenantContext,
             CreatorPreviewTokens previewTokens,
             PhotoProcessingTaskRepository tasks,
-            GalleryViewerConfigRepository configs
+            GalleryViewerConfigRepository configs,
+            SignedUrlService signedUrlService
     ) {
         this.facade = facade;
         this.photos = photos;
@@ -56,6 +61,7 @@ public class GalleryController {
         this.previewTokens = previewTokens;
         this.tasks = tasks;
         this.configs = configs;
+        this.signedUrlService = signedUrlService;
     }
 
     @GetMapping
@@ -73,12 +79,19 @@ public class GalleryController {
     private GalleryResponse toResponse(Gallery gallery, UUID tenant) {
         String coverUrl = null;
         if (gallery.coverPhotoId() != null && photos != null && objects != null && storage != null) {
-            coverUrl = photos.findById(tenant, gallery.coverPhotoId())
+            String rawUrl = photos.findById(tenant, gallery.coverPhotoId())
                     .filter(p -> p.status() == PhotoStatus.READY)
                     .flatMap(p -> objects.findById(tenant, p.storageObjectId()))
                     .filter(o -> o.status() == StorageObjectStatus.READY)
                     .map(o -> storage.createReadUrl(o.thumbnailKey() != null ? o.thumbnailKey() : o.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())
                     .orElse(null);
+            
+            // 为封面照片URL生成签名
+            if (rawUrl != null && signedUrlService != null) {
+                coverUrl = signedUrlService.signPhotoUrl(rawUrl, tenant.toString());
+            } else {
+                coverUrl = rawUrl;
+            }
         }
 
         int photoCount = photos != null ? photos.countPublicReadyByGalleryId(tenant, gallery.id()) : 0;
@@ -235,7 +248,7 @@ public class GalleryController {
             GalleryStatus status,
             Instant publishedAt,
             String coverPhotoId,
-            String coverThumbnailUrl,
+            @SensitiveData(type = SensitiveData.SensitiveType.PHOTO_URL) String coverThumbnailUrl,
             Instant createdAt,
             Instant updatedAt,
             int photoCount,

@@ -2,6 +2,8 @@ package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.application.*;
 import cn.vie.vibe.gallery.domain.*;
+import cn.vie.vibe.gallery.infrastructure.security.SignedUrlService;
+import cn.vie.vibe.gallery.infrastructure.security.SensitiveData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
@@ -24,19 +26,22 @@ public class PhotoController {
     private final ObjectStoragePort storage;
     private final TenantContextResolver context;
     private final GalleryMetrics metrics;
+    private final SignedUrlService signedUrlService;
 
-    public PhotoController(PhotoFacade facade, StorageObjectRepository objects, ObjectStoragePort storage, TenantContextResolver context) {
-        this(facade, objects, storage, context, null);
+    public PhotoController(PhotoFacade facade, StorageObjectRepository objects, ObjectStoragePort storage, 
+                           TenantContextResolver context, SignedUrlService signedUrlService) {
+        this(facade, objects, storage, context, null, signedUrlService);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public PhotoController(PhotoFacade facade, StorageObjectRepository objects, ObjectStoragePort storage,
-                           TenantContextResolver context, GalleryMetrics metrics) {
+                           TenantContextResolver context, GalleryMetrics metrics, SignedUrlService signedUrlService) {
         this.facade = facade;
         this.objects = objects;
         this.storage = storage;
         this.context = context;
         this.metrics = metrics;
+        this.signedUrlService = signedUrlService;
     }
 
     @PostMapping(value = "/galleries/{galleryId}/photos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -88,11 +93,19 @@ public class PhotoController {
     @GetMapping("/galleries/{galleryId}/photos")
     public List<PhotoResponse> list(@PathVariable UUID galleryId) {
         UUID tenant = context.requireContext().tenantId();
+        String userId = tenant.toString();
+        
         return facade.list(galleryId).stream().map(photo -> {
             var object = objects.findById(tenant, photo.storageObjectId()).orElse(null);
-            String url = object != null && object.thumbnailKey() != null && object.status() == StorageObjectStatus.READY
-                    ? storage.createReadUrl(object.thumbnailKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString() : null;
-            return PhotoResponse.from(photo, object, url);
+            
+            // 生成带签名的安全URL
+            String secureUrl = null;
+            if (object != null && object.thumbnailKey() != null && object.status() == StorageObjectStatus.READY) {
+                String rawUrl = storage.createReadUrl(object.thumbnailKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
+                secureUrl = signedUrlService.signPhotoUrl(rawUrl, userId);
+            }
+            
+            return PhotoResponse.from(photo, object, secureUrl);
         }).toList();
     }
 
@@ -116,12 +129,32 @@ public class PhotoController {
     }
     public record UploadError(String code, String message) {}
     public record UpdateRequest(String title, Integer sortOrder, Boolean cover) {}
-    public record PhotoResponse(String id, String galleryId, String title, int sortOrder, boolean cover, PhotoStatus status,
-                                Instant createdAt, long byteSize, Integer width, Integer height, String thumbnailUrl) {
-        static PhotoResponse from(Photo photo, StorageObject object, String url) {
-            return new PhotoResponse(photo.id().toString(), photo.galleryId().toString(), photo.title(), photo.sortOrder(), photo.cover(),
-                    photo.status(), photo.createdAt(), object == null ? 0 : object.byteSize(), object == null ? null : object.width(),
-                    object == null ? null : object.height(), url);
+    public record PhotoResponse(
+            String id, 
+            String galleryId, 
+            String title, 
+            int sortOrder, 
+            boolean cover, 
+            PhotoStatus status,
+            Instant createdAt, 
+            long byteSize, 
+            Integer width, 
+            Integer height, 
+            @SensitiveData(type = SensitiveData.SensitiveType.PHOTO_URL) String thumbnailUrl) {
+        
+        static PhotoResponse from(Photo photo, StorageObject object, String signedUrl) {
+            return new PhotoResponse(
+                    photo.id().toString(), 
+                    photo.galleryId().toString(), 
+                    photo.title(), 
+                    photo.sortOrder(), 
+                    photo.cover(),
+                    photo.status(), 
+                    photo.createdAt(), 
+                    object == null ? 0 : object.byteSize(), 
+                    object == null ? null : object.width(),
+                    object == null ? null : object.height(), 
+                    signedUrl);
         }
     }
 }

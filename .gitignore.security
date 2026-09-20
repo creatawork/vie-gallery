@@ -1,0 +1,27 @@
+# 安全相关文件 - 务必添加到 .gitignore
+
+# 环境变量文件
+.env.local
+.env.*.local
+*.env
+
+# 密钥文件
+*-keys.txt
+new-keys.txt
+security-keys.txt
+
+# SSL证书和私钥
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+keystore.*
+
+# 密钥管理配置
+secrets/
+vault/
+
+# 调试日志可能包含敏感信息
+*-debug.log
+security-*.log

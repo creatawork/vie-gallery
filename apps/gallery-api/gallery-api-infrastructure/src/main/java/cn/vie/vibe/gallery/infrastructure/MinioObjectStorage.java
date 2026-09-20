@@ -21,7 +21,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 @Component
-@Profile("!dev-memory & !local-storage")
+@Profile("!dev-memory & !local-storage & !aliyun-oss")
 public class MinioObjectStorage implements ObjectStoragePort {
     private final MinioClient client;
     private final MinioClient signingClient;

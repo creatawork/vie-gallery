@@ -67,3 +67,12 @@ gallery:
     unlock:
       max-failures: ${UNLOCK_RATE_LIMIT_MAX_FAILURES:5}
       window: ${UNLOCK_RATE_LIMIT_WINDOW:PT15M}
+  security:
+    encryption:
+      secret: ${GALLERY_SECURITY_ENCRYPTION_SECRET}
+      salt: ${GALLERY_SECURITY_ENCRYPTION_SALT}
+    jwt:
+      secret: ${GALLERY_SECURITY_JWT_SECRET}
+    photo-url:
+      default-expiry: ${PHOTO_URL_EXPIRY:3600}
+      max-expiry: ${PHOTO_URL_MAX_EXPIRY:86400}
