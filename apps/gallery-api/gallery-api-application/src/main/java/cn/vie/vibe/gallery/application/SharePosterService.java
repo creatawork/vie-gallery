@@ -109,13 +109,13 @@ public class SharePosterService {
         
         // 标题 - 黑色，加粗
         g.setColor(new Color(20, 20, 20));
-        g.setFont(new Font("Microsoft YaHei", Font.BOLD, 56));
+        g.setFont(new Font("SansSerif", Font.BOLD, 56));
         drawCenteredText(g, gallery.title(), width / 2, 950);
         
         // 描述 - 灰色，常规
         if (gallery.description() != null && !gallery.description().isEmpty()) {
             g.setColor(new Color(100, 100, 100));
-            g.setFont(new Font("Microsoft YaHei", Font.PLAIN, 32));
+            g.setFont(new Font("SansSerif", Font.PLAIN, 32));
             drawCenteredMultilineText(g, gallery.description(), width / 2, 1050, 800, 3);
         }
         
@@ -126,7 +126,7 @@ public class SharePosterService {
         
         // 提示文字
         g.setColor(new Color(150, 150, 150));
-        g.setFont(new Font("Microsoft YaHei", Font.PLAIN, 24));
+        g.setFont(new Font("SansSerif", Font.PLAIN, 24));
         drawCenteredText(g, "扫码查看相册", width / 2, 1750);
         
         g.dispose();
@@ -225,7 +225,7 @@ public class SharePosterService {
         
         // 标题 - 白色，粗体，带阴影
         g.setColor(Color.WHITE);
-        g.setFont(new Font("Microsoft YaHei", Font.BOLD, 60));
+        g.setFont(new Font("SansSerif", Font.BOLD, 60));
         
         // 阴影效果
         g.setColor(new Color(0, 0, 0, 100));
@@ -236,7 +236,7 @@ public class SharePosterService {
         // 描述
         if (gallery.description() != null && !gallery.description().isEmpty()) {
             g.setColor(new Color(255, 255, 255, 230));
-            g.setFont(new Font("Microsoft YaHei", Font.PLAIN, 32));
+            g.setFont(new Font("SansSerif", Font.PLAIN, 32));
             drawCenteredMultilineText(g, gallery.description(), width / 2, 1080, 800, 3);
         }
         
@@ -253,7 +253,7 @@ public class SharePosterService {
         
         // 提示文字
         g.setColor(Color.WHITE);
-        g.setFont(new Font("Microsoft YaHei", Font.BOLD, 26));
+        g.setFont(new Font("SansSerif", Font.BOLD, 26));
         drawCenteredText(g, "扫码查看精彩瞬间", width / 2, 1760);
         
         g.dispose();
@@ -333,7 +333,7 @@ public class SharePosterService {
         
         // 品牌标识区域
         g.setColor(Color.WHITE);
-        g.setFont(new Font("Microsoft YaHei", Font.BOLD, 40));
+        g.setFont(new Font("SansSerif", Font.BOLD, 40));
         drawCenteredText(g, "VIE GALLERY", width / 2, 110);
         
         // 封面图片 - 无边框
@@ -345,13 +345,13 @@ public class SharePosterService {
         
         // 标题 - 深灰色，粗体
         g.setColor(new Color(30, 30, 30));
-        g.setFont(new Font("Microsoft YaHei", Font.BOLD, 58));
+        g.setFont(new Font("SansSerif", Font.BOLD, 58));
         drawCenteredText(g, gallery.title(), width / 2, 950);
         
         // 描述
         if (gallery.description() != null && !gallery.description().isEmpty()) {
             g.setColor(new Color(90, 90, 90));
-            g.setFont(new Font("Microsoft YaHei", Font.PLAIN, 30));
+            g.setFont(new Font("SansSerif", Font.PLAIN, 30));
             drawCenteredMultilineText(g, gallery.description(), width / 2, 1050, 820, 3);
         }
         
@@ -365,7 +365,7 @@ public class SharePosterService {
         
         // 提示文字
         g.setColor(new Color(16, 185, 129));
-        g.setFont(new Font("Microsoft YaHei", Font.BOLD, 28));
+        g.setFont(new Font("SansSerif", Font.BOLD, 28));
         drawCenteredText(g, "扫码进入相册", width / 2, 1760);
         
         g.dispose();
