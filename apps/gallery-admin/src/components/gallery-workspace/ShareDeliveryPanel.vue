@@ -52,6 +52,11 @@ const copied = ref(false)
 const linkToRevoke = ref<ShareLink | null>(null)
 const switchingVisibility = ref(false)
 
+// Poster generation state
+const generatingPoster = ref(false)
+const posterTemplate = ref<string>('MINIMAL')
+const generatedPosterUrl = ref<string | null>(null)
+
 async function handleVisibilityChange(event: Event) {
   const target = event.target as HTMLSelectElement
   const newVis = target.value as 'PUBLIC' | 'PRIVATE' | 'PASSWORD'
@@ -78,6 +83,7 @@ watch(() => props.show, (isShown) => {
     editingPassword.value = false
     newPasswordInput.value = ''
     copied.value = false
+    generatedPosterUrl.value = null
     void loadShareLinks()
   }
 })
@@ -89,6 +95,53 @@ async function handleGenerateLink() {
     toast.success('分享链接已生成！')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '生成分享链接失败。')
+  }
+}
+
+async function handleGeneratePoster() {
+  if (!props.gallery || generatingPoster.value) return
+  generatingPoster.value = true
+  try {
+    const res = await fetch(`/api/galleries/${props.gallery.id}/share-poster`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+      },
+      body: JSON.stringify({ template: posterTemplate.value })
+    })
+    if (!res.ok) {
+      throw new Error('生成海报失败')
+    }
+    const data = await res.json() as { posterUrl: string; template: string }
+    generatedPosterUrl.value = data.posterUrl
+    toast.success('分享海报已生成！')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : '生成分享海报失败。')
+  } finally {
+    generatingPoster.value = false
+  }
+}
+
+async function handleGeneratePoster() {
+  if (!props.gallery || generatingPoster.value) return
+  generatingPoster.value = true
+  try {
+    const res = await apiFetch(`/api/galleries/${props.gallery.id}/share-poster`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template: posterTemplate.value })
+    })
+    if (!res.ok) {
+      throw new Error('生成海报失败')
+    }
+    const data = await res.json() as { posterUrl: string; template: string }
+    generatedPosterUrl.value = data.posterUrl
+    toast.success('分享海报已生成！')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : '生成分享海报失败。')
+  } finally {
+    generatingPoster.value = false
   }
 }
 
@@ -304,6 +357,64 @@ function shareStatusLabel(status: string) {
               展厅目前处于草稿状态，请先发布展厅后再生成公开分享链接。
             </p>
           </section>
+
+          <!-- Generate Share Poster -->
+          <section class="delivery-section">
+            <h4 class="section-title">
+              <Icon name="image" :size="14" />
+              <span>生成分享海报</span>
+            </h4>
+            <div class="create-link-row">
+              <div class="expiry-select-group">
+                <label for="poster-template-select">海报风格：</label>
+                <select id="poster-template-select" v-model="posterTemplate" class="expiry-select">
+                  <option value="MINIMAL">极简风格</option>
+                  <option value="ELEGANT">优雅风格</option>
+                  <option value="VIBRANT">活力风格</option>
+                  <option value="CLASSIC">经典风格</option>
+                  <option value="MODERN">现代风格</option>
+                </select>
+              </div>
+              <button
+                class="btn btn-primary generate-btn"
+                type="button"
+                :disabled="generatingPoster || gallery?.status !== 'PUBLISHED'"
+                @click="handleGeneratePoster"
+              >
+                <Icon name="image" :size="14" />
+                <span>{{ generatingPoster ? '生成中…' : '生成分享海报' }}</span>
+              </button>
+            </div>
+            <p v-if="gallery?.status !== 'PUBLISHED'" class="warn-tip">
+              展厅目前处于草稿状态，请先发布展厅后再生成分享海报。
+            </p>
+          </section>
+
+          <!-- Poster Preview -->
+          <Transition name="fade">
+            <section v-if="generatedPosterUrl" class="confirmation-box">
+              <div class="confirmation-header">
+                <span class="confirm-tag">
+                  <Icon name="check" :size="12" stroke-width="3" />
+                  海报已生成
+                </span>
+                <span class="remaining-tag">{{ posterTemplate === 'MINIMAL' ? '极简' : posterTemplate === 'ELEGANT' ? '优雅' : posterTemplate === 'VIBRANT' ? '活力' : posterTemplate === 'CLASSIC' ? '经典' : '现代' }}风格</span>
+              </div>
+              <div class="poster-preview">
+                <img :src="generatedPosterUrl" alt="分享海报" class="poster-image" />
+              </div>
+              <div class="copy-url-bar">
+                <input readonly :value="generatedPosterUrl" class="url-input" />
+                <button class="btn btn-copy" type="button" @click="copyUrl(generatedPosterUrl)">
+                  <Icon :name="copied ? 'check' : 'copy'" :size="14" />
+                  <span>{{ copied ? '已复制' : '复制链接' }}</span>
+                </button>
+              </div>
+              <p class="delivery-note">
+                将海报图片下载或分享到社交媒体，访客扫描二维码即可进入展厅。
+              </p>
+            </section>
+          </Transition>
 
           <!-- Delivery Confirmation State -->
           <Transition name="fade">
@@ -752,6 +863,21 @@ function shareStatusLabel(status: string) {
   margin: 0;
   font-size: 11.5px;
   color: #047857;
+}
+
+.poster-preview {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f5f5f7;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.poster-image {
+  max-width: 100%;
+  max-height: 600px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 /* Links list */
