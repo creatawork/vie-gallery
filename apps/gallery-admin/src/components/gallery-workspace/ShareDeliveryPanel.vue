@@ -123,28 +123,6 @@ async function handleGeneratePoster() {
   }
 }
 
-async function handleGeneratePoster() {
-  if (!props.gallery || generatingPoster.value) return
-  generatingPoster.value = true
-  try {
-    const res = await apiFetch(`/api/galleries/${props.gallery.id}/share-poster`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template: posterTemplate.value })
-    })
-    if (!res.ok) {
-      throw new Error('生成海报失败')
-    }
-    const data = await res.json() as { posterUrl: string; template: string }
-    generatedPosterUrl.value = data.posterUrl
-    toast.success('分享海报已生成！')
-  } catch (err) {
-    toast.error(err instanceof Error ? err.message : '生成分享海报失败。')
-  } finally {
-    generatingPoster.value = false
-  }
-}
-
 async function copyUrl(url: string) {
   if (!url) return
   try {
