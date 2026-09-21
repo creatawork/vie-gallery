@@ -823,6 +823,10 @@ async function selectPreset(presetName: string) {
             v-for="(photo, idx) in viewer.photos.value"
             :key="photo.sortOrder ?? idx"
             class="editorial-photo-card"
+            :class="{
+              'featured': idx % 7 === 0,
+              'tall': idx % 11 === 0 && idx % 7 !== 0
+            }"
             @click="openLightbox(idx)"
           >
             <div class="photo-img-frame">
@@ -1410,6 +1414,38 @@ async function selectPreset(presetName: string) {
   gap: 20px;
 }
 
+/* 响应式列数优化 - 不同屏幕显示不同列数 */
+@media (min-width: 1920px) {
+  .editorial-photo-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+@media (min-width: 1440px) and (max-width: 1919px) {
+  .editorial-photo-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1439px) {
+  .editorial-photo-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .editorial-photo-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .editorial-photo-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+}
+
 .load-more-btn {
   display: block;
   margin: 28px auto 0;
@@ -1439,13 +1475,78 @@ async function selectPreset(presetName: string) {
   background: #0f1c16;
   border: 1px solid rgba(255, 255, 255, 0.06);
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  /* 更流畅的过渡效果 - Back Ease-Out 曲线 */
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  
+  /* 交错进入动画 - 初始状态 */
+  opacity: 0;
+  transform: translateY(20px);
+  animation: cardFadeIn 0.6s ease-out forwards;
+}
+
+/* 交错延迟 - 前24张照片有明显的交错效果 */
+.editorial-photo-card:nth-child(1) { animation-delay: 0.05s; }
+.editorial-photo-card:nth-child(2) { animation-delay: 0.1s; }
+.editorial-photo-card:nth-child(3) { animation-delay: 0.15s; }
+.editorial-photo-card:nth-child(4) { animation-delay: 0.2s; }
+.editorial-photo-card:nth-child(5) { animation-delay: 0.25s; }
+.editorial-photo-card:nth-child(6) { animation-delay: 0.3s; }
+.editorial-photo-card:nth-child(7) { animation-delay: 0.35s; }
+.editorial-photo-card:nth-child(8) { animation-delay: 0.4s; }
+.editorial-photo-card:nth-child(9) { animation-delay: 0.45s; }
+.editorial-photo-card:nth-child(10) { animation-delay: 0.5s; }
+.editorial-photo-card:nth-child(11) { animation-delay: 0.55s; }
+.editorial-photo-card:nth-child(12) { animation-delay: 0.6s; }
+.editorial-photo-card:nth-child(13) { animation-delay: 0.65s; }
+.editorial-photo-card:nth-child(14) { animation-delay: 0.7s; }
+.editorial-photo-card:nth-child(15) { animation-delay: 0.75s; }
+.editorial-photo-card:nth-child(16) { animation-delay: 0.8s; }
+.editorial-photo-card:nth-child(17) { animation-delay: 0.85s; }
+.editorial-photo-card:nth-child(18) { animation-delay: 0.9s; }
+.editorial-photo-card:nth-child(19) { animation-delay: 0.95s; }
+.editorial-photo-card:nth-child(20) { animation-delay: 1.0s; }
+.editorial-photo-card:nth-child(21) { animation-delay: 1.05s; }
+.editorial-photo-card:nth-child(22) { animation-delay: 1.1s; }
+.editorial-photo-card:nth-child(23) { animation-delay: 1.15s; }
+.editorial-photo-card:nth-child(24) { animation-delay: 1.2s; }
+/* 之后的照片立即显示，避免等待过久 */
+.editorial-photo-card:nth-child(n+25) { animation-delay: 0s; }
+
+@keyframes cardFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .editorial-photo-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
-  border-color: rgba(16, 185, 129, 0.3);
+  /* 更明显的抬升 + 微缩放 */
+  transform: translateY(-8px) scale(1.02);
+  /* 多层阴影增加深度感 */
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.3),
+    0 8px 16px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+/* 特色照片 - 占据2列，更突出 */
+.editorial-photo-card.featured {
+  grid-column: span 2;
+}
+
+/* 高照片 - 占据2行，营造视觉层次 */
+.editorial-photo-card.tall {
+  grid-row: span 2;
+}
+
+/* 在小屏幕上取消特殊布局 */
+@media (max-width: 1023px) {
+  .editorial-photo-card.featured,
+  .editorial-photo-card.tall {
+    grid-column: span 1;
+    grid-row: span 1;
+  }
 }
 
 .photo-img-frame {
@@ -1453,6 +1554,16 @@ async function selectPreset(presetName: string) {
   aspect-ratio: 4 / 3;
   width: 100%;
   overflow: hidden;
+}
+
+/* 特色照片使用16:9宽屏比例 */
+.editorial-photo-card.featured .photo-img-frame {
+  aspect-ratio: 16 / 9;
+}
+
+/* 高照片使用3:4竖屏比例 */
+.editorial-photo-card.tall .photo-img-frame {
+  aspect-ratio: 3 / 4;
 }
 
 .photo-img-frame img {
