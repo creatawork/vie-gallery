@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { Gallery, ShareLink } from '@vie/gallery-contracts'
 import Icon from '../Icon.vue'
 import ConfirmModal from '../ConfirmModal.vue'
+import { apiFetch } from '../../api'
 import {
   useShareDelivery,
   formatRemaining,
@@ -102,21 +103,20 @@ async function handleGeneratePoster() {
   if (!props.gallery || generatingPoster.value) return
   generatingPoster.value = true
   try {
-    const res = await fetch(`/api/galleries/${props.gallery.id}/share-poster`, {
+    const res = await apiFetch(`/api/galleries/${props.gallery.id}/share-poster`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ template: posterTemplate.value })
     })
     if (!res.ok) {
-      throw new Error('生成海报失败')
+      const errorText = await res.text()
+      throw new Error(errorText || '生成海报失败')
     }
     const data = await res.json() as { posterUrl: string; template: string }
     generatedPosterUrl.value = data.posterUrl
     toast.success('分享海报已生成！')
   } catch (err) {
+    console.error('Poster generation error:', err)
     toast.error(err instanceof Error ? err.message : '生成分享海报失败。')
   } finally {
     generatingPoster.value = false
