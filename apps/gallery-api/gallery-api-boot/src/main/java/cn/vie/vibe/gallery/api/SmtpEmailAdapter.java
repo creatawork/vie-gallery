@@ -4,6 +4,7 @@ import cn.vie.vibe.gallery.application.EmailPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -13,9 +14,12 @@ import java.time.Duration;
 
 /**
  * 生产环境 SMTP 邮件适配器。仅发送重置链接，日志不记录 raw token。
+ * 仅当 GALLERY_MAIL_ENABLED=true 时装配；未配置真实 SMTP 时由
+ * DisabledEmailAdapter 兜底，避免对占位 SMTP 主机发起无效连接。
  */
 @Component
 @Profile("prod")
+@ConditionalOnProperty(name = "gallery.mail.enabled", havingValue = "true")
 public class SmtpEmailAdapter implements EmailPort {
     private static final Logger log = LoggerFactory.getLogger(SmtpEmailAdapter.class);
 

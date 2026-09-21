@@ -58,6 +58,8 @@ gallery:
     base-url: ${GALLERY_PUBLIC_BASE_URL}
   mail:
     from: ${MAIL_FROM}
+    # 默认关闭邮件发送；设 GALLERY_MAIL_ENABLED=true 并配置真实 SMTP 后开启
+    enabled: ${GALLERY_MAIL_ENABLED:false}
   storage:
     endpoint: ${STORAGE_ENDPOINT}
     public-endpoint: ${STORAGE_PUBLIC_ENDPOINT}

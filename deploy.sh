@@ -39,7 +39,7 @@ scp -r apps/gallery-viewer/dist/* ${SERVER_USER}@${SERVER_HOST}:${DEPLOY_PATH}/v
 scp infra/docker-compose.production.yml ${SERVER_USER}@${SERVER_HOST}:${DEPLOY_PATH}/infra/
 scp infra/nginx-admin.conf ${SERVER_USER}@${SERVER_HOST}:${DEPLOY_PATH}/infra/
 scp infra/nginx-viewer.conf ${SERVER_USER}@${SERVER_HOST}:${DEPLOY_PATH}/infra/
-scp infra/nginx-prod.conf ${SERVER_USER}@${SERVER_HOST}:${DEPLOY_PATH}/infra/
+scp infra/nginx-prod-ssl.conf ${SERVER_USER}@${SERVER_HOST}:${DEPLOY_PATH}/infra/
 
 # 传输 Docker 镜像
 scp /tmp/vie-gallery-api.tar.gz ${SERVER_USER}@${SERVER_HOST}:${DEPLOY_PATH}/
@@ -74,9 +74,9 @@ docker compose -f docker-compose.production.yml --env-file .env.production up -d
 docker compose -f docker-compose.production.yml --env-file .env.production ps
 EOF
 
-echo "7. 配置 Nginx..."
+echo "7. 配置 Nginx (SSL 版)..."
 ssh ${SERVER_USER}@${SERVER_HOST} << 'EOF'
-sudo cp /home/ubuntu/vie-gallery/infra/nginx-prod.conf /etc/nginx/sites-available/vie-gallery
+sudo cp /home/ubuntu/vie-gallery/infra/nginx-prod-ssl.conf /etc/nginx/sites-available/vie-gallery
 sudo ln -sf /etc/nginx/sites-available/vie-gallery /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 EOF

@@ -85,7 +85,7 @@ jobs:
           scp infra/docker-compose.production.yml ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
           scp infra/nginx-admin.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
           scp infra/nginx-viewer.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
-          scp infra/nginx-prod.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
+          scp infra/nginx-prod-ssl.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/infra/
 
       - name: Transfer API Docker image
         run: |
@@ -133,8 +133,8 @@ jobs:
           docker compose -f docker-compose.production.yml --env-file .env.production ps
           docker logs vie-gallery-api --tail=30 || true
 
-          # Configure Nginx
-          sudo cp nginx-prod.conf /etc/nginx/sites-available/vie-gallery
+          # Configure Nginx (SSL version; requires Let's Encrypt certs from setup-ssl.sh)
+          sudo cp nginx-prod-ssl.conf /etc/nginx/sites-available/vie-gallery
           sudo ln -sf /etc/nginx/sites-available/vie-gallery /etc/nginx/sites-enabled/
           sudo nginx -t
           sudo systemctl reload nginx
