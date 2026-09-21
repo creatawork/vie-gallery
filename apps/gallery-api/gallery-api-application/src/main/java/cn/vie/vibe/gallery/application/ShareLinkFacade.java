@@ -12,31 +12,39 @@ import java.util.UUID;
 public class ShareLinkFacade {
     private final ShareLinkRepository shareLinkRepository;
     private final GalleryRepository galleryRepository;
+    private final PhotoRepository photoRepository;
     private final TokenGenerator tokenGenerator;
     private final String publicBaseUrl;
     private final WorkspaceAuthorizationPolicy authorization;
+    private final SharePosterService sharePosterService;
 
     public ShareLinkFacade(
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
+            PhotoRepository photoRepository,
             TokenGenerator tokenGenerator,
-            String publicBaseUrl
+            String publicBaseUrl,
+            SharePosterService sharePosterService
     ) {
-        this(shareLinkRepository, galleryRepository, tokenGenerator, publicBaseUrl,
-                new WorkspaceAuthorizationPolicy(TenantContextHolder::current));
+        this(shareLinkRepository, galleryRepository, photoRepository, tokenGenerator, publicBaseUrl,
+                sharePosterService, new WorkspaceAuthorizationPolicy(TenantContextHolder::current));
     }
 
     public ShareLinkFacade(
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
+            PhotoRepository photoRepository,
             TokenGenerator tokenGenerator,
             String publicBaseUrl,
+            SharePosterService sharePosterService,
             WorkspaceAuthorizationPolicy authorization
     ) {
         this.shareLinkRepository = shareLinkRepository;
         this.galleryRepository = galleryRepository;
+        this.photoRepository = photoRepository;
         this.tokenGenerator = tokenGenerator;
         this.publicBaseUrl = publicBaseUrl;
+        this.sharePosterService = sharePosterService;
         this.authorization = authorization;
     }
 
@@ -161,5 +169,74 @@ public class ShareLinkFacade {
                 .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
         shareLinkRepository.delete(linkId);
+    }
+
+    /**
+     * 生成分享海报
+     */
+    public GenerateSharePosterResult generateSharePoster(GenerateSharePosterCommand command) {
+        TenantContext context = authorization.requireOwner();
+        UUID galleryId = UUID.fromString(command.galleryId());
+
+        // 验证相册属于当前租户且已发布
+        Gallery gallery = galleryRepository.findById(galleryId)
+                .filter(g -> g.tenantId().equals(context.tenantId()))
+                .filter(g -> !g.deleted())
+                .filter(g -> g.status() == GalleryStatus.PUBLISHED)
+                .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found or not published"));
+
+        // 获取封面照片URL
+        String coverUrl = null;
+        if (gallery.coverPhotoId() != null) {
+            Photo coverPhoto = photoRepository.findById(gallery.coverPhotoId())
+                    .orElse(null);
+            if (coverPhoto != null && coverPhoto.status() == PhotoStatus.READY) {
+                // 使用缩略图URL（需要从StorageObject获取）
+                coverUrl = buildPhotoUrl(coverPhoto);
+            }
+        }
+
+        // 如果没有封面，使用第一张就绪的照片
+        if (coverUrl == null) {
+            List<Photo> photos = photoRepository.findByGalleryIdWithPagination(galleryId, 0, 10);
+            coverUrl = photos.stream()
+                    .filter(p -> p.status() == PhotoStatus.READY)
+                    .findFirst()
+                    .map(this::buildPhotoUrl)
+                    .orElse(null);
+        }
+
+        if (coverUrl == null) {
+            throw new DomainException("NO_COVER_PHOTO", "Gallery has no available photos for poster");
+        }
+
+        // 统计照片数量
+        int photoCount = photoRepository.countByGalleryId(galleryId);
+
+        // 构建分享URL
+        String shareUrl = String.format("%s/g/%s", publicBaseUrl, gallery.slug());
+
+        // 生成海报
+        SharePosterService.GalleryInfo galleryInfo = new SharePosterService.GalleryInfo(
+                gallery.id().toString(),
+                gallery.name(),
+                null, // 暂时没有描述字段
+                coverUrl,
+                photoCount
+        );
+
+        SharePosterService.PosterTemplate template = command.template() != null
+                ? SharePosterService.PosterTemplate.valueOf(command.template().toUpperCase())
+                : SharePosterService.PosterTemplate.MINIMAL;
+
+        String posterUrl = sharePosterService.generatePoster(galleryInfo, shareUrl, template);
+
+        return new GenerateSharePosterResult(posterUrl, template.name());
+    }
+
+    private String buildPhotoUrl(Photo photo) {
+        // 简化版：返回缩略图路径
+        // 实际应该从 ObjectStorage 获取完整URL
+        return String.format("%s/thumbnails/%s.jpg", publicBaseUrl, photo.id());
     }
 }

@@ -2,6 +2,8 @@ package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.application.CreateShareLinkCommand;
 import cn.vie.vibe.gallery.application.CreateShareLinkResult;
+import cn.vie.vibe.gallery.application.GenerateSharePosterCommand;
+import cn.vie.vibe.gallery.application.GenerateSharePosterResult;
 import cn.vie.vibe.gallery.application.ShareLinkFacade;
 import cn.vie.vibe.gallery.application.ShareLinkView;
 import cn.vie.vibe.gallery.domain.ShareLinkStatus;
@@ -72,6 +74,27 @@ public class ShareLinkController {
         shareLinkFacade.revokeShareLink(shareLinkId);
     }
 
+    /**
+     * 生成分享海报
+     */
+    @PostMapping("/api/galleries/{galleryId}/share-poster")
+    public GenerateSharePosterResponse generateSharePoster(
+            @PathVariable("galleryId") String galleryId,
+            @Valid @RequestBody(required = false) GenerateSharePosterRequest request
+    ) {
+        String template = request != null && request.template() != null
+                ? request.template()
+                : "MINIMAL";
+
+        GenerateSharePosterCommand command = new GenerateSharePosterCommand(galleryId, template);
+        GenerateSharePosterResult result = shareLinkFacade.generateSharePoster(command);
+
+        return new GenerateSharePosterResponse(
+                result.posterUrl(),
+                result.template()
+        );
+    }
+
     // Request & Response records
 
     public record CreateShareLinkRequest(Instant expiresAt) {}
@@ -93,5 +116,12 @@ public class ShareLinkController {
             Instant expiresAt,
             Instant lastAccessedAt,
             Instant createdAt
+    ) {}
+
+    public record GenerateSharePosterRequest(String template) {}
+
+    public record GenerateSharePosterResponse(
+            String posterUrl,
+            String template
     ) {}
 }

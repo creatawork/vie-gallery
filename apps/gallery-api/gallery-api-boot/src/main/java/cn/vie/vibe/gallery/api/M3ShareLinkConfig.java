@@ -14,18 +14,35 @@ import org.springframework.context.annotation.Configuration;
 public class M3ShareLinkConfig {
 
     @Bean
+    public QRCodeGenerator qrCodeGenerator() {
+        return new QRCodeGenerator();
+    }
+
+    @Bean
+    public SharePosterService sharePosterService(
+            ObjectStoragePort objectStoragePort,
+            QRCodeGenerator qrCodeGenerator
+    ) {
+        return new SharePosterService(objectStoragePort, qrCodeGenerator);
+    }
+
+    @Bean
     public ShareLinkFacade shareLinkFacade(
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
+            PhotoRepository photoRepository,
             TokenGenerator tokenGenerator,
             @Value("${gallery.public.base-url:http://localhost:5174}") String publicBaseUrl,
+            SharePosterService sharePosterService,
             WorkspaceAuthorizationPolicy authorization
     ) {
         return new ShareLinkFacade(
                 shareLinkRepository,
                 galleryRepository,
+                photoRepository,
                 tokenGenerator,
                 publicBaseUrl,
+                sharePosterService,
                 authorization
         );
     }
