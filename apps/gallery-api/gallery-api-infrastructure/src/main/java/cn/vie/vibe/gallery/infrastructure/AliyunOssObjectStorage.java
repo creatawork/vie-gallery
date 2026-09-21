@@ -108,7 +108,13 @@ public class AliyunOssObjectStorage implements ObjectStoragePort {
             Date expiration = new Date(System.currentTimeMillis() + ttl.toMillis());
             GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(bucket, key);
             request.setExpiration(expiration);
-            request.setMethod(com.aliyun.oss.HttpMethod.GET); // 明确指定GET方法用于读取
+            request.setMethod(com.aliyun.oss.HttpMethod.GET);
+            
+            // 设置响应头，让浏览器预览而不是下载
+            // thumbnail 是 JPEG 格式，设置正确的 Content-Type
+            com.aliyun.oss.model.ResponseHeaderOverrides responseHeaders = new com.aliyun.oss.model.ResponseHeaderOverrides();
+            responseHeaders.setContentType("image/jpeg");
+            request.setResponseHeaders(responseHeaders);
             
             URL url = ossClient.generatePresignedUrl(request);
             return url.toURI();
