@@ -1,5 +1,6 @@
 const csrfState = { token: '' }
-const REQUEST_TIMEOUT_MS = 15_000
+const REQUEST_TIMEOUT_MS = 30_000  // 通用请求超时 30 秒
+const UPLOAD_TIMEOUT_MS = 120_000  // 文件上传超时 120 秒（足够处理大文件和后端图片处理）
 
 function readCookie(name: string): string | undefined {
   return document.cookie.split('; ').find(value => value.startsWith(`${name}=`))?.split('=').slice(1).join('=')
@@ -39,8 +40,13 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   const headers = new Headers(init.headers)
   const isMutating = !['GET', 'HEAD', 'OPTIONS'].includes(method)
   if (isMutating) headers.set('X-XSRF-TOKEN', await csrfToken())
+  
+  // 检测是否为文件上传请求（body 是 FormData）
+  const isFileUpload = init.body instanceof FormData
+  const timeout = isFileUpload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS
+  
   const response = isMutating
-    ? await fetchWithTimeout(input, { ...init, headers, credentials: 'include' }, REQUEST_TIMEOUT_MS)
+    ? await fetchWithTimeout(input, { ...init, headers, credentials: 'include' }, timeout)
     : await fetch(input, { ...init, headers, credentials: 'include' })
   if (response.status === 403 && isMutating) {
     csrfState.token = ''
