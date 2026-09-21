@@ -71,8 +71,13 @@ public class SharePosterService {
             // 生成可访问的 URL
             return objectStorage.createReadUrl(posterKey, Duration.ofDays(365)).toString();
 
+        } catch (IOException e) {
+            throw new SharePosterGenerationException("Failed to download cover image: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SharePosterGenerationException("Poster generation was interrupted", e);
         } catch (Exception e) {
-            throw new SharePosterGenerationException("Failed to generate share poster", e);
+            throw new SharePosterGenerationException("Failed to generate share poster: " + e.getMessage(), e);
         }
     }
 

@@ -82,17 +82,24 @@ public class ShareLinkController {
             @PathVariable("galleryId") String galleryId,
             @Valid @RequestBody(required = false) GenerateSharePosterRequest request
     ) {
-        String template = request != null && request.template() != null
-                ? request.template()
-                : "MINIMAL";
+        try {
+            String template = request != null && request.template() != null
+                    ? request.template()
+                    : "MINIMAL";
 
-        GenerateSharePosterCommand command = new GenerateSharePosterCommand(galleryId, template);
-        GenerateSharePosterResult result = shareLinkFacade.generateSharePoster(command);
+            GenerateSharePosterCommand command = new GenerateSharePosterCommand(galleryId, template);
+            GenerateSharePosterResult result = shareLinkFacade.generateSharePoster(command);
 
-        return new GenerateSharePosterResponse(
-                result.posterUrl(),
-                result.template()
-        );
+            return new GenerateSharePosterResponse(
+                    result.posterUrl(),
+                    result.template()
+            );
+        } catch (Exception e) {
+            // 记录详细错误日志
+            System.err.println("Failed to generate poster for gallery " + galleryId + ": " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     // Request & Response records
