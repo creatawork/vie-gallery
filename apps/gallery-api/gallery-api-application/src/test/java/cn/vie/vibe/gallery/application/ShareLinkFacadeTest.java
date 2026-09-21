@@ -5,6 +5,8 @@ import cn.vie.vibe.gallery.domain.Gallery;
 import cn.vie.vibe.gallery.domain.GalleryVisibility;
 import cn.vie.vibe.gallery.domain.GalleryStatus;
 import cn.vie.vibe.gallery.domain.MembershipRole;
+import cn.vie.vibe.gallery.domain.Photo;
+import cn.vie.vibe.gallery.domain.PhotoStatus;
 import cn.vie.vibe.gallery.domain.ShareLink;
 import cn.vie.vibe.gallery.domain.ShareLinkStatus;
 import cn.vie.vibe.gallery.domain.TenantContext;
@@ -162,8 +164,10 @@ class ShareLinkFacadeTest {
     private static final class Fixture {
         final GalleryStore galleries = new GalleryStore();
         final ShareLinkStore links = new ShareLinkStore();
+        final PhotoStore photos = new PhotoStore();
         final FixedTokenGenerator tokens = new FixedTokenGenerator();
-        final ShareLinkFacade facade = new ShareLinkFacade(links, galleries, tokens, "https://viewer.test");
+        final NoOpSharePosterService posterService = new NoOpSharePosterService();
+        final ShareLinkFacade facade = new ShareLinkFacade(links, galleries, photos, tokens, "https://viewer.test", posterService);
 
         Fixture(UUID tenantId, Gallery gallery) {
             galleries.values.put(gallery.id(), gallery);
@@ -266,6 +270,32 @@ class ShareLinkFacadeTest {
 
         public boolean verifyToken(String rawToken, String tokenHash) {
             return hashToken(rawToken).equals(tokenHash);
+        }
+    }
+
+    private static final class PhotoStore implements PhotoRepository {
+        public Photo save(Photo photo) { return photo; }
+        public List<Photo> findByGallery(UUID tenantId, UUID galleryId) { return List.of(); }
+        public Optional<Photo> findById(UUID tenantId, UUID photoId) { return Optional.empty(); }
+        public Optional<Photo> findById(UUID photoId) { return Optional.empty(); }
+        public int countByGalleryId(UUID galleryId) { return 0; }
+        public List<Photo> findByGalleryIdWithPagination(UUID galleryId, int offset, int limit) { return List.of(); }
+        public List<Photo> findPublicReadyByGalleryId(UUID tenantId, UUID galleryId, int offset, int limit) { return List.of(); }
+        public int countPublicReadyByGalleryId(UUID tenantId, UUID galleryId) { return 0; }
+        public int countFailedByGalleryId(UUID tenantId, UUID galleryId) { return 0; }
+        public int updateStatus(UUID tenantId, UUID photoId, PhotoStatus status) { return 0; }
+        public int updateMetadata(UUID tenantId, UUID photoId, String title, Integer sortOrder, Boolean cover) { return 0; }
+        public int clearCoverByGallery(UUID tenantId, UUID galleryId) { return 0; }
+        public int softDelete(UUID tenantId, UUID photoId) { return 0; }
+    }
+
+    private static final class NoOpSharePosterService extends SharePosterService {
+        public NoOpSharePosterService() {
+            super(null, null);
+        }
+        @Override
+        public String generatePoster(GalleryInfo gallery, String shareUrl, PosterTemplate template) {
+            return "https://test.example.com/poster.png";
         }
     }
 }
