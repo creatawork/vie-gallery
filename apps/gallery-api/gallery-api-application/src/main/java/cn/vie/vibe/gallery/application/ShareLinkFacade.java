@@ -13,6 +13,8 @@ public class ShareLinkFacade {
     private final ShareLinkRepository shareLinkRepository;
     private final GalleryRepository galleryRepository;
     private final PhotoRepository photoRepository;
+    private final StorageObjectRepository storageObjectRepository;
+    private final ObjectStoragePort objectStoragePort;
     private final TokenGenerator tokenGenerator;
     private final String publicBaseUrl;
     private final WorkspaceAuthorizationPolicy authorization;
@@ -22,18 +24,23 @@ public class ShareLinkFacade {
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
             PhotoRepository photoRepository,
+            StorageObjectRepository storageObjectRepository,
+            ObjectStoragePort objectStoragePort,
             TokenGenerator tokenGenerator,
             String publicBaseUrl,
             SharePosterService sharePosterService
     ) {
-        this(shareLinkRepository, galleryRepository, photoRepository, tokenGenerator, publicBaseUrl,
-                sharePosterService, new WorkspaceAuthorizationPolicy(TenantContextHolder::current));
+        this(shareLinkRepository, galleryRepository, photoRepository, storageObjectRepository,
+                objectStoragePort, tokenGenerator, publicBaseUrl, sharePosterService,
+                new WorkspaceAuthorizationPolicy(TenantContextHolder::current));
     }
 
     public ShareLinkFacade(
             ShareLinkRepository shareLinkRepository,
             GalleryRepository galleryRepository,
             PhotoRepository photoRepository,
+            StorageObjectRepository storageObjectRepository,
+            ObjectStoragePort objectStoragePort,
             TokenGenerator tokenGenerator,
             String publicBaseUrl,
             SharePosterService sharePosterService,
@@ -42,6 +49,8 @@ public class ShareLinkFacade {
         this.shareLinkRepository = shareLinkRepository;
         this.galleryRepository = galleryRepository;
         this.photoRepository = photoRepository;
+        this.storageObjectRepository = storageObjectRepository;
+        this.objectStoragePort = objectStoragePort;
         this.tokenGenerator = tokenGenerator;
         this.publicBaseUrl = publicBaseUrl;
         this.sharePosterService = sharePosterService;
@@ -235,8 +244,13 @@ public class ShareLinkFacade {
     }
 
     private String buildPhotoUrl(Photo photo) {
-        // 简化版：返回缩略图路径
-        // 实际应该从 ObjectStorage 获取完整URL
-        return String.format("%s/thumbnails/%s.jpg", publicBaseUrl, photo.id());
+        // 从 StorageObject 获取真实的图片 URL
+        return storageObjectRepository.findById(photo.tenantId(), photo.storageObjectId())
+                .filter(object -> object.status() == StorageObjectStatus.READY)
+                .map(object -> {
+                    String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
+                    return objectStoragePort.createReadUrl(key, ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
+                })
+                .orElse(null);
     }
 }

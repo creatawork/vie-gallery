@@ -9,6 +9,7 @@ import cn.vie.vibe.gallery.domain.Photo;
 import cn.vie.vibe.gallery.domain.PhotoStatus;
 import cn.vie.vibe.gallery.domain.ShareLink;
 import cn.vie.vibe.gallery.domain.ShareLinkStatus;
+import cn.vie.vibe.gallery.domain.StorageObject;
 import cn.vie.vibe.gallery.domain.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -165,9 +166,12 @@ class ShareLinkFacadeTest {
         final GalleryStore galleries = new GalleryStore();
         final ShareLinkStore links = new ShareLinkStore();
         final PhotoStore photos = new PhotoStore();
+        final StorageObjectStore storageObjects = new StorageObjectStore();
+        final NoOpObjectStoragePort objectStorage = new NoOpObjectStoragePort();
         final FixedTokenGenerator tokens = new FixedTokenGenerator();
         final NoOpSharePosterService posterService = new NoOpSharePosterService();
-        final ShareLinkFacade facade = new ShareLinkFacade(links, galleries, photos, tokens, "https://viewer.test", posterService);
+        final ShareLinkFacade facade = new ShareLinkFacade(links, galleries, photos, storageObjects, 
+                objectStorage, tokens, "https://viewer.test", posterService);
 
         Fixture(UUID tenantId, Gallery gallery) {
             galleries.values.put(gallery.id(), gallery);
@@ -296,6 +300,23 @@ class ShareLinkFacadeTest {
         @Override
         public String generatePoster(GalleryInfo gallery, String shareUrl, PosterTemplate template) {
             return "https://test.example.com/poster.png";
+        }
+    }
+
+    private static final class StorageObjectStore implements StorageObjectRepository {
+        public StorageObject save(StorageObject object) { return object; }
+        public Optional<StorageObject> findById(UUID tenantId, UUID objectId) { return Optional.empty(); }
+        public int markReady(UUID tenantId, UUID objectId, String thumbnailKey, Integer width, Integer height) { return 0; }
+        public int markFailed(UUID tenantId, UUID objectId) { return 0; }
+        public int softDelete(UUID tenantId, UUID objectId) { return 0; }
+    }
+
+    private static final class NoOpObjectStoragePort implements ObjectStoragePort {
+        public StoredObject put(String key, java.io.InputStream content, String contentType, long size) { return null; }
+        public java.io.InputStream get(String key) { return null; }
+        public void delete(String key) {}
+        public java.net.URI createReadUrl(String key, java.time.Duration ttl) { 
+            return java.net.URI.create("https://storage.test/" + key); 
         }
     }
 }

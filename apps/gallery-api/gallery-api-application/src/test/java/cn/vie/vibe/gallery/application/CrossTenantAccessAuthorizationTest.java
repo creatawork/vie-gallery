@@ -73,6 +73,7 @@ class CrossTenantAccessAuthorizationTest {
         galleryRepo.save(galleryA);
 
         ShareLinkFacade facade = new ShareLinkFacade(linkRepo, galleryRepo, new InMemoryPhotoRepo(), 
+                new InMemoryStorageObjectRepo(), new NoOpObjectStoragePort(),
                 tokenGen, "https://viewer.test", new NoOpSharePosterService());
 
         // Tenant A creates share link
@@ -177,6 +178,23 @@ class CrossTenantAccessAuthorizationTest {
         @Override
         public String generatePoster(GalleryInfo gallery, String shareUrl, PosterTemplate template) {
             return "https://test.example.com/poster.png";
+        }
+    }
+
+    private static final class InMemoryStorageObjectRepo implements StorageObjectRepository {
+        public StorageObject save(StorageObject object) { return object; }
+        public Optional<StorageObject> findById(UUID tenantId, UUID objectId) { return Optional.empty(); }
+        public int markReady(UUID tenantId, UUID objectId, String thumbnailKey, Integer width, Integer height) { return 0; }
+        public int markFailed(UUID tenantId, UUID objectId) { return 0; }
+        public int softDelete(UUID tenantId, UUID objectId) { return 0; }
+    }
+
+    private static final class NoOpObjectStoragePort implements ObjectStoragePort {
+        public StoredObject put(String key, java.io.InputStream content, String contentType, long size) { return null; }
+        public java.io.InputStream get(String key) { return null; }
+        public void delete(String key) {}
+        public java.net.URI createReadUrl(String key, java.time.Duration ttl) { 
+            return java.net.URI.create("https://storage.test/" + key); 
         }
     }
 }
