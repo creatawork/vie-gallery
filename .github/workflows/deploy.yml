@@ -15,7 +15,7 @@ jobs:
   build-and-deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -96,33 +96,69 @@ jobs:
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
           set -e
           cd ~/vie-gallery
-          
+
           # Load Docker image
           docker load < vie-gallery-api.tar.gz
           rm vie-gallery-api.tar.gz
-          
-          # Start services
+
           cd infra
-          docker compose -f docker-compose.production.yml down
-          docker compose -f docker-compose.production.yml up -d
-          
-          # Wait for services to be healthy
-          echo "Waiting for services to be healthy..."
-          sleep 10
-          docker compose -f docker-compose.production.yml ps
-          
+
+          # Fail fast: .env.production must exist and contain every variable the
+          # API needs at boot. A missing variable used to surface only later as
+          # a 502 from Nginx, after the API container had crashed in a loop.
+          if [ ! -f .env.production ]; then
+            echo "ERROR: ~/vie-gallery/infra/.env.production not found on server" >&2
+            exit 1
+          fi
+          for var in \
+            GALLERY_SECURITY_ENCRYPTION_SECRET \
+            GALLERY_SECURITY_ENCRYPTION_SALT \
+            GALLERY_SECURITY_JWT_SECRET \
+            ALIYUN_OSS_ENDPOINT \
+            ALIYUN_OSS_ACCESS_KEY_ID \
+            ALIYUN_OSS_ACCESS_KEY_SECRET \
+            ALIYUN_OSS_BUCKET; do
+            if ! grep -q "^${var}=.\+" .env.production; then
+              echo "ERROR: ${var} is missing or empty in .env.production" >&2
+              exit 1
+            fi
+          done
+
+          # Recreate only containers whose configuration changed, so
+          # mysql/redis/minio keep running across deploys. --env-file is what
+          # feeds the compose variables; without it the API boots with empty
+          # secrets and Nginx answers every request with 502.
+          docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait --wait-timeout 240
+
+          docker compose -f docker-compose.production.yml --env-file .env.production ps
+          docker logs vie-gallery-api --tail=30 || true
+
           # Configure Nginx
           sudo cp nginx-prod.conf /etc/nginx/sites-available/vie-gallery
           sudo ln -sf /etc/nginx/sites-available/vie-gallery /etc/nginx/sites-enabled/
           sudo nginx -t
           sudo systemctl reload nginx
-          
+
           echo "Deployment completed successfully!"
           ENDSSH
 
       - name: Verify deployment
         run: |
-          sleep 5
-          echo "Checking API health..."
-          curl -f http://${{ secrets.SERVER_HOST }}:8088/api/health || echo "API health check failed"
-          echo "Deployment verification completed"
+          ok=0
+          for i in $(seq 1 12); do
+            if ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "curl -fsS http://localhost:8088/actuator/health > /dev/null 2>&1"; then
+              echo "API healthy on :8088"
+              ok=1
+              break
+            fi
+            echo "Waiting for API to become healthy... ($i/12)"
+            sleep 5
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::API did not become healthy within 60s"
+            ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "docker logs vie-gallery-api --tail=80" || true
+            exit 1
+          fi
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "curl -fsS -H 'Host: gallery.vie-vibe.cn' http://localhost/api/auth/csrf > /dev/null" \
+            && echo "Nginx -> API proxy OK" \
+            || { echo "::error::Nginx -> API proxy check failed"; exit 1; }

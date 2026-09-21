@@ -63,15 +63,22 @@ services:
     container_name: vie-gallery-api
     ports:
       - "8088:8080"
+    # Secrets (security keys, Aliyun OSS credentials) are injected straight
+    # from this file into the container, so the API boots correctly even when
+    # someone runs `docker compose up` without --env-file on the command line.
+    # This file must therefore always exist next to the compose file.
+    env_file:
+      - .env.production
     environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # aliyun-oss profile activates AliyunOssObjectStorage for media storage
+      SPRING_PROFILES_ACTIVE: prod,aliyun-oss
       # Database
       DB_URL: jdbc:mysql://mysql:3306/vie_gallery?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
       DB_USERNAME: vie_user
       DB_PASSWORD: ${MYSQL_PASSWORD:-vie_password_2026}
       # Redis
       REDIS_URL: redis://redis:6379
-      # Storage (MinIO)
+      # Storage (MinIO kept only as the internal storage-port fallback config)
       STORAGE_ENDPOINT: http://minio:9000
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://gallery.vie-vibe.cn:9000}
       STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
@@ -80,23 +87,15 @@ services:
       # URLs
       ADMIN_PUBLIC_BASE_URL: ${ADMIN_PUBLIC_BASE_URL:-http://gallery.vie-vibe.cn/app}
       GALLERY_PUBLIC_BASE_URL: ${GALLERY_PUBLIC_BASE_URL:-http://gallery.vie-vibe.cn/g}
-      # Mail (optional - use dummy values for now)
+      # Mail (optional - values come from .env.production via env_file)
       MAIL_HOST: ${MAIL_HOST:-localhost}
       MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USERNAME: ${MAIL_USERNAME:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-noreply@vie-vibe.cn}
       MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-false}
       MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-false}
-      # Security
-      GALLERY_SECURITY_ENCRYPTION_SECRET: ${GALLERY_SECURITY_ENCRYPTION_SECRET}
-      GALLERY_SECURITY_ENCRYPTION_SALT: ${GALLERY_SECURITY_ENCRYPTION_SALT}
-      GALLERY_SECURITY_JWT_SECRET: ${GALLERY_SECURITY_JWT_SECRET}
-      # Aliyun OSS
-      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT}
-      ALIYUN_OSS_ACCESS_KEY_ID: ${ALIYUN_OSS_ACCESS_KEY_ID}
-      ALIYUN_OSS_ACCESS_KEY_SECRET: ${ALIYUN_OSS_ACCESS_KEY_SECRET}
-      ALIYUN_OSS_BUCKET: ${ALIYUN_OSS_BUCKET}
+      # SMTP 尚未配置真实服务器（.env.production 里是占位值），
+      # 关闭 mail 健康指标，避免 /actuator/health 永远 DOWN 拖垮部署门禁
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
     networks:
       - vie-network
     depends_on:
@@ -106,6 +105,12 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   admin:
