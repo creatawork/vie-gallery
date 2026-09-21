@@ -55,6 +55,10 @@ public class AliyunOssObjectStorage implements ObjectStoragePort {
             metadata.setContentType(contentType);
             metadata.setContentLength(size);
             
+            // 设置 inline disposition，让浏览器预览而不是下载
+            // 这样就不需要在预签名 URL 中覆盖响应头
+            metadata.setContentDisposition("inline");
+            
             PutObjectRequest putObjectRequest = new PutObjectRequest(bucket, key, content, metadata);
             ossClient.putObject(putObjectRequest);
             
@@ -110,11 +114,9 @@ public class AliyunOssObjectStorage implements ObjectStoragePort {
             request.setExpiration(expiration);
             request.setMethod(com.aliyun.oss.HttpMethod.GET);
             
-            // 设置响应头，让浏览器预览而不是下载
-            // thumbnail 是 JPEG 格式，设置正确的 Content-Type
-            com.aliyun.oss.model.ResponseHeaderOverrides responseHeaders = new com.aliyun.oss.model.ResponseHeaderOverrides();
-            responseHeaders.setContentType("image/jpeg");
-            request.setResponseHeaders(responseHeaders);
+            // 不使用 ResponseHeaderOverrides，因为：
+            // 1. 会导致签名验证失败（403）
+            // 2. 改为在上传时设置 Content-Disposition: inline
             
             URL url = ossClient.generatePresignedUrl(request);
             return url.toURI();
