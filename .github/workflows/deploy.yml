@@ -169,6 +169,24 @@ jobs:
           # Start API and wait for all containers to become healthy
           echo "Starting API container and waiting for health checks..."
           docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait --wait-timeout 240
+          
+          # If health check still fails, get detailed logs
+          if [ $? -ne 0 ]; then
+            echo "::group::API Container Logs"
+            docker logs vie-gallery-api --tail 100
+            echo "::endgroup::"
+            
+            echo "::group::API Health Check Details"
+            docker inspect vie-gallery-api --format='{{json .State.Health}}' | jq '.'
+            echo "::endgroup::"
+            
+            echo "::group::Database Migration Status"
+            docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery \
+              -e "SELECT version, description, installed_on, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 5;"
+            echo "::endgroup::"
+            
+            exit 1
+          fi
 
           docker compose -f docker-compose.production.yml --env-file .env.production ps
           docker logs vie-gallery-api --tail=30 || true
