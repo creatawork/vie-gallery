@@ -128,7 +128,9 @@ jobs:
           # mysql/redis/minio keep running across deploys. --env-file is what
           # feeds the compose variables; without it the API boots with empty
           # secrets and Nginx answers every request with 502.
-          docker compose -f docker-compose.production.yml --env-file .env.production up -d --no-wait
+          
+          # Start containers in detached mode without waiting
+          docker compose -f docker-compose.production.yml --env-file .env.production up -d
 
           # Wait for MySQL to be ready for migration checks
           echo "Waiting for MySQL to be ready..."
@@ -139,6 +141,10 @@ jobs:
             fi
             sleep 2
           done
+
+          # Stop API container before applying migration
+          echo "Stopping API container for migration..."
+          docker stop vie-gallery-api || true
 
           # Pre-flight check: ensure raw_token column exists before API starts
           echo "Checking for raw_token column in share_link table..."
@@ -160,8 +166,8 @@ jobs:
             echo "✅ raw_token column exists"
           fi
 
-          # Now wait for all containers including API
-          echo "Waiting for all containers to become healthy..."
+          # Start API and wait for all containers to become healthy
+          echo "Starting API container and waiting for health checks..."
           docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait --wait-timeout 240
 
           docker compose -f docker-compose.production.yml --env-file .env.production ps
