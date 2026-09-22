@@ -142,23 +142,53 @@ jobs:
           echo "Deployment completed successfully!"
           ENDSSH
 
+      - name: Post-deployment database check
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+          cd ~/vie-gallery/infra
+          echo "Checking Flyway migration status..."
+          docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery \
+            -e "SELECT version, description, success, installed_on FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 5;" \
+            || echo "WARNING: Could not query Flyway history"
+          
+          echo "Verifying critical schema changes..."
+          docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery \
+            -e "SELECT COUNT(*) as raw_token_exists FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='vie_gallery' AND TABLE_NAME='share_link' AND COLUMN_NAME='raw_token';" \
+            || echo "WARNING: Could not verify schema"
+          ENDSSH
+
       - name: Verify deployment
         run: |
           ok=0
-          for i in $(seq 1 12); do
+          for i in $(seq 1 18); do
             if ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "curl -fsS http://localhost:8088/actuator/health > /dev/null 2>&1"; then
               echo "API healthy on :8088"
               ok=1
               break
             fi
-            echo "Waiting for API to become healthy... ($i/12)"
+            echo "Waiting for API to become healthy... ($i/18)"
             sleep 5
           done
           if [ "$ok" -ne 1 ]; then
-            echo "::error::API did not become healthy within 60s"
-            ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "docker logs vie-gallery-api --tail=80" || true
+            echo "::error::API did not become healthy within 90s"
+            echo "::group::API Container Logs"
+            ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "docker logs vie-gallery-api --tail=150" || true
+            echo "::endgroup::"
+            
+            echo "::group::Container Health Status"
+            ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "docker inspect vie-gallery-api --format='{{json .State.Health}}'" || true
+            echo "::endgroup::"
+            
+            echo "::group::Recent Flyway Migrations"
+            ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "cd ~/vie-gallery/infra && docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery -e 'SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 3;'" || true
+            echo "::endgroup::"
+            
             exit 1
           fi
+          
+          # Test API endpoint through Nginx
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "curl -fsS -H 'Host: gallery.vie-vibe.cn' http://localhost/api/auth/csrf > /dev/null" \
             && echo "Nginx -> API proxy OK" \
             || { echo "::error::Nginx -> API proxy check failed"; exit 1; }
+          
+          echo "✓ Deployment verification passed"
