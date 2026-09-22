@@ -1,0 +1,430 @@
+/**
+ * VIE Gallery - Enhanced Navigation Styles
+ * 导航栏增强样式
+ */
+
+/* ==========================================================================
+   Tab Navigation Enhancement
+   ========================================================================== */
+
+/* 通用 Tab 容器 */
+.hall-tabs,
+.space-tabs,
+.config-tabs {
+  position: relative;
+}
+
+/* Tab 项基础增强 */
+.hall-tab,
+.space-tab,
+.config-tab {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Tab 悬浮效果 */
+.hall-tab:hover,
+.space-tab:hover,
+.config-tab:hover {
+  color: #00b88f;
+  transform: translateY(-1px);
+}
+
+/* 活跃 Tab 下划线滑动动画 */
+.hall-tab.is-active::after,
+.space-tab.is-active::after,
+.config-tab.is-active::after,
+.hall-tab.router-link-active::after,
+.space-tab.router-link-active::after {
+  content: '';
+  position: absolute;
+  bottom: 8px;
+  left: 10%;
+  right: 10%;
+  height: 3px;
+  background: linear-gradient(90deg, #00b88f, #00c89f);
+  border-radius: 999px;
+  animation: tab-underline-slide 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes tab-underline-slide {
+  0% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scaleX(1.1);
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+/* Tab 图标动画 */
+.hall-tab.is-active svg,
+.space-tab.is-active svg,
+.config-tab.is-active svg {
+  animation: tab-icon-bounce 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes tab-icon-bounce {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2) rotate(-5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* ==========================================================================
+   Dropdown Menu Enhancement
+   ========================================================================== */
+
+/* 用户菜单下拉 */
+.user-menu,
+.space-user-menu,
+.card-menu {
+  animation: dropdown-fade-in 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: top right;
+}
+
+@keyframes dropdown-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 下拉菜单项悬浮 */
+.user-menu button:hover,
+.space-user-menu button:hover,
+.card-menu button:hover {
+  transform: translateX(3px);
+  transition: all 0.15s ease;
+}
+
+/* ==========================================================================
+   Breadcrumb Enhancement
+   ========================================================================== */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.breadcrumb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+  transition: color 0.15s ease;
+}
+
+.breadcrumb-item:hover {
+  color: #00b88f;
+}
+
+.breadcrumb-item.is-active {
+  color: #111827;
+  font-weight: 600;
+}
+
+.breadcrumb-separator {
+  color: #d1d5db;
+}
+
+/* ==========================================================================
+   Navigation Bar Animation
+   ========================================================================== */
+
+/* 导航栏进入动画 */
+.hall-nav,
+.space-nav,
+.config-nav {
+  animation: navbar-slide-down 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes navbar-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   Avatar Enhancement
+   ========================================================================== */
+
+/* 用户头像悬浮效果 */
+.avatar,
+.space-avatar {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.user-chip:hover .avatar,
+.space-user:hover .space-avatar {
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(18, 185, 129, 0.3);
+}
+
+/* ==========================================================================
+   Back Button Enhancement
+   ========================================================================== */
+
+.back-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.back-btn:hover {
+  background: #e5e7eb;
+  transform: translateX(-3px);
+}
+
+.back-btn:active {
+  transform: translateX(-1px) scale(0.95);
+}
+
+.back-btn svg {
+  transition: transform 0.2s ease;
+}
+
+.back-btn:hover svg {
+  transform: translateX(-2px);
+}
+
+/* ==========================================================================
+   Badge & Pill Enhancement
+   ========================================================================== */
+
+/* 状态徽章 */
+.vis-pill,
+.status-pill,
+.badge-draft-config {
+  transition: all 0.2s ease;
+  animation: badge-pop 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.vis-pill:hover,
+.status-pill:hover {
+  transform: scale(1.05);
+}
+
+/* ==========================================================================
+   Side Tabs Enhancement
+   ========================================================================== */
+
+/* 侧边栏 Tab */
+.side-tabs {
+  position: relative;
+}
+
+.side-tab {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.side-tab:hover:not(.active) {
+  background: #f8fafc;
+  transform: translateX(2px);
+}
+
+.side-tab.active {
+  animation: side-tab-activate 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes side-tab-activate {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ==========================================================================
+   Toolbar Enhancement
+   ========================================================================== */
+
+/* 工具栏按钮组 */
+.space-toolbar,
+.photo-toolbar {
+  animation: toolbar-fade-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+}
+
+@keyframes toolbar-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 视图切换按钮 */
+.view-toggle .view-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.view-toggle .view-btn:hover:not(.active) {
+  background: rgba(0, 184, 143, 0.1);
+  color: #00b88f;
+  transform: scale(1.05);
+}
+
+.view-toggle .view-btn.active {
+  animation: view-btn-activate 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes view-btn-activate {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15) rotate(-5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* ==========================================================================
+   Status Filter Tabs
+   ========================================================================== */
+
+.status-filter-group,
+.status-tabs {
+  animation: filter-slide-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.1s both;
+}
+
+@keyframes filter-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.status-tab-btn {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.status-tab-btn:hover:not(.active) {
+  color: #00b88f;
+  transform: translateY(-1px);
+}
+
+.status-tab-btn.active {
+  animation: status-tab-activate 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes status-tab-activate {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ==========================================================================
+   Search Input Enhancement
+   ========================================================================== */
+
+.search-box {
+  animation: search-fade-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both;
+}
+
+@keyframes search-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.search-input:focus ~ .search-icon,
+.search-input:focus + .search-icon {
+  color: #00b88f;
+  animation: search-icon-bounce 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes search-icon-bounce {
+  0%, 100% {
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.2);
+  }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .hall-tab,
+  .space-tab,
+  .config-tab,
+  .side-tab,
+  .view-btn,
+  .status-tab-btn,
+  .user-menu,
+  .space-user-menu,
+  .hall-nav,
+  .space-nav {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  .hall-tab.is-active::after,
+  .space-tab.is-active::after {
+    height: 4px;
+    background: currentColor;
+  }
+}

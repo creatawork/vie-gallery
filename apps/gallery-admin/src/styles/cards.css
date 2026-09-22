@@ -1,0 +1,435 @@
+/**
+ * VIE Gallery - Enhanced Card Styles
+ * 卡片增强样式系统
+ */
+
+/* ==========================================================================
+   Photo Card Enhancement
+   ========================================================================== */
+
+/* 照片卡片 3D 悬浮效果 */
+.photo-card,
+.space-card,
+.gallery-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+.photo-card:hover,
+.space-card:hover,
+.gallery-card:hover {
+  transform: translateY(-6px) rotateX(2deg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* 照片卡片图片缩放 */
+.photo-card img,
+.space-card img,
+.gallery-card img {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.photo-card:hover img,
+.space-card:hover img,
+.gallery-card:hover img {
+  transform: scale(1.08);
+}
+
+/* ==========================================================================
+   Card Cover Enhancement
+   ========================================================================== */
+
+.card-cover,
+.cover-image-container {
+  position: relative;
+  overflow: hidden;
+}
+
+/* 封面遮罩渐变 */
+.card-cover::after,
+.cover-image-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 50%,
+    rgba(0, 0, 0, 0.05) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.photo-card:hover .card-cover::after,
+.space-card:hover .card-cover::after {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   Card Badge & Tag Enhancement
+   ========================================================================== */
+
+/* 封面标记 */
+.cover-badge,
+.is-cover-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(0, 184, 143, 0.95);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transform: scale(0);
+  transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.photo-card:hover .cover-badge,
+.photo-card .cover-badge.is-visible,
+.space-card:hover .cover-badge,
+.space-card .cover-badge.is-visible {
+  transform: scale(1);
+}
+
+/* 状态标签动画 */
+.status-tag,
+.vis-tag {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: tag-pop-in 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes tag-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-10deg);
+  }
+  50% {
+    transform: scale(1.1) rotate(5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.photo-card:hover .status-tag,
+.space-card:hover .vis-tag {
+  transform: translateY(-2px) scale(1.05);
+}
+
+/* ==========================================================================
+   Card Actions Enhancement
+   ========================================================================== */
+
+/* 卡片操作按钮容器 */
+.card-actions,
+.photo-actions {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.photo-card:hover .card-actions,
+.photo-card:focus-within .card-actions,
+.space-card:hover .photo-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 操作按钮序列动画 */
+.card-actions button,
+.photo-actions button {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.photo-card:hover .card-actions button:nth-child(1),
+.photo-card:focus-within .card-actions button:nth-child(1) {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0.05s;
+}
+
+.photo-card:hover .card-actions button:nth-child(2),
+.photo-card:focus-within .card-actions button:nth-child(2) {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0.1s;
+}
+
+.photo-card:hover .card-actions button:nth-child(3),
+.photo-card:focus-within .card-actions button:nth-child(3) {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0.15s;
+}
+
+/* ==========================================================================
+   Card Interaction States
+   ========================================================================== */
+
+/* 卡片选中状态 */
+.photo-card.is-selected,
+.space-card.is-selected {
+  box-shadow: 0 0 0 3px #00b88f,
+              0 12px 24px rgba(0, 184, 143, 0.25);
+  transform: scale(0.98);
+}
+
+.photo-card.is-selected:hover {
+  transform: translateY(-4px) scale(0.98);
+}
+
+/* 卡片加载状态 */
+.photo-card.is-loading,
+.space-card.is-loading {
+  pointer-events: none;
+  opacity: 0.6;
+  animation: card-pulse 2s ease-in-out infinite;
+}
+
+@keyframes card-pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* ==========================================================================
+   Grid Enhancement
+   ========================================================================== */
+
+/* 照片网格 stagger 动画 */
+.photo-grid > *,
+.space-grid > * {
+  animation: card-fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.photo-grid > *:nth-child(1),
+.space-grid > *:nth-child(1) { animation-delay: 0.05s; }
+
+.photo-grid > *:nth-child(2),
+.space-grid > *:nth-child(2) { animation-delay: 0.1s; }
+
+.photo-grid > *:nth-child(3),
+.space-grid > *:nth-child(3) { animation-delay: 0.15s; }
+
+.photo-grid > *:nth-child(4),
+.space-grid > *:nth-child(4) { animation-delay: 0.2s; }
+
+.photo-grid > *:nth-child(5),
+.space-grid > *:nth-child(5) { animation-delay: 0.25s; }
+
+.photo-grid > *:nth-child(6),
+.space-grid > *:nth-child(6) { animation-delay: 0.3s; }
+
+.photo-grid > *:nth-child(7),
+.space-grid > *:nth-child(7) { animation-delay: 0.35s; }
+
+.photo-grid > *:nth-child(8),
+.space-grid > *:nth-child(8) { animation-delay: 0.4s; }
+
+@keyframes card-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   Create Card Enhancement
+   ========================================================================== */
+
+.create-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.create-card::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: radial-gradient(circle, rgba(0, 184, 143, 0.1) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.create-card:hover {
+  background: rgba(220, 252, 231, 0.85);
+  border-color: #00b88f;
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(0, 184, 143, 0.15);
+}
+
+.create-card:hover::before {
+  opacity: 1;
+  animation: create-card-ripple 2s ease-in-out infinite;
+}
+
+@keyframes create-card-ripple {
+  0% {
+    transform: scale(0.8) rotate(0deg);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(2) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.create-card .create-plus {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.create-card:hover .create-plus {
+  transform: rotate(90deg) scale(1.1);
+  background: rgba(0, 184, 143, 0.25);
+}
+
+/* ==========================================================================
+   Card Metrics & Meta
+   ========================================================================== */
+
+.card-metrics-row,
+.card-meta {
+  animation: card-meta-slide 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.1s both;
+}
+
+@keyframes card-meta-slide {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 度量徽章 */
+.metric-badge {
+  transition: all 0.2s ease;
+}
+
+.metric-badge:hover {
+  transform: scale(1.05);
+}
+
+/* ==========================================================================
+   Card More Menu
+   ========================================================================== */
+
+.more-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.more-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+  transform: scale(1.1) rotate(90deg);
+}
+
+.card-menu {
+  animation: dropdown-menu-in 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes dropdown-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.card-menu button {
+  transition: all 0.15s ease;
+}
+
+.card-menu button:hover {
+  transform: translateX(4px);
+}
+
+/* ==========================================================================
+   Card Delete Animation
+   ========================================================================== */
+
+.photo-card.is-deleting,
+.space-card.is-deleting {
+  animation: card-shrink-out 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes card-shrink-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8) rotate(-5deg);
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+
+/* 键盘焦点增强 */
+.photo-card:focus-visible,
+.space-card:focus-visible {
+  outline: 3px solid #00b88f;
+  outline-offset: 4px;
+  transform: translateY(-2px);
+}
+
+/* 无障碍运动偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .photo-card,
+  .space-card,
+  .card-cover img,
+  .cover-badge,
+  .card-actions,
+  .card-actions button,
+  .photo-grid > *,
+  .space-grid > * {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  .photo-card:hover,
+  .space-card:hover {
+    transform: none !important;
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  .photo-card,
+  .space-card {
+    border: 2px solid currentColor;
+  }
+  
+  .photo-card:hover,
+  .space-card:hover {
+    border-width: 3px;
+  }
+}

@@ -1,0 +1,564 @@
+/**
+ * 滑块与开关增强系统
+ * 
+ * 功能：
+ * - Range 滑块实时反馈动画
+ * - 滑块轨道填充渐变
+ * - 滑块拖动时的放大效果
+ * - 数值变化时的弹跳动画
+ * - Toggle 开关的流畅切换
+ * - 开关滑动时的弹性效果
+ * - 悬浮提示增强
+ */
+
+/* ========================================
+   Range 滑块基础增强
+   ======================================== */
+
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #00b88f 0%,
+    #00b88f var(--slider-progress, 50%),
+    #e5e7eb var(--slider-progress, 50%),
+    #e5e7eb 100%
+  );
+  outline: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+/* 禁用状态 */
+.range:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 悬浮时轨道增亮 */
+.range:not(:disabled):hover {
+  background: linear-gradient(
+    to right,
+    #10b981 0%,
+    #10b981 var(--slider-progress, 50%),
+    #d1d5db var(--slider-progress, 50%),
+    #d1d5db 100%
+  );
+}
+
+/* 拖动时轨道发光 */
+.range:not(:disabled):active {
+  background: linear-gradient(
+    to right,
+    #059669 0%,
+    #059669 var(--slider-progress, 50%),
+    #cbd5e1 var(--slider-progress, 50%),
+    #cbd5e1 100%
+  );
+}
+
+/* ========================================
+   滑块滑钮（Thumb）增强
+   ======================================== */
+
+/* WebKit/Chromium */
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #00b88f;
+  cursor: grab;
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    0 0 0 0 rgba(0, 184, 143, 0);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.range:not(:disabled):hover::-webkit-slider-thumb {
+  transform: scale(1.2);
+  border-width: 3px;
+  box-shadow: 
+    0 4px 8px rgba(0, 184, 143, 0.25),
+    0 0 0 4px rgba(0, 184, 143, 0.1);
+}
+
+.range:not(:disabled):active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.35);
+  border-color: #059669;
+  box-shadow: 
+    0 6px 12px rgba(5, 150, 105, 0.35),
+    0 0 0 6px rgba(0, 184, 143, 0.15);
+  animation: slider-thumb-pulse 0.4s ease;
+}
+
+@keyframes slider-thumb-pulse {
+  0% {
+    box-shadow: 
+      0 6px 12px rgba(5, 150, 105, 0.35),
+      0 0 0 0 rgba(0, 184, 143, 0);
+  }
+  50% {
+    box-shadow: 
+      0 6px 12px rgba(5, 150, 105, 0.35),
+      0 0 0 10px rgba(0, 184, 143, 0.2);
+  }
+  100% {
+    box-shadow: 
+      0 6px 12px rgba(5, 150, 105, 0.35),
+      0 0 0 6px rgba(0, 184, 143, 0.15);
+  }
+}
+
+.range:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+  border-color: #cbd5e1;
+}
+
+/* Firefox */
+.range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #00b88f;
+  cursor: grab;
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    0 0 0 0 rgba(0, 184, 143, 0);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.range:not(:disabled):hover::-moz-range-thumb {
+  transform: scale(1.2);
+  border-width: 3px;
+  box-shadow: 
+    0 4px 8px rgba(0, 184, 143, 0.25),
+    0 0 0 4px rgba(0, 184, 143, 0.1);
+}
+
+.range:not(:disabled):active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.35);
+  border-color: #059669;
+  box-shadow: 
+    0 6px 12px rgba(5, 150, 105, 0.35),
+    0 0 0 6px rgba(0, 184, 143, 0.15);
+}
+
+.range:disabled::-moz-range-thumb {
+  cursor: not-allowed;
+  border-color: #cbd5e1;
+}
+
+/* Firefox 轨道 */
+.range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.range::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: #00b88f;
+}
+
+/* ========================================
+   滑块数值显示增强
+   ======================================== */
+
+.slider-copy strong {
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+  display: inline-block;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+
+/* 数值变化时的弹跳动画 */
+.slider-copy strong.value-changing {
+  animation: slider-value-bounce 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes slider-value-bounce {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+    color: #059669;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 数值高亮效果 */
+.slider-row:has(.range:hover) .slider-copy strong,
+.slider-row:has(.range:active) .slider-copy strong {
+  color: #059669;
+  font-weight: 750;
+}
+
+/* ========================================
+   滑块容器行增强
+   ======================================== */
+
+.slider-row {
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+/* 悬浮时整行高亮 */
+.slider-row:has(.range:hover) {
+  color: #374151;
+}
+
+/* 拖动时整行强调 */
+.slider-row:has(.range:active) {
+  color: #111827;
+  transform: translateX(2px);
+}
+
+/* 图标动画 */
+.slider-row svg {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.slider-row:has(.range:hover) svg {
+  transform: scale(1.1);
+  color: #00b88f;
+}
+
+.slider-row:has(.range:active) svg {
+  transform: scale(1.15) rotate(5deg);
+  color: #059669;
+}
+
+/* ========================================
+   实时预览气泡（可选）
+   ======================================== */
+
+/* 拖动时显示当前值的气泡提示 */
+.range:not(:disabled):active::before {
+  content: attr(data-value);
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: var(--slider-progress, 50%);
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  background: rgba(5, 150, 105, 0.95);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: slider-tooltip-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 10;
+}
+
+/* 气泡箭头 */
+.range:not(:disabled):active::after {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: var(--slider-progress, 50%);
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid rgba(5, 150, 105, 0.95);
+  pointer-events: none;
+  animation: slider-tooltip-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 10;
+}
+
+@keyframes slider-tooltip-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* ========================================
+   Toggle 开关增强
+   ======================================== */
+
+.switch {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.switch:hover {
+  transform: scale(1.05);
+}
+
+.switch span {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 开关滑钮增强 */
+.switch span::before {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 悬浮效果 */
+.switch:hover span {
+  background: #b8bec7;
+}
+
+.switch:hover span::before {
+  transform: scale(1.1);
+}
+
+/* 开启状态悬浮 */
+.switch input:checked + span:hover {
+  background: #10b981;
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.1),
+    0 0 0 4px rgba(16, 185, 129, 0.1);
+}
+
+/* 开关切换动画 */
+.switch input:checked + span::before {
+  transform: translateX(18px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* 点击时的弹跳效果 */
+.switch input:active + span::before {
+  animation: switch-toggle-bounce 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes switch-toggle-bounce {
+  0% {
+    transform: translateX(0) scale(1);
+  }
+  50% {
+    transform: translateX(9px) scale(1.15);
+  }
+  100% {
+    transform: translateX(18px) scale(1);
+  }
+}
+
+/* 未开启时点击 */
+.switch input:not(:checked):active + span::before {
+  animation: switch-toggle-bounce-off 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes switch-toggle-bounce-off {
+  0% {
+    transform: translateX(18px) scale(1);
+  }
+  50% {
+    transform: translateX(9px) scale(1.15);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* 开启时的发光效果 */
+.switch input:checked + span {
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.1),
+    0 0 12px rgba(0, 184, 143, 0.3);
+  animation: switch-glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes switch-glow-pulse {
+  0%, 100% {
+    box-shadow: 
+      inset 0 2px 4px rgba(0, 0, 0, 0.1),
+      0 0 8px rgba(0, 184, 143, 0.2);
+  }
+  50% {
+    box-shadow: 
+      inset 0 2px 4px rgba(0, 0, 0, 0.1),
+      0 0 16px rgba(0, 184, 143, 0.4);
+  }
+}
+
+/* 禁用状态 */
+.switch input:disabled + span {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.switch:has(input:disabled) {
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ========================================
+   Toggle 行增强
+   ======================================== */
+
+.toggle-row {
+  padding: 8px 0;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.toggle-row:hover {
+  background: rgba(241, 245, 249, 0.5);
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+}
+
+/* Toggle 行图标动画 */
+.toggle-row svg {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.toggle-row:hover svg {
+  transform: scale(1.1);
+  color: #00b88f;
+}
+
+.toggle-row:has(input:checked) svg {
+  color: #00b88f;
+}
+
+.toggle-row:has(input:checked):hover svg {
+  transform: scale(1.15) rotate(5deg);
+}
+
+/* ========================================
+   帮助提示增强
+   ======================================== */
+
+.help-tip {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  border-radius: 50%;
+  background: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+  font-size: 10px;
+  cursor: help;
+  margin-left: 4px;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.help-tip:hover {
+  background: rgba(0, 184, 143, 0.15);
+  color: #00b88f;
+  transform: scale(1.2) rotate(15deg);
+}
+
+/* ========================================
+   颜色选择器增强
+   ======================================== */
+
+/* 如果有颜色选择按钮，也增强它 */
+.color-pill,
+.color-option {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+
+.color-pill:hover,
+.color-option:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.color-pill:active,
+.color-option:active {
+  transform: scale(0.95);
+}
+
+/* 选中颜色的脉冲效果 */
+.color-pill.active,
+.color-option.active {
+  animation: color-selected-pulse 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes color-selected-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ========================================
+   无障碍支持
+   ======================================== */
+
+/* 键盘焦点 */
+.range:focus-visible {
+  outline: 2px solid #00b88f;
+  outline-offset: 4px;
+}
+
+.switch input:focus-visible + span {
+  outline: 2px solid #00b88f;
+  outline-offset: 2px;
+}
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .range,
+  .range::-webkit-slider-thumb,
+  .range::-moz-range-thumb,
+  .switch span,
+  .switch span::before,
+  .slider-row,
+  .slider-copy strong {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .range:hover::-webkit-slider-thumb,
+  .range:hover::-moz-range-thumb {
+    transform: scale(1.1);
+  }
+
+  .switch input:checked + span::before {
+    transform: translateX(18px);
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  .range {
+    border: 2px solid currentColor;
+  }
+
+  .range::-webkit-slider-thumb,
+  .range::-moz-range-thumb {
+    border-width: 3px;
+  }
+
+  .switch span {
+    border: 2px solid currentColor;
+  }
+}

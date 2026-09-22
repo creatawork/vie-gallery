@@ -108,19 +108,93 @@ function handleDrop(event: DragEvent) {
   color: #00b88f;
   cursor: pointer;
   text-align: center;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 拖拽波纹背景 */
+.upload-tile::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: radial-gradient(circle, rgba(0, 184, 143, 0.1) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
 }
 
 .upload-tile:hover,
-.upload-tile.drag-over,
 .upload-tile:focus-visible {
-  background: rgba(220, 252, 231, 0.85);
+  background: rgba(220, 252, 231, 0.75);
   border-color: #00b88f;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 184, 143, 0.15);
+}
+
+.upload-tile:hover::before {
+  opacity: 1;
+  animation: upload-ripple-pulse 2s ease-in-out infinite;
+}
+
+@keyframes upload-ripple-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.6;
+  }
+}
+
+/* 拖拽悬浮状态 */
+.upload-tile.drag-over {
+  background: rgba(220, 252, 231, 0.95);
+  border-color: #00b88f;
+  border-width: 2.5px;
+  border-style: solid;
+  transform: scale(1.02);
+  box-shadow: 0 12px 32px rgba(0, 184, 143, 0.25),
+              inset 0 0 40px rgba(0, 184, 143, 0.1);
+  animation: upload-drag-bounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+}
+
+@keyframes upload-drag-bounce {
+  0%, 100% {
+    transform: scale(1.02);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.upload-tile.drag-over::before {
+  opacity: 1;
+  animation: upload-drag-ripple 1s ease-in-out infinite;
+}
+
+@keyframes upload-drag-ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* 上传中状态 */
+.upload-tile.is-uploading {
+  pointer-events: none;
+  background: rgba(236, 253, 245, 0.85);
+  border-style: solid;
 }
 
 .upload-tile:focus-visible {
   outline: 2px solid #00b88f;
-  outline-offset: 2px;
+  outline-offset: 4px;
 }
 
 .upload-icon {
@@ -131,6 +205,27 @@ function handleDrop(event: DragEvent) {
   place-items: center;
   background: rgba(0, 184, 143, 0.12);
   margin-bottom: 4px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.upload-tile:hover .upload-icon,
+.upload-tile.drag-over .upload-icon {
+  background: rgba(0, 184, 143, 0.2);
+  transform: scale(1.1) rotate(5deg);
+  box-shadow: 0 4px 16px rgba(0, 184, 143, 0.3);
+}
+
+.upload-tile.drag-over .upload-icon {
+  animation: upload-icon-bounce 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+}
+
+@keyframes upload-icon-bounce {
+  0%, 100% {
+    transform: scale(1.1) rotate(5deg) translateY(0);
+  }
+  50% {
+    transform: scale(1.2) rotate(-5deg) translateY(-8px);
+  }
 }
 
 .spinning-icon {
@@ -145,6 +240,12 @@ function handleDrop(event: DragEvent) {
 .upload-tile strong {
   font-size: 15px;
   font-weight: 750;
+  transition: all 0.2s ease;
+}
+
+.upload-tile:hover strong,
+.upload-tile.drag-over strong {
+  transform: translateY(-2px);
 }
 
 .upload-tile small {
@@ -152,6 +253,12 @@ function handleDrop(event: DragEvent) {
   font-weight: 500;
   line-height: 1.45;
   color: #9ca3af;
+  transition: color 0.2s ease;
+}
+
+.upload-tile:hover small,
+.upload-tile.drag-over small {
+  color: #047857;
 }
 
 .upload-progress {
@@ -161,5 +268,80 @@ function handleDrop(event: DragEvent) {
   align-items: center;
   gap: 8px;
   color: #047857;
+  animation: upload-progress-fade-in 0.3s ease;
+}
+
+@keyframes upload-progress-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 上传成功标记 */
+@keyframes upload-success-mark {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-180deg);
+  }
+  50% {
+    transform: scale(1.2) rotate(10deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* 焦点流光效果 */
+.upload-tile:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    transparent 0%,
+    rgba(0, 184, 143, 0.1) 50%,
+    transparent 100%
+  );
+  animation: upload-focus-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes upload-focus-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 移动端优化 */
+@media (max-width: 640px) {
+  .upload-tile {
+    min-height: 200px;
+  }
+  
+  .upload-icon {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* 无障碍 */
+@media (prefers-reduced-motion: reduce) {
+  .upload-tile,
+  .upload-tile::before,
+  .upload-tile::after,
+  .upload-icon,
+  .upload-progress {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 </style>

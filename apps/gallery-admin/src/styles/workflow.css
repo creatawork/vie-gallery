@@ -1,0 +1,496 @@
+/**
+ * 工作流步骤指示器增强系统
+ * 
+ * 功能：
+ * - 步骤完成时的庆祝动画
+ * - 当前步骤的呼吸脉冲
+ * - 连接线的流动动画
+ * - 步骤数字的翻转效果
+ * - 悬浮时的提示动画
+ * - 进度条填充效果
+ */
+
+/* ========================================
+   工作流步骤基础增强
+   ======================================== */
+
+.workflow-steps {
+  position: relative;
+}
+
+/* 添加整体进度条背景 */
+.workflow-steps::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(
+    to right,
+    #e5e7eb 0%,
+    #e5e7eb 100%
+  );
+  transform: translateY(-50%);
+  z-index: -1;
+  border-radius: 999px;
+  opacity: 0.5;
+}
+
+/* ========================================
+   步骤项增强
+   ======================================== */
+
+.workflow-steps li {
+  cursor: default;
+  z-index: 1;
+}
+
+/* 步骤项入场动画 */
+.workflow-steps li {
+  animation: workflow-item-fade-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.workflow-steps li:nth-child(1) { animation-delay: 0.1s; }
+.workflow-steps li:nth-child(2) { animation-delay: 0.2s; }
+.workflow-steps li:nth-child(3) { animation-delay: 0.3s; }
+.workflow-steps li:nth-child(4) { animation-delay: 0.4s; }
+
+@keyframes workflow-item-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ========================================
+   连接线增强
+   ======================================== */
+
+/* 未完成连接线 */
+.workflow-steps li:not(:last-child)::after {
+  z-index: 0;
+}
+
+/* 已完成连接线 - 流动动画 */
+.workflow-steps li.done:not(:last-child)::after {
+  background: linear-gradient(
+    90deg,
+    #00b88f 0%,
+    #10b981 50%,
+    #00b88f 100%
+  );
+  background-size: 200% 100%;
+  animation: 
+    workflow-line-expand 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    workflow-line-flow 2s linear 0.4s infinite;
+  box-shadow: 0 0 8px rgba(0, 184, 143, 0.4);
+}
+
+@keyframes workflow-line-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+/* 当前步骤的连接线 - 虚线动画 */
+.workflow-steps li.current:not(:last-child)::after {
+  background: linear-gradient(
+    90deg,
+    #00b88f 0%,
+    #00b88f 50%,
+    transparent 50%,
+    transparent 100%
+  );
+  background-size: 8px 2px;
+  animation: workflow-line-dash 1s linear infinite;
+}
+
+@keyframes workflow-line-dash {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 8px 0;
+  }
+}
+
+/* ========================================
+   步骤数字圆圈增强
+   ======================================== */
+
+.workflow-steps li span {
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* 未完成步骤 - 悬浮效果 */
+.workflow-steps li:not(.done):not(.current) span {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.workflow-steps li:not(.done):not(.current):hover span {
+  transform: scale(1.15) rotate(5deg);
+  background: #d1d5db;
+}
+
+/* ========================================
+   已完成步骤增强
+   ======================================== */
+
+/* 完成时的光环效果 */
+.workflow-steps li.done span::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(0, 184, 143, 0.3) 0%,
+    transparent 70%
+  );
+  animation: workflow-halo-pulse 2s ease-in-out infinite;
+  z-index: -1;
+}
+
+@keyframes workflow-halo-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* 对勾图标增强 - 添加弹性 */
+.workflow-steps li.done span {
+  box-shadow: 0 4px 12px rgba(0, 184, 143, 0.3);
+}
+
+/* 完成时的微粒爆炸效果（使用伪元素模拟）*/
+.workflow-steps li.done {
+  position: relative;
+}
+
+.workflow-steps li.done::before {
+  content: '';
+  position: absolute;
+  inset: -20px;
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(0, 184, 143, 0.4) 2px, transparent 2px),
+    radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.4) 2px, transparent 2px),
+    radial-gradient(circle at 60% 80%, rgba(0, 184, 143, 0.3) 2px, transparent 2px),
+    radial-gradient(circle at 30% 70%, rgba(16, 185, 129, 0.3) 2px, transparent 2px);
+  background-size: 100% 100%;
+  opacity: 0;
+  animation: workflow-confetti 0.6s cubic-bezier(0.4, 0, 0.2, 1) 0.3s;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes workflow-confetti {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+
+/* ========================================
+   当前步骤增强
+   ======================================== */
+
+/* 当前步骤 - 呼吸发光效果 */
+.workflow-steps li.current {
+  position: relative;
+}
+
+/* 添加旋转光晕 */
+.workflow-steps li.current::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(0, 184, 143, 0.3) 90deg,
+    transparent 180deg,
+    rgba(0, 184, 143, 0.3) 270deg,
+    transparent 360deg
+  );
+  animation: workflow-rotate-glow 3s linear infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+@keyframes workflow-rotate-glow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* 当前步骤的数字 - 添加内阴影 */
+.workflow-steps li.current span {
+  box-shadow: 
+    0 4px 12px rgba(5, 150, 105, 0.4),
+    inset 0 2px 4px rgba(255, 255, 255, 0.2);
+}
+
+/* 当前步骤的数字 - 持续脉冲 */
+.workflow-steps li.current span {
+  animation: 
+    workflow-number-bounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55),
+    workflow-current-pulse 2s ease-in-out 0.6s infinite;
+}
+
+@keyframes workflow-current-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+/* ========================================
+   悬浮交互增强
+   ======================================== */
+
+/* 未来步骤悬浮提示 */
+.workflow-steps li:not(.done):not(.current) {
+  position: relative;
+}
+
+.workflow-steps li:not(.done):not(.current):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(107, 114, 128, 0.15);
+}
+
+/* 悬浮时显示提示文字 */
+.workflow-steps li:not(.done):not(.current):hover::after {
+  content: attr(data-hint);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 100;
+  animation: workflow-tooltip-fade-in 0.2s ease;
+  pointer-events: none;
+}
+
+@keyframes workflow-tooltip-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* 已完成步骤悬浮 - 显示完成时间或状态 */
+.workflow-steps li.done:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 184, 143, 0.2);
+}
+
+.workflow-steps li.done:hover span {
+  transform: scale(1.1) rotate(-5deg);
+}
+
+/* 当前步骤悬浮 - 强调效果 */
+.workflow-steps li.current:hover {
+  box-shadow: 
+    0 0 0 2px #00b88f inset,
+    0 0 0 4px rgba(0, 184, 143, 0.1),
+    0 8px 20px rgba(0, 184, 143, 0.25);
+}
+
+/* ========================================
+   文字标签增强
+   ======================================== */
+
+/* 步骤文字淡入 */
+.workflow-steps li {
+  overflow: visible;
+}
+
+/* 完成步骤的文字 - 字重加粗 */
+.workflow-steps li.done {
+  font-weight: 700;
+}
+
+/* 当前步骤的文字 - 下划线动画 */
+.workflow-steps li.current {
+  position: relative;
+  font-weight: 750;
+}
+
+.workflow-steps li.current::after {
+  /* 覆盖连接线，添加文字下划线 */
+  content: '';
+  position: absolute;
+  left: 24px;
+  right: 10px;
+  bottom: 3px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    #00b88f 0%,
+    #10b981 100%
+  );
+  border-radius: 999px;
+  animation: workflow-underline-expand 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+}
+
+@keyframes workflow-underline-expand {
+  0% {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  100% {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+/* 修正连接线位置，避免被下划线覆盖 */
+.workflow-steps li.current:not(:last-child)::after {
+  bottom: auto;
+  top: 50%;
+}
+
+/* ========================================
+   进度百分比显示（可选）
+   ======================================== */
+
+/* 如果需要显示整体进度，可以在 workflow-steps 容器上添加 data-progress 属性 */
+.workflow-steps[data-progress]::after {
+  content: attr(data-progress) '%';
+  position: absolute;
+  right: -60px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  font-weight: 750;
+  color: #059669;
+  padding: 4px 10px;
+  background: #ecfdf5;
+  border-radius: 999px;
+  animation: workflow-progress-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes workflow-progress-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+/* ========================================
+   无障碍支持
+   ======================================== */
+
+/* 键盘导航焦点 */
+.workflow-steps li:focus-visible {
+  outline: 2px solid #00b88f;
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .workflow-steps li,
+  .workflow-steps li *,
+  .workflow-steps li::before,
+  .workflow-steps li::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .workflow-steps li:hover {
+    transform: none;
+  }
+
+  .workflow-steps li.done:not(:last-child)::after {
+    animation: none;
+    background: #00b88f;
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  .workflow-steps li {
+    border: 2px solid currentColor;
+  }
+
+  .workflow-steps li.done {
+    border-color: #047857;
+  }
+
+  .workflow-steps li.current {
+    border-color: #059669;
+    border-width: 3px;
+  }
+
+  .workflow-steps li:not(:last-child)::after {
+    height: 3px;
+    background: currentColor;
+  }
+}
+
+/* ========================================
+   响应式优化
+   ======================================== */
+
+@media (max-width: 640px) {
+  /* 移动端简化动画 */
+  .workflow-steps li.done span::after,
+  .workflow-steps li.current::before {
+    display: none;
+  }
+
+  /* 移动端提示文字位置调整 */
+  .workflow-steps li:not(.done):not(.current):hover::after {
+    bottom: auto;
+    top: calc(100% + 8px);
+  }
+
+  /* 移动端移除进度百分比 */
+  .workflow-steps[data-progress]::after {
+    display: none;
+  }
+}

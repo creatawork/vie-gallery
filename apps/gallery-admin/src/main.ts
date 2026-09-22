@@ -3,6 +3,14 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { useAuth } from './composables/useAuth'
 import './styles.css'
+import './styles/animations.css'
+import './styles/buttons.css'
+import './styles/inputs.css'
+import './styles/navigation.css'
+import './styles/cards.css'
+import './styles/photo-cards.css'
+import './styles/workflow.css'
+import './styles/sliders-switches.css'
 
 const router = createRouter({
   history: createWebHistory('/app/'),

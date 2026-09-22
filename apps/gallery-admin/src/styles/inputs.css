@@ -1,0 +1,421 @@
+/**
+ * VIE Gallery - Enhanced Input Styles
+ * 增强输入框样式系统
+ */
+
+/* ==========================================================================
+   Base Input Enhancement
+   ========================================================================== */
+
+/* 所有输入框的基础增强 */
+.form-input,
+.form-control,
+input:not([type="checkbox"]):not([type="radio"]):not(.no-enhance),
+textarea:not(.no-enhance),
+select:not(.no-enhance) {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 焦点状态增强 */
+.form-input:focus,
+.form-control:focus,
+input:not([type="checkbox"]):not([type="radio"]):not(.no-enhance):focus,
+textarea:not(.no-enhance):focus,
+select:not(.no-enhance):focus {
+  outline: none;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 184, 143, 0.15),
+              0 0 0 3px rgba(0, 184, 143, 0.1);
+  border-color: #00b88f;
+}
+
+/* 焦点呼吸动画 */
+.form-input:focus-visible,
+.form-control:focus-visible,
+input:not([type="checkbox"]):not([type="radio"]):not(.no-enhance):focus-visible,
+textarea:not(.no-enhance):focus-visible,
+select:not(.no-enhance):focus-visible {
+  animation: input-focus-breathe 2s ease-in-out infinite;
+}
+
+@keyframes input-focus-breathe {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(0, 184, 143, 0.15),
+                0 0 0 3px rgba(0, 184, 143, 0.1);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(0, 184, 143, 0.2),
+                0 0 0 4px rgba(0, 184, 143, 0.15);
+  }
+}
+
+/* ==========================================================================
+   Input States - 输入状态
+   ========================================================================== */
+
+/* Success State - 成功状态 */
+.form-input.is-valid,
+.form-control.is-valid,
+input.is-valid:not(.no-enhance) {
+  border-color: #10b981;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 40px;
+}
+
+.form-input.is-valid:focus,
+input.is-valid:not(.no-enhance):focus {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15),
+              0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+/* Error State - 错误状态 */
+.form-input.is-invalid,
+.form-control.is-invalid,
+input.is-invalid:not(.no-enhance) {
+  border-color: #ef4444;
+  animation: input-error-shake 0.5s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ef4444' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cline x1='15' y1='9' x2='9' y2='15'%3E%3C/line%3E%3Cline x1='9' y1='9' x2='15' y2='15'%3E%3C/line%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 40px;
+}
+
+.form-input.is-invalid:focus,
+input.is-invalid:not(.no-enhance):focus {
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15),
+              0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+@keyframes input-error-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-6px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(6px);
+  }
+}
+
+/* Warning State - 警告状态 */
+.form-input.is-warning,
+input.is-warning:not(.no-enhance) {
+  border-color: #f59e0b;
+}
+
+.form-input.is-warning:focus,
+input.is-warning:not(.no-enhance):focus {
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15),
+              0 0 0 3px rgba(245, 158, 11, 0.1);
+}
+
+/* Disabled State - 禁用状态 */
+.form-input:disabled,
+.form-control:disabled,
+input:disabled:not(.no-enhance),
+textarea:disabled:not(.no-enhance),
+select:disabled:not(.no-enhance) {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background-color: #f3f4f6;
+}
+
+/* ==========================================================================
+   Input With Icon - 图标输入框
+   ========================================================================== */
+
+.input-with-icon {
+  position: relative;
+}
+
+.input-with-icon .input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.input-with-icon input:focus + .input-icon,
+.input-with-icon input:focus ~ .input-icon {
+  color: #00b88f;
+  transform: translateY(-50%) scale(1.1);
+}
+
+.input-with-icon input {
+  padding-left: 40px;
+}
+
+/* Right Icon */
+.input-with-icon .input-icon-right {
+  left: auto;
+  right: 14px;
+}
+
+.input-with-icon input.has-icon-right {
+  padding-right: 40px;
+  padding-left: 14px;
+}
+
+/* ==========================================================================
+   Floating Label - 浮动标签
+   ========================================================================== */
+
+.input-floating {
+  position: relative;
+  margin-top: 20px;
+}
+
+.input-floating input,
+.input-floating textarea {
+  padding: 12px 14px 8px;
+}
+
+.input-floating label {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  font-size: 14px;
+  pointer-events: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #fff;
+  padding: 0 4px;
+}
+
+.input-floating input:focus ~ label,
+.input-floating input:not(:placeholder-shown) ~ label,
+.input-floating textarea:focus ~ label,
+.input-floating textarea:not(:placeholder-shown) ~ label {
+  top: 0;
+  transform: translateY(0) scale(0.85);
+  color: #00b88f;
+  font-weight: 600;
+}
+
+.input-floating input:focus ~ label {
+  animation: label-bounce 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes label-bounce {
+  0%, 100% {
+    transform: translateY(0) scale(0.85);
+  }
+  50% {
+    transform: translateY(-3px) scale(0.9);
+  }
+}
+
+/* ==========================================================================
+   Search Input - 搜索输入框
+   ========================================================================== */
+
+.search-input {
+  position: relative;
+}
+
+.search-input::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #00b88f, #00c89f);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.search-input:focus-within::before {
+  width: 100%;
+}
+
+/* ==========================================================================
+   Checkbox & Radio Enhancement - 复选框和单选框增强
+   ========================================================================== */
+
+/* Custom Checkbox */
+input[type="checkbox"]:not(.no-enhance) {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input[type="checkbox"]:not(.no-enhance):hover {
+  border-color: #00b88f;
+  transform: scale(1.05);
+}
+
+input[type="checkbox"]:not(.no-enhance):checked {
+  background: #00b88f;
+  border-color: #00b88f;
+  animation: checkbox-pop 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+input[type="checkbox"]:not(.no-enhance):checked::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -60%) rotate(45deg);
+  animation: checkbox-check 0.2s ease 0.1s both;
+}
+
+@keyframes checkbox-pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes checkbox-check {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -60%) rotate(45deg) scale(0);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -60%) rotate(45deg) scale(1);
+  }
+}
+
+/* Custom Radio */
+input[type="radio"]:not(.no-enhance) {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d1d5db;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input[type="radio"]:not(.no-enhance):hover {
+  border-color: #00b88f;
+  transform: scale(1.05);
+}
+
+input[type="radio"]:not(.no-enhance):checked {
+  border-color: #00b88f;
+  border-width: 6px;
+  animation: radio-pop 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes radio-pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ==========================================================================
+   Select Enhancement - 下拉框增强
+   ========================================================================== */
+
+select:not(.no-enhance) {
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  padding-right: 36px;
+}
+
+select:not(.no-enhance):focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2300b88f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+/* ==========================================================================
+   Textarea Enhancement - 多行输入框增强
+   ========================================================================== */
+
+textarea:not(.no-enhance) {
+  resize: vertical;
+  min-height: 80px;
+}
+
+textarea:not(.no-enhance):focus {
+  resize: vertical;
+}
+
+/* ==========================================================================
+   Form Validation Messages - 表单验证消息
+   ========================================================================== */
+
+.form-error-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ef4444;
+  animation: fade-in-down 0.3s ease;
+}
+
+@keyframes fade-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.form-success-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #10b981;
+  animation: fade-in-down 0.3s ease;
+}
+
+/* ==========================================================================
+   Accessibility - 无障碍
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .form-input,
+  .form-control,
+  input:not(.no-enhance),
+  textarea:not(.no-enhance),
+  select:not(.no-enhance) {
+    animation: none !important;
+    transition: none !important;
+  }
+}

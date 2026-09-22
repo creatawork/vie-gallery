@@ -1,0 +1,564 @@
+/**
+ * 照片卡片 3D 悬浮增强系统
+ * 
+ * 功能：
+ * - 3D 透视悬浮效果（鼠标跟随倾斜）
+ * - 图片缩放 + 阴影加深
+ * - 徽章弹出动画
+ * - 选中状态脉冲
+ * - 菜单滑入动画
+ * - 加载骨架屏
+ * - Stagger 网格进入动画
+ */
+
+/* ========================================
+   3D 透视容器配置
+   ======================================== */
+
+/* 为照片网格容器添加透视 */
+.photo-grid {
+  perspective: 1000px;
+  perspective-origin: center center;
+}
+
+/* ========================================
+   照片卡片 3D 悬浮效果
+   ======================================== */
+
+.photo-card {
+  transform-style: preserve-3d;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+/* 基础悬浮 - 向上移动 + 轻微倾斜 */
+.photo-card:hover {
+  transform: translateY(-8px) translateZ(20px);
+  box-shadow: 
+    0 20px 40px rgba(15, 40, 28, 0.12),
+    0 4px 12px rgba(15, 40, 28, 0.08);
+}
+
+/* 3D 鼠标跟随倾斜效果（通过 JS 动态设置 CSS 变量实现）*/
+.photo-card.tilt-active {
+  transform: 
+    translateY(-8px)
+    rotateX(calc(var(--tilt-y, 0) * 1deg))
+    rotateY(calc(var(--tilt-x, 0) * 1deg))
+    translateZ(30px);
+}
+
+/* 选中状态 - 弹性脉冲 */
+.photo-card.is-selected {
+  animation: card-selected-pulse 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes card-selected-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 选中状态持续脉冲边框 */
+.photo-card.is-selected::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, 
+    var(--brand-accent, #10b981), 
+    rgba(16, 185, 129, 0.6),
+    var(--brand-accent, #10b981)
+  );
+  opacity: 0.5;
+  animation: card-border-flow 3s linear infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+@keyframes card-border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+/* ========================================
+   图片容器增强
+   ======================================== */
+
+.photo-card .photo-img-box {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 悬浮时图片轻微放大 */
+.photo-card:hover .photo-img-box {
+  transform: scale(1.05);
+}
+
+/* 图片本身 */
+.photo-card .photo-image {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              filter 0.3s ease;
+}
+
+/* 悬浮时图片额外缩放 + 亮度提升 */
+.photo-card:hover .photo-image {
+  transform: scale(1.08);
+  filter: brightness(1.05);
+}
+
+/* 图片加载前的骨架屏 */
+.photo-card .empty-thumb {
+  background: linear-gradient(
+    90deg,
+    #f1f5f9 0%,
+    #e2e8f0 50%,
+    #f1f5f9 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ========================================
+   选择按钮增强
+   ======================================== */
+
+.photo-card .select-btn {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: scale(0.9);
+  opacity: 0;
+}
+
+/* 悬浮或已选中时显示 */
+.photo-card:hover .select-btn,
+.photo-card .select-btn.is-checked {
+  transform: scale(1);
+  opacity: 1;
+}
+
+/* 悬浮时按钮弹跳 */
+.photo-card .select-btn:hover {
+  transform: scale(1.15) rotate(5deg);
+}
+
+/* 选中状态弹性动画 */
+.photo-card .select-btn.is-checked {
+  animation: select-btn-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes select-btn-pop {
+  0% {
+    transform: scale(0.8) rotate(-15deg);
+  }
+  50% {
+    transform: scale(1.2) rotate(5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* 选中后的对勾图标弹入 */
+.photo-card .select-btn.is-checked svg {
+  animation: checkmark-draw 0.3s ease 0.1s both;
+}
+
+@keyframes checkmark-draw {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-45deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* ========================================
+   徽章增强
+   ======================================== */
+
+.photo-card .badges-row {
+  display: flex;
+  gap: 4px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 悬浮时徽章组向下滑入 */
+.photo-card:hover .badges-row {
+  transform: translateY(2px);
+}
+
+/* 单个徽章弹出动画 */
+.photo-card .badge-cover,
+.photo-card .badge-status {
+  animation: badge-pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.photo-card .badge-cover {
+  animation-delay: 0.1s;
+}
+
+.photo-card .badge-status {
+  animation-delay: 0.15s;
+}
+
+@keyframes badge-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 封面徽章悬浮闪光 */
+.photo-card .badge-cover {
+  position: relative;
+  overflow: hidden;
+}
+
+.photo-card:hover .badge-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  animation: badge-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes badge-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 处理中徽章的点脉冲增强 */
+.photo-card .badge-status.is-processing .dot-pulse {
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
+/* 就绪徽章的对勾图标弹跳 */
+.photo-card:hover .badge-status.is-ready svg {
+  animation: badge-icon-bounce 0.6s ease infinite;
+}
+
+@keyframes badge-icon-bounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+/* 失败徽章抖动 */
+.photo-card .badge-status.is-failed {
+  animation: badge-shake 0.5s ease;
+}
+
+@keyframes badge-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+/* ========================================
+   卡片信息区增强
+   ======================================== */
+
+.photo-card .photo-info {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 悬浮时信息区轻微上移 */
+.photo-card:hover .photo-info {
+  transform: translateY(-2px);
+}
+
+/* 标题文字渐变高亮 */
+.photo-card .photo-info h3 {
+  transition: color 0.2s ease;
+}
+
+.photo-card:hover .photo-info h3 {
+  color: var(--brand-accent, #10b981);
+}
+
+/* 元信息淡入 */
+.photo-card .photo-meta {
+  transition: color 0.2s ease;
+}
+
+.photo-card:hover .photo-meta {
+  color: #64748b;
+}
+
+/* ========================================
+   卡片菜单增强
+   ======================================== */
+
+.photo-card .ghost-btn {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.photo-card .ghost-btn:hover {
+  transform: scale(1.15) rotate(90deg);
+}
+
+/* 菜单滑入动画 */
+.photo-card .card-menu {
+  animation: card-menu-slide-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: bottom right;
+}
+
+@keyframes card-menu-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 菜单按钮序列淡入 */
+.photo-card .card-menu button {
+  animation: menu-item-fade-in 0.2s ease both;
+}
+
+.photo-card .card-menu button:nth-child(1) { animation-delay: 0.05s; }
+.photo-card .card-menu button:nth-child(2) { animation-delay: 0.08s; }
+.photo-card .card-menu button:nth-child(3) { animation-delay: 0.11s; }
+.photo-card .card-menu button:nth-child(4) { animation-delay: 0.14s; }
+.photo-card .card-menu button:nth-child(5) { animation-delay: 0.17s; }
+
+@keyframes menu-item-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 菜单按钮悬浮增强 */
+.photo-card .card-menu button {
+  transition: all 0.15s ease;
+}
+
+.photo-card .card-menu button:hover {
+  transform: translateX(3px);
+  padding-left: 12px;
+}
+
+/* 危险操作按钮特殊效果 */
+.photo-card .card-menu .danger:hover {
+  animation: danger-pulse 0.3s ease;
+}
+
+@keyframes danger-pulse {
+  0%, 100% {
+    box-shadow: none;
+  }
+  50% {
+    box-shadow: inset 0 0 12px rgba(220, 38, 38, 0.15);
+  }
+}
+
+/* ========================================
+   网格 Stagger 进入动画
+   ======================================== */
+
+/* 卡片初始状态 */
+.photo-card {
+  animation: card-fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Stagger 延迟（最多支持 30 个，0.03s 间隔）*/
+.photo-card:nth-child(1) { animation-delay: 0.03s; }
+.photo-card:nth-child(2) { animation-delay: 0.06s; }
+.photo-card:nth-child(3) { animation-delay: 0.09s; }
+.photo-card:nth-child(4) { animation-delay: 0.12s; }
+.photo-card:nth-child(5) { animation-delay: 0.15s; }
+.photo-card:nth-child(6) { animation-delay: 0.18s; }
+.photo-card:nth-child(7) { animation-delay: 0.21s; }
+.photo-card:nth-child(8) { animation-delay: 0.24s; }
+.photo-card:nth-child(9) { animation-delay: 0.27s; }
+.photo-card:nth-child(10) { animation-delay: 0.30s; }
+.photo-card:nth-child(11) { animation-delay: 0.33s; }
+.photo-card:nth-child(12) { animation-delay: 0.36s; }
+.photo-card:nth-child(13) { animation-delay: 0.39s; }
+.photo-card:nth-child(14) { animation-delay: 0.42s; }
+.photo-card:nth-child(15) { animation-delay: 0.45s; }
+.photo-card:nth-child(16) { animation-delay: 0.48s; }
+.photo-card:nth-child(17) { animation-delay: 0.51s; }
+.photo-card:nth-child(18) { animation-delay: 0.54s; }
+.photo-card:nth-child(19) { animation-delay: 0.57s; }
+.photo-card:nth-child(20) { animation-delay: 0.60s; }
+.photo-card:nth-child(n+21) { animation-delay: 0.63s; }
+
+@keyframes card-fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ========================================
+   删除动画
+   ======================================== */
+
+/* 卡片被删除时的消失动画（需要 JS 添加 .is-removing 类）*/
+.photo-card.is-removing {
+  animation: card-remove 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes card-remove {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.95) rotateZ(5deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8) translateY(-20px);
+    height: 0;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* ========================================
+   焦点状态增强
+   ======================================== */
+
+.photo-card:focus-visible {
+  outline: 2px solid var(--brand-accent, #10b981);
+  outline-offset: 4px;
+  box-shadow: 
+    0 0 0 4px rgba(16, 185, 129, 0.1),
+    0 20px 40px rgba(15, 40, 28, 0.12);
+}
+
+/* ========================================
+   无障碍支持
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-card,
+  .photo-card *,
+  .photo-card::before,
+  .photo-card::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .photo-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .photo-card.tilt-active {
+    transform: translateY(-2px);
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  .photo-card {
+    border: 2px solid currentColor;
+  }
+
+  .photo-card.is-selected {
+    border-width: 4px;
+  }
+
+  .photo-card .badge-cover,
+  .photo-card .badge-status {
+    border: 1px solid currentColor;
+  }
+}
+
+/* ========================================
+   响应式优化
+   ======================================== */
+
+@media (max-width: 768px) {
+  /* 移动端简化 3D 效果 */
+  .photo-card:hover {
+    transform: translateY(-4px);
+  }
+
+  .photo-card.tilt-active {
+    transform: translateY(-4px);
+  }
+
+  /* 移动端始终显示选择按钮 */
+  .photo-card .select-btn {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ========================================
+   性能优化提示
+   ======================================== */
+
+/* 为正在进行动画的卡片启用 GPU 加速 */
+.photo-card:hover,
+.photo-card.tilt-active,
+.photo-card.is-selected {
+  will-change: transform, box-shadow;
+}
+
+/* 停止悬浮后移除 will-change */
+.photo-card:not(:hover):not(.tilt-active):not(.is-selected) {
+  will-change: auto;
+}

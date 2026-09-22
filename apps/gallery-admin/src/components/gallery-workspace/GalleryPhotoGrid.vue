@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, nextTick } from 'vue'
 import type { WorkspacePhoto } from '../../composables/useGalleryWorkspace'
+import { useCardTiltBatch } from '../../composables/useCardTilt'
 import GalleryPhotoCard from './GalleryPhotoCard.vue'
 import Icon from '../Icon.vue'
 
@@ -21,6 +22,14 @@ const emit = defineEmits<{
 // Category Filter State
 const activeFilter = ref<'ALL' | 'READY' | 'PROCESSING' | 'FAILED'>('ALL')
 const selectedPhotoIds = ref<Set<string>>(new Set())
+const gridRef = ref<HTMLElement | null>(null)
+
+// Enable 3D tilt effect for photo cards
+const { refresh: refreshTilt } = useCardTiltBatch(gridRef, '.photo-card', {
+  maxTilt: 8,
+  speed: 300,
+  glare: true
+})
 
 const readyCount = computed(() => props.photos.filter(p => p.status === 'READY').length)
 const processingCount = computed(() => props.photos.filter(p => p.status === 'PROCESSING').length)
@@ -41,6 +50,12 @@ watch(() => props.photos, (currentPhotos) => {
     selectedPhotoIds.value = next
   }
 }, { deep: true })
+
+// Refresh 3D tilt effect when photos change
+watch(() => props.photos, async () => {
+  await nextTick()
+  refreshTilt()
+}, { flush: 'post' })
 
 function toggleSelect(id: string) {
   const next = new Set(selectedPhotoIds.value)
@@ -152,7 +167,7 @@ defineExpose({ clearSelection })
     </div>
 
     <!-- Photos Grid -->
-    <div v-if="filteredPhotos.length" class="photos-masonry-grid" aria-live="polite">
+    <div v-if="filteredPhotos.length" ref="gridRef" class="photos-masonry-grid photo-grid" aria-live="polite">
       <slot name="dropzone"></slot>
       <GalleryPhotoCard
         v-for="photo in filteredPhotos"

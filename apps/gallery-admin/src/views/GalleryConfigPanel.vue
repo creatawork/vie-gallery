@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
+import { useSliderEnhanceBatch } from '../composables/useSliderEnhance'
 import Icon from '../components/Icon.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useAuth } from '../composables/useAuth'
@@ -803,6 +804,9 @@ watch(showPreviewFrame, (shouldEmbed) => {
 onMounted(() => {
   loadGalleryAndConfig()
   window.addEventListener('message', onPreviewReady)
+  
+  // 初始化滑块增强效果
+  useSliderEnhanceBatch('.range')
 })
 
 onUnmounted(() => {

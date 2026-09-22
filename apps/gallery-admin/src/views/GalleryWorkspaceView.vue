@@ -879,6 +879,37 @@ async function openShareModal() {
   color: #6b7280;
   font-size: 12px;
   font-weight: 650;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 步骤连接线 */
+.workflow-steps li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 8px;
+  height: 2px;
+  background: #e5e7eb;
+  transform: translateY(-50%);
+  transition: background 0.3s ease;
+}
+
+.workflow-steps li.done:not(:last-child)::after {
+  background: #00b88f;
+  animation: workflow-line-expand 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes workflow-line-expand {
+  from {
+    width: 0;
+    opacity: 0;
+  }
+  to {
+    width: 8px;
+    opacity: 1;
+  }
 }
 
 .workflow-steps li span {
@@ -890,27 +921,130 @@ async function openShareModal() {
   background: #e5e7eb;
   font-size: 10px;
   font-weight: 800;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* 已完成步骤 */
 .workflow-steps li.done {
   color: #047857;
   background: #ecfdf5;
+  animation: workflow-step-complete 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes workflow-step-complete {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .workflow-steps li.done span {
   background: #00b88f;
   color: #fff;
+  position: relative;
+  overflow: hidden;
 }
 
+/* 对勾展开动画 */
+.workflow-steps li.done span::before {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  animation: workflow-check-draw 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+}
+
+@keyframes workflow-check-draw {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(-180deg);
+  }
+  50% {
+    transform: scale(1.3) rotate(10deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* 当前步骤 */
 .workflow-steps li.current {
   color: #111827;
   background: #fff;
-  box-shadow: 0 0 0 1px #00b88f inset;
+  box-shadow: 0 0 0 2px #00b88f inset;
+  animation: workflow-step-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes workflow-step-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #00b88f inset,
+                0 0 0 0 rgba(0, 184, 143, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 2px #00b88f inset,
+                0 0 0 6px rgba(0, 184, 143, 0.2);
+  }
 }
 
 .workflow-steps li.current span {
   background: #059669;
   color: #fff;
+  animation: workflow-number-bounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes workflow-number-bounce {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.2) rotate(5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* 未来步骤悬浮提示 */
+.workflow-steps li:not(.done):not(.current):hover {
+  background: #e5e7eb;
+  transform: translateY(-1px);
+}
+
+/* 移动端适配 */
+@media (max-width: 640px) {
+  .workflow-steps {
+    gap: 6px;
+  }
+  
+  .workflow-steps li {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  
+  .workflow-steps li span {
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
+  }
+}
+
+/* 无障碍 */
+@media (prefers-reduced-motion: reduce) {
+  .workflow-steps li,
+  .workflow-steps li span,
+  .workflow-steps li::after {
+    animation: none !important;
+  }
 }
 
 .meta-row {

@@ -114,11 +114,40 @@ const { root } = useModalFocus(computed(() => props.show), {
   background: #f1f5f9;
   color: #475569;
   flex-shrink: 0;
+  animation: modal-icon-pop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) 0.1s both;
+}
+
+@keyframes modal-icon-pop {
+  0% {
+    transform: scale(0) rotate(-180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.15) rotate(10deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
 }
 
 .icon-bubble.icon-danger {
   background: #fee2e2;
   color: #dc2626;
+  animation: modal-icon-pop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) 0.1s both,
+             modal-icon-shake 0.5s ease 0.6s;
+}
+
+@keyframes modal-icon-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px) rotate(-3deg);
+  }
+  75% {
+    transform: translateX(4px) rotate(3deg);
+  }
 }
 
 .header-text h3 {
@@ -126,6 +155,7 @@ const { root } = useModalFocus(computed(() => props.show), {
   font-size: 17px;
   font-weight: 600;
   color: #0f172a;
+  animation: modal-text-slide 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both;
 }
 
 .header-text p {
@@ -133,12 +163,43 @@ const { root } = useModalFocus(computed(() => props.show), {
   font-size: 13.5px;
   color: #64748b;
   line-height: 1.5;
+  animation: modal-text-slide 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
+}
+
+@keyframes modal-text-slide {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.modal-actions .btn {
+  animation: modal-button-slide 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.25s both;
+}
+
+.modal-actions .btn:last-child {
+  animation-delay: 0.3s;
+}
+
+@keyframes modal-button-slide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .btn {
@@ -158,6 +219,7 @@ const { root } = useModalFocus(computed(() => props.show), {
 
 .btn-secondary:hover:not(:disabled) {
   background: #e2e8f0;
+  transform: translateY(-1px);
 }
 
 .btn-primary {
@@ -167,6 +229,8 @@ const { root } = useModalFocus(computed(() => props.show), {
 
 .btn-primary:hover:not(:disabled) {
   background: #1e293b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3);
 }
 
 .btn-danger {
@@ -176,6 +240,8 @@ const { root } = useModalFocus(computed(() => props.show), {
 
 .btn-danger:hover:not(:disabled) {
   background: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
 }
 
 .btn:disabled {
@@ -183,13 +249,68 @@ const { root } = useModalFocus(computed(() => props.show), {
   cursor: not-allowed;
 }
 
-.modal-fade-enter-active,
+/* Enhanced Modal Transitions */
+.modal-fade-enter-active {
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .modal-fade-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.modal-fade-enter-active .modal-card {
+  animation: modal-card-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-fade-leave-active .modal-card {
+  animation: modal-card-leave 0.25s cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes modal-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-card-leave {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
 }
 
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.modal-fade-enter-from .modal-backdrop {
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .icon-bubble,
+  .header-text h3,
+  .header-text p,
+  .modal-actions .btn,
+  .modal-card {
+    animation: none !important;
+  }
+  
+  .modal-fade-enter-active .modal-card,
+  .modal-fade-leave-active .modal-card {
+    animation: none !important;
+  }
 }
 </style>
