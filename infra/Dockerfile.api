@@ -11,6 +11,9 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
+# 海报绘制需要字体：DejaVu（JRE 自带依赖）只有拉丁字形，必须补 CJK 字体，否则中文渲染为方框
+RUN apk add --no-cache fontconfig font-noto-cjk
+
 # Copy the JAR from the boot module
 COPY --from=builder /app/apps/gallery-api/gallery-api-boot/target/*.jar app.jar
 

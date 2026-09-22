@@ -69,7 +69,8 @@ public class SharePosterService {
             StoredObject storedObject = objectStorage.put(posterKey, inputStream, "image/png", posterBytes.length);
             
             // 生成可访问的 URL
-            return objectStorage.createReadUrl(posterKey, Duration.ofDays(365)).toString();
+            // OSS/MinIO 预签名 URL 上限 7 天；posterUrl 仅随接口响应即时展示，不落库
+            return objectStorage.createReadUrl(posterKey, Duration.ofDays(7)).toString();
 
         } catch (IOException e) {
             throw new SharePosterGenerationException("Failed to download cover image: " + e.getMessage(), e);
