@@ -181,9 +181,7 @@ export function useCardTiltBatch(
     const cards = containerRef.value.querySelectorAll<HTMLElement>(selector)
     
     cards.forEach(card => {
-      const cardRef: Ref<HTMLElement | null> = { value: card }
-      
-      // 手动实现 useCardTilt 的逻辑
+      // 直接使用 createCardTilt 而不是通过 useCardTilt
       const tilt = createCardTilt(card, options)
       cleanups.push(tilt.destroy)
     })
