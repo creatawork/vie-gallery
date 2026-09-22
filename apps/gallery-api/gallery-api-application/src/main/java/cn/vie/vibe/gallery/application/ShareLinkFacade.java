@@ -18,6 +18,7 @@ public class ShareLinkFacade {
     private final TokenGenerator tokenGenerator;
     private final String publicBaseUrl;
     private final WorkspaceAuthorizationPolicy authorization;
+    private final ShortCodeGenerator shortCodeGenerator = new ShortCodeGenerator();
     private final SharePosterService sharePosterService;
 
     public ShareLinkFacade(
@@ -75,12 +76,14 @@ public class ShareLinkFacade {
         String rawToken = tokenGenerator.generateToken();
         String tokenHash = tokenGenerator.hashToken(rawToken);
 
-        // 创建分享链接
+        // 创建分享链接（保存 rawToken 用于短链接重定向）
         Instant now = Instant.now();
         ShareLink shareLink = new ShareLink(
                 UUID.randomUUID(),
                 galleryId,
                 tokenHash,
+                null,  // shortCode 稍后通过 generateShortLink 生成
+                rawToken,  // 保存原始 token
                 command.expiresAt(),
                 null,
                 null,
@@ -152,6 +155,7 @@ public class ShareLinkFacade {
                 shareLink.getId(),
                 shareLink.getGalleryId(),
                 shareLink.getTokenHash(),
+                shareLink.getShortCode(),
                 shareLink.getExpiresAt(),
                 now, // 设置撤销时间
                 shareLink.getLastAccessedAt(),
@@ -178,6 +182,50 @@ public class ShareLinkFacade {
                 .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
         shareLinkRepository.delete(linkId);
+    }
+
+    /**
+     * 为现有分享链接生成短码
+     */
+    public CreateShortUrlResult generateShortLink(String shareLinkId) {
+        TenantContext context = authorization.requireOwner();
+        UUID linkId = UUID.fromString(shareLinkId);
+
+        ShareLink shareLink = shareLinkRepository.findById(linkId)
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
+
+        // 验证相册属于当前租户
+        Gallery gallery = galleryRepository.findById(shareLink.getGalleryId())
+                .filter(g -> g.tenantId().equals(context.tenantId()))
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
+
+        // 如果已有短码，直接返回
+        if (shareLink.getShortCode() != null) {
+            String shortUrl = String.format("%s/s/%s", publicBaseUrl, shareLink.getShortCode());
+            return new CreateShortUrlResult(shareLink.getId(), shareLink.getShortCode(), shortUrl);
+        }
+
+        // 生成唯一短码
+        String shortCode = generateUniqueShortCode();
+        Instant now = Instant.now();
+        shareLinkRepository.assignShortCode(linkId, shortCode, now);
+
+        String shortUrl = String.format("%s/s/%s", publicBaseUrl, shortCode);
+        return new CreateShortUrlResult(linkId, shortCode, shortUrl);
+    }
+
+    /**
+     * 生成唯一短码（带重试）
+     */
+    private String generateUniqueShortCode() {
+        int maxRetries = 5;
+        for (int i = 0; i < maxRetries; i++) {
+            String candidate = shortCodeGenerator.generateShortCode();
+            if (shareLinkRepository.findByShortCode(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        throw new DomainException("SHORT_CODE_GENERATION_FAILED", "Failed to generate unique short code after retries");
     }
 
     /**
@@ -253,4 +301,69 @@ public class ShareLinkFacade {
                 })
                 .orElse(null);
     }
+
+    /**
+     * 为已有分享链接生成短链接（幂等，可重复调用）
+     */
+    public CreateShortUrlResult createShortUrl(String shareLinkId) {
+        TenantContext context = authorization.requireOwner();
+        UUID linkId = UUID.fromString(shareLinkId);
+
+        ShareLink shareLink = shareLinkRepository.findById(linkId)
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
+
+        // 跨租户统一返回 NOT_FOUND
+        Gallery gallery = galleryRepository.findById(shareLink.getGalleryId())
+                .filter(g -> g.tenantId().equals(context.tenantId()))
+                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
+
+        // 如果已有短码，直接返回
+        if (shareLink.getShortCode() != null) {
+            String shortUrl = String.format("%s/s/%s", publicBaseUrl, shareLink.getShortCode());
+            return new CreateShortUrlResult(shareLink.getId(), shareLink.getShortCode(), shortUrl);
+        }
+
+        // 生成短码（重试机制处理冲突）
+        String shortCode = generateUniqueShortCode();
+        Instant now = Instant.now();
+        shareLinkRepository.assignShortCode(linkId, shortCode, now);
+
+        String shortUrl = String.format("%s/s/%s", publicBaseUrl, shortCode);
+        return new CreateShortUrlResult(shareLink.getId(), shortCode, shortUrl);
+    }
+
+    /**
+     * 解析短码到完整的分享链接 URL（供公开重定向控制器使用）
+     * 
+     * 短码重定向到带原始 token 的完整 URL：/g/{slug}?t={rawToken}
+     */
+    public ShortLinkTarget resolveShortLink(String shortCode) {
+        ShareLink shareLink = shareLinkRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new DomainException("SHORT_LINK_NOT_FOUND", "Short link not found"));
+
+        // 验证链接是否有效
+        Instant now = Instant.now();
+        if (!shareLink.isValid(now)) {
+            throw new DomainException("SHORT_LINK_INVALID", "Short link is expired or revoked");
+        }
+
+        // 检查是否有原始 token
+        if (shareLink.getRawToken() == null || shareLink.getRawToken().isBlank()) {
+            throw new DomainException("SHORT_LINK_INVALID", "Short link missing raw token");
+        }
+
+        Gallery gallery = galleryRepository.findById(shareLink.getGalleryId())
+                .filter(g -> !g.deleted())
+                .filter(g -> g.status() == GalleryStatus.PUBLISHED)
+                .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+
+        // 更新最后访问时间（节流：5分钟内不重复更新）
+        Instant threshold = now.minusSeconds(300);
+        shareLinkRepository.touchLastAccessed(shareLink.getId(), now, threshold);
+
+        // 构造带原始 token 的完整 URL
+        String targetUrl = String.format("%s/g/%s?t=%s", publicBaseUrl, gallery.slug(), shareLink.getRawToken());
+        return new ShortLinkTarget(targetUrl, gallery.slug(), shortCode);
+    }
+
 }

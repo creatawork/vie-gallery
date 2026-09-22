@@ -10,6 +10,8 @@ public class ShareLink {
     private final UUID id;
     private final UUID galleryId;
     private final String tokenHash;
+    private final String shortCode;
+    private final String rawToken;  // 原始 token，仅用于短链接重定向
     private final Instant expiresAt;
     private final Instant revokedAt;
     private final Instant lastAccessedAt;
@@ -20,6 +22,35 @@ public class ShareLink {
             UUID id,
             UUID galleryId,
             String tokenHash,
+            Instant expiresAt,
+            Instant revokedAt,
+            Instant lastAccessedAt,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, galleryId, tokenHash, null, null, expiresAt, revokedAt, lastAccessedAt, createdAt, updatedAt);
+    }
+
+    public ShareLink(
+            UUID id,
+            UUID galleryId,
+            String tokenHash,
+            String shortCode,
+            Instant expiresAt,
+            Instant revokedAt,
+            Instant lastAccessedAt,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, galleryId, tokenHash, shortCode, null, expiresAt, revokedAt, lastAccessedAt, createdAt, updatedAt);
+    }
+
+    public ShareLink(
+            UUID id,
+            UUID galleryId,
+            String tokenHash,
+            String shortCode,
+            String rawToken,
             Instant expiresAt,
             Instant revokedAt,
             Instant lastAccessedAt,
@@ -39,6 +70,8 @@ public class ShareLink {
         this.id = id;
         this.galleryId = galleryId;
         this.tokenHash = tokenHash;
+        this.shortCode = shortCode;
+        this.rawToken = rawToken;
         this.expiresAt = expiresAt;
         this.revokedAt = revokedAt;
         this.lastAccessedAt = lastAccessedAt;
@@ -56,6 +89,14 @@ public class ShareLink {
 
     public String getTokenHash() {
         return tokenHash;
+    }
+
+    public String getShortCode() {
+        return shortCode;
+    }
+
+    public String getRawToken() {
+        return rawToken;
     }
 
     public Instant getExpiresAt() {

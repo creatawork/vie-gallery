@@ -12,11 +12,11 @@ import java.util.Map;
 @Mapper
 public interface ShareLinkMapper {
     String COLUMNS = "BIN_TO_UUID(id) id, BIN_TO_UUID(gallery_id) galleryId, token_hash tokenHash, " +
-            "expires_at expiresAt, revoked_at revokedAt, last_accessed_at lastAccessedAt, " +
+            "short_code shortCode, raw_token rawToken, expires_at expiresAt, revoked_at revokedAt, last_accessed_at lastAccessedAt, " +
             "created_at createdAt, updated_at updatedAt";
 
     String QUALIFIED_COLUMNS = "BIN_TO_UUID(sl.id) id, BIN_TO_UUID(sl.gallery_id) galleryId, " +
-            "sl.token_hash tokenHash, sl.expires_at expiresAt, sl.revoked_at revokedAt, " +
+            "sl.token_hash tokenHash, sl.short_code shortCode, sl.raw_token rawToken, sl.expires_at expiresAt, sl.revoked_at revokedAt, " +
             "sl.last_accessed_at lastAccessedAt, sl.created_at createdAt, sl.updated_at updatedAt";
 
     @Select("SELECT " + COLUMNS + " FROM share_link WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
@@ -24,6 +24,17 @@ public interface ShareLinkMapper {
 
     @Select("SELECT " + COLUMNS + " FROM share_link WHERE token_hash = #{tokenHash} AND deleted_at IS NULL LIMIT 1")
     Map<String, Object> findByTokenHash(@Param("tokenHash") String tokenHash);
+
+    @Select("SELECT " + COLUMNS + " FROM share_link WHERE short_code = #{shortCode} AND deleted_at IS NULL LIMIT 1")
+    Map<String, Object> findByShortCode(@Param("shortCode") String shortCode);
+
+    @Update("UPDATE share_link SET short_code = #{shortCode}, updated_at = #{updatedAt} " +
+            "WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
+    int assignShortCode(
+            @Param("id") String id,
+            @Param("shortCode") String shortCode,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
 
     @Select("SELECT " + COLUMNS + " FROM share_link WHERE gallery_id = UUID_TO_BIN(#{galleryId}) AND deleted_at IS NULL " +
             "ORDER BY created_at DESC")
@@ -40,14 +51,16 @@ public interface ShareLinkMapper {
             @Param("tenantId") String tenantId
     );
 
-    @Insert("INSERT INTO share_link (id, gallery_id, token_hash, expires_at, revoked_at, last_accessed_at, " +
+    @Insert("INSERT INTO share_link (id, gallery_id, token_hash, short_code, raw_token, expires_at, revoked_at, last_accessed_at, " +
             "deleted_at, created_at, updated_at) " +
-            "VALUES (UUID_TO_BIN(#{id}), UUID_TO_BIN(#{galleryId}), #{tokenHash}, #{expiresAt}, #{revokedAt}, " +
+            "VALUES (UUID_TO_BIN(#{id}), UUID_TO_BIN(#{galleryId}), #{tokenHash}, #{shortCode}, #{rawToken}, #{expiresAt}, #{revokedAt}, " +
             "#{lastAccessedAt}, NULL, #{createdAt}, #{updatedAt})")
     int insert(
             @Param("id") String id,
             @Param("galleryId") String galleryId,
             @Param("tokenHash") String tokenHash,
+            @Param("shortCode") String shortCode,
+            @Param("rawToken") String rawToken,
             @Param("expiresAt") LocalDateTime expiresAt,
             @Param("revokedAt") LocalDateTime revokedAt,
             @Param("lastAccessedAt") LocalDateTime lastAccessedAt,

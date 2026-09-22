@@ -385,9 +385,15 @@ public class PublicAccessFacade {
             throw PublicAccessException.shareLinkRequired();
         }
 
+        // 尝试作为完整 token 查询
         String tokenHash = tokenGenerator.hashToken(shareToken);
-        ShareLink shareLink = shareLinkRepository.findByTokenHash(tokenHash)
-                .orElseThrow(PublicAccessException::shareLinkInvalid);
+        Optional<ShareLink> byToken = shareLinkRepository.findByTokenHash(tokenHash);
+        
+        // 如果 token 查询失败，尝试作为短码查询
+        ShareLink shareLink = byToken.orElseGet(() -> 
+            shareLinkRepository.findByShortCode(shareToken)
+                .orElseThrow(PublicAccessException::shareLinkInvalid)
+        );
 
         if (!shareLink.getGalleryId().equals(galleryId)) {
             throw PublicAccessException.shareLinkInvalid();

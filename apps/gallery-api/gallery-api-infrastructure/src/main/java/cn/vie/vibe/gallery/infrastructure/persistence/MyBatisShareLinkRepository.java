@@ -30,6 +30,8 @@ public class MyBatisShareLinkRepository implements ShareLinkRepository {
                 shareLink.getId().toString(),
                 shareLink.getGalleryId().toString(),
                 shareLink.getTokenHash(),
+                shareLink.getShortCode(),
+                shareLink.getRawToken(),
                 localDateTime(shareLink.getExpiresAt()),
                 localDateTime(shareLink.getRevokedAt()),
                 localDateTime(shareLink.getLastAccessedAt()),
@@ -48,6 +50,17 @@ public class MyBatisShareLinkRepository implements ShareLinkRepository {
     public Optional<ShareLink> findByTokenHash(String tokenHash) {
         return Optional.ofNullable(mapper.findByTokenHash(tokenHash))
                 .map(MyBatisShareLinkRepository::toDomain);
+    }
+
+    @Override
+    public Optional<ShareLink> findByShortCode(String shortCode) {
+        return Optional.ofNullable(mapper.findByShortCode(shortCode))
+                .map(MyBatisShareLinkRepository::toDomain);
+    }
+
+    @Override
+    public void assignShortCode(UUID id, String shortCode, Instant updatedAt) {
+        mapper.assignShortCode(id.toString(), shortCode, localDateTime(updatedAt));
     }
 
     @Override
@@ -110,6 +123,8 @@ public class MyBatisShareLinkRepository implements ShareLinkRepository {
                 uuid(row, "id"),
                 uuid(row, "galleryId"),
                 (String) row.get("tokenHash"),
+                (String) row.get("shortCode"),
+                (String) row.get("rawToken"),
                 instant(row, "expiresAt"),
                 instant(row, "revokedAt"),
                 instant(row, "lastAccessedAt"),

@@ -131,6 +131,17 @@ class CrossTenantAccessAuthorizationTest {
         public Optional<ShareLink> findByTokenHash(String tokenHash) {
             return values.values().stream().filter(l -> l.getTokenHash().equals(tokenHash)).findFirst();
         }
+        public Optional<ShareLink> findByShortCode(String shortCode) {
+            return values.values().stream().filter(l -> shortCode.equals(l.getShortCode())).findFirst();
+        }
+        public void assignShortCode(UUID id, String shortCode, Instant updatedAt) {
+            ShareLink current = values.get(id);
+            if (current != null) {
+                values.put(id, new ShareLink(current.getId(), current.getGalleryId(), current.getTokenHash(),
+                        current.getShortCode(), current.getRawToken(), current.getExpiresAt(), 
+                        current.getRevokedAt(), current.getLastAccessedAt(), current.getCreatedAt(), updatedAt));
+            }
+        }
         public List<ShareLink> findByGalleryId(UUID galleryId) {
             return values.values().stream().filter(l -> l.getGalleryId().equals(galleryId)).toList();
         }

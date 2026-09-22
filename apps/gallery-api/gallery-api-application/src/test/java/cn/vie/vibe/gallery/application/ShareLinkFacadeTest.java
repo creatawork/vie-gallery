@@ -148,6 +148,72 @@ class ShareLinkFacadeTest {
         assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.deleteShareLink(UUID.randomUUID().toString()));
     }
 
+    @Test
+    void generateShortLinkCreatesShortCodeAndReturnsShortUrl() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "summer-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), null);
+        CreateShortUrlResult result = fixture.facade.generateShortLink(link.getId().toString());
+
+        assertNotNull(result.shortCode());
+        assertEquals(6, result.shortCode().length());
+        assertTrue(result.shortUrl().matches("https://viewer\\.test/s/[A-Za-z0-9]{6}"));
+        
+        // 验证短码已存储
+        ShareLink updated = fixture.links.findById(link.getId()).orElseThrow();
+        assertEquals(result.shortCode(), updated.getShortCode());
+    }
+
+    @Test
+    void resolveShortLinkReturnsFullUrlWithToken() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "summer-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), null);
+        fixture.links.assignShortCode(link.getId(), "abc123", Instant.now());
+
+        ShortLinkTarget target = fixture.facade.resolveShortLink("abc123");
+
+        assertEquals("https://viewer.test/g/summer-gallery?t=raw-token", target.fullUrl());
+    }
+
+    @Test
+    void resolveShortLinkFailsForExpiredLink() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "expired-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().minusSeconds(3600), null);
+        fixture.links.assignShortCode(link.getId(), "exp123", Instant.now());
+
+        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.resolveShortLink("exp123"));
+    }
+
+    @Test
+    void resolveShortLinkFailsForRevokedLink() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "revoked-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), Instant.now());
+        fixture.links.assignShortCode(link.getId(), "rev123", Instant.now());
+
+        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.resolveShortLink("rev123"));
+    }
+
+    @Test
+    void resolveShortLinkFailsForNonExistentCode() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "test-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+
+        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.resolveShortLink("notfound"));
+    }
+
     private static ShareLinkView viewFor(List<ShareLinkView> views, UUID id) {
         return views.stream().filter(view -> view.id().equals(id)).findFirst().orElseThrow();
     }
@@ -179,8 +245,8 @@ class ShareLinkFacadeTest {
 
         ShareLink addLink(Gallery gallery, String rawToken, Instant expiresAt, Instant revokedAt) {
             UUID id = UUID.randomUUID();
-            ShareLink link = new ShareLink(id, gallery.id(), tokens.hashToken(rawToken), expiresAt, revokedAt,
-                    null, CREATED_AT, CREATED_AT);
+            ShareLink link = new ShareLink(id, gallery.id(), tokens.hashToken(rawToken), null,
+                    expiresAt, revokedAt, null, CREATED_AT, CREATED_AT);
             links.save(link);
             return link;
         }
@@ -237,6 +303,17 @@ class ShareLinkFacadeTest {
             return values.values().stream().filter(link -> link.getTokenHash().equals(tokenHash)).findFirst();
         }
 
+        public Optional<ShareLink> findByShortCode(String shortCode) {
+            return values.values().stream().filter(link -> shortCode.equals(link.getShortCode())).findFirst();
+        }
+
+        public void assignShortCode(UUID id, String shortCode, Instant updatedAt) {
+            ShareLink link = values.get(id);
+            if (link == null) return;
+            values.put(id, new ShareLink(link.getId(), link.getGalleryId(), link.getTokenHash(), shortCode,
+                    link.getRawToken(), link.getExpiresAt(), link.getRevokedAt(), link.getLastAccessedAt(), link.getCreatedAt(), updatedAt));
+        }
+
         public List<ShareLink> findByGalleryId(UUID galleryId) {
             return values.values().stream().filter(link -> link.getGalleryId().equals(galleryId)).toList();
         }
@@ -254,7 +331,8 @@ class ShareLinkFacadeTest {
             if (link == null) return;
             if (link.getLastAccessedAt() == null || link.getLastAccessedAt().isBefore(threshold)) {
                 values.put(id, new ShareLink(link.getId(), link.getGalleryId(), link.getTokenHash(),
-                        link.getExpiresAt(), link.getRevokedAt(), lastAccessedAt, link.getCreatedAt(), lastAccessedAt));
+                        link.getShortCode(), link.getRawToken(), link.getExpiresAt(), link.getRevokedAt(), lastAccessedAt, 
+                        link.getCreatedAt(), lastAccessedAt));
             }
         }
 

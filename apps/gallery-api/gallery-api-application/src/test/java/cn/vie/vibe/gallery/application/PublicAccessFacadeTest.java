@@ -475,6 +475,19 @@ class PublicAccessFacadeTest {
             return values.values().stream().filter(link -> link.getTokenHash().equals(tokenHash)).findFirst();
         }
 
+        public Optional<ShareLink> findByShortCode(String shortCode) {
+            return values.values().stream().filter(link -> shortCode.equals(link.getShortCode())).findFirst();
+        }
+
+        public void assignShortCode(UUID id, String shortCode, Instant updatedAt) {
+            ShareLink link = values.get(id);
+            if (link != null) {
+                values.put(id, new ShareLink(link.getId(), link.getGalleryId(), link.getTokenHash(),
+                        link.getShortCode(), link.getRawToken(), link.getExpiresAt(), 
+                        link.getRevokedAt(), link.getLastAccessedAt(), link.getCreatedAt(), updatedAt));
+            }
+        }
+
         public List<ShareLink> findByGalleryId(UUID galleryId) {
             return values.values().stream().filter(link -> link.getGalleryId().equals(galleryId)).toList();
         }

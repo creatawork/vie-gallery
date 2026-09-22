@@ -2,10 +2,12 @@ package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.application.CreateShareLinkCommand;
 import cn.vie.vibe.gallery.application.CreateShareLinkResult;
+import cn.vie.vibe.gallery.application.CreateShortUrlResult;
 import cn.vie.vibe.gallery.application.GenerateSharePosterCommand;
 import cn.vie.vibe.gallery.application.GenerateSharePosterResult;
 import cn.vie.vibe.gallery.application.ShareLinkFacade;
 import cn.vie.vibe.gallery.application.ShareLinkView;
+import cn.vie.vibe.gallery.application.ShortLinkTarget;
 import cn.vie.vibe.gallery.domain.ShareLinkStatus;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -75,6 +77,31 @@ public class ShareLinkController {
     }
 
     /**
+     * 为已有分享链接生成短链接
+     */
+    @PostMapping("/api/share-links/{shareLinkId}/short-url")
+    public GenerateShortLinkResponse generateShortLink(@PathVariable("shareLinkId") String shareLinkId) {
+        CreateShortUrlResult result = shareLinkFacade.createShortUrl(shareLinkId);
+        return new GenerateShortLinkResponse(
+                result.shortCode(),
+                result.shortUrl()
+        );
+    }
+
+    /**
+     * 解析短码（用于前端预览或 API 查询）
+     */
+    @GetMapping("/api/short-links/{shortCode}")
+    public ResolveShortLinkResponse resolveShortLink(@PathVariable("shortCode") String shortCode) {
+        ShortLinkTarget target = shareLinkFacade.resolveShortLink(shortCode);
+        return new ResolveShortLinkResponse(
+                target.shortCode(),
+                target.fullUrl(),
+                target.gallerySlug()
+        );
+    }
+
+    /**
      * 生成分享海报
      */
     @PostMapping("/api/galleries/{galleryId}/share-poster")
@@ -130,5 +157,16 @@ public class ShareLinkController {
     public record GenerateSharePosterResponse(
             String posterUrl,
             String template
+    ) {}
+
+    public record GenerateShortLinkResponse(
+            String shortCode,
+            String shortUrl
+    ) {}
+
+    public record ResolveShortLinkResponse(
+            String shortCode,
+            String fullUrl,
+            String gallerySlug
     ) {}
 }

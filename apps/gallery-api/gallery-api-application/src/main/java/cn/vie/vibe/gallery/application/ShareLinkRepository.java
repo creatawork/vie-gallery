@@ -27,6 +27,16 @@ public interface ShareLinkRepository {
     Optional<ShareLink> findByTokenHash(String tokenHash);
 
     /**
+     * 根据短码查找分享链接
+     */
+    Optional<ShareLink> findByShortCode(String shortCode);
+
+    /**
+     * 为分享链接绑定短码（幂等覆盖语义由调用方保证唯一）
+     */
+    void assignShortCode(UUID id, String shortCode, Instant updatedAt);
+
+    /**
      * 查找相册的所有分享链接（包括已撤销和过期）
      */
     List<ShareLink> findByGalleryId(UUID galleryId);
