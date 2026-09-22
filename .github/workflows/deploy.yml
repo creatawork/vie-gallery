@@ -147,14 +147,14 @@ jobs:
           
           if [ "$RAW_TOKEN_EXISTS" -eq "0" ]; then
             echo "⚠️  raw_token column missing - applying migration now..."
-            docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery << 'EOSQL'
-ALTER TABLE share_link ADD COLUMN raw_token VARCHAR(255) NULL COMMENT '原始未哈希 token（仅新建时填充，便于直接复制）';
-CREATE INDEX idx_share_link_raw_token ON share_link(raw_token);
-INSERT INTO flyway_schema_history (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success)
-SELECT COALESCE(MAX(installed_rank), 0) + 1, '15', 'add raw token to share link', 'SQL', 'V15__add_raw_token_to_share_link.sql', NULL, 'root@%', 0, 1
-FROM flyway_schema_history
-WHERE NOT EXISTS (SELECT 1 FROM flyway_schema_history WHERE version = '15');
-EOSQL
+            docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery -e "
+              ALTER TABLE share_link ADD COLUMN raw_token VARCHAR(255) NULL COMMENT '原始未哈希 token（仅新建时填充，便于直接复制）';
+              CREATE INDEX idx_share_link_raw_token ON share_link(raw_token);
+              INSERT INTO flyway_schema_history (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success)
+              SELECT COALESCE(MAX(installed_rank), 0) + 1, '15', 'add raw token to share link', 'SQL', 'V15__add_raw_token_to_share_link.sql', NULL, 'root@%', 0, 1
+              FROM flyway_schema_history
+              WHERE NOT EXISTS (SELECT 1 FROM flyway_schema_history WHERE version = '15');
+            "
             echo "✅ Migration applied successfully"
           else
             echo "✅ raw_token column exists"
