@@ -1,5 +1,7 @@
 package cn.vie.vibe.gallery.api;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -11,6 +13,8 @@ import java.util.Set;
 
 @Component
 public class ProductionConfigValidator {
+
+    private static final Logger log = LoggerFactory.getLogger(ProductionConfigValidator.class);
 
     private final Environment environment;
 
@@ -72,11 +76,11 @@ public class ProductionConfigValidator {
                 || !(galleryPublicBaseUrl.startsWith("https://") || galleryPublicBaseUrl.startsWith("http://"))) {
             throw new IllegalStateException("Production configuration error: GALLERY_PUBLIC_BASE_URL must be an absolute http(s) URL.");
         }
-        // 必须是站点根地址：后端自行拼接 /g/{slug} 与 /s/{code}，
-        // 带路径后缀（如 /g）会拼出 …/g/g/{slug} 与 …/g/s/{code} 的坏链接
+        // 站点根地址应不带路径后缀（/g 与 /s 由后端拼接）。已知 /g 后缀会被
+        // M3ShareLinkConfig 自动剥离，其余后缀仅警告——不能因为 URL 样式问题终止服务
         String afterScheme = galleryPublicBaseUrl.substring(galleryPublicBaseUrl.indexOf("://") + 3);
-        if (afterScheme.indexOf('/') >= 0) {
-            throw new IllegalStateException("Production configuration error: GALLERY_PUBLIC_BASE_URL must be the site origin without a path suffix (e.g. https://gallery.vie-vibe.cn); /g and /s paths are appended by the backend.");
+        if (afterScheme.indexOf('/') >= 0 && !afterScheme.endsWith("/g")) {
+            log.warn("GALLERY_PUBLIC_BASE_URL contains a path suffix ({}); share links are built as {}/g/{{slug}} — verify this is intended.", galleryPublicBaseUrl, galleryPublicBaseUrl);
         }
     }
 }

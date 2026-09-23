@@ -62,6 +62,19 @@ class ProductionConfigValidatorTest {
         assertDoesNotThrow(validator::validateOnStartup);
     }
 
+    @Test
+    void doesNotRejectLegacyGPathSuffixOnPublicBaseUrl() {
+        Environment env = mock(Environment.class);
+        when(env.getActiveProfiles()).thenReturn(new String[]{"prod"});
+
+        ProductionConfigValidator validator = strongStorage(env);
+        setMailFields(validator);
+        ReflectionTestUtils.setField(validator, "galleryPublicBaseUrl", "https://gallery.example.com/g");
+
+        // /g 后缀由 M3ShareLinkConfig 自动剥离，只警告不终止
+        assertDoesNotThrow(validator::validateOnStartup);
+    }
+
     private static ProductionConfigValidator strongStorage(Environment env) {
         ProductionConfigValidator validator = new ProductionConfigValidator(env);
         ReflectionTestUtils.setField(validator, "dbPassword", "P@ssw0rdStrong987654321");
