@@ -136,23 +136,50 @@ jobs:
           # being service_healthy first, so there is no need to poll MySQL
           # separately before this.
           echo "Starting containers and waiting for health checks..."
-          docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait --wait-timeout 240
-          
-          # If health check still fails, get detailed logs
-          if [ $? -ne 0 ]; then
+          if ! docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait --wait-timeout 240; then
+            echo "::error::Compose startup or health check failed"
+
+            echo "::group::Compose Status"
+            docker compose -f docker-compose.production.yml --env-file .env.production ps -a || true
+            echo "::endgroup::"
+
             echo "::group::API Container Logs"
-            docker logs vie-gallery-api --tail 100
+            docker logs vie-gallery-api --timestamps --tail 150 || true
             echo "::endgroup::"
-            
+
+            echo "::group::API Container State"
+            docker inspect vie-gallery-api \
+              --format='status={{.State.Status}} running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}} error={{.State.Error}}' \
+              || true
+            echo "::endgroup::"
+
             echo "::group::API Health Check Details"
-            docker inspect vie-gallery-api --format='{{json .State.Health}}' | jq '.'
+            docker inspect vie-gallery-api --format='{{json .State.Health}}' || true
+            echo "Health check attempts:"
+            docker inspect vie-gallery-api \
+              --format='{{range .State.Health.Log}}{{printf "start=%s end=%s exit=%d output=%q\\n" .Start .End .ExitCode .Output}}{{end}}' \
+              || true
             echo "::endgroup::"
-            
+
+            echo "::group::API Health Endpoint Response"
+            docker exec vie-gallery-api sh -c 'wget -S -O - http://127.0.0.1:8080/actuator/health' || true
+            echo "::endgroup::"
+
             echo "::group::Database Migration Status"
             docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery \
-              -e "SELECT version, description, installed_on, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 5;"
+              -e "SELECT installed_rank, version, description, type, script, checksum, installed_by, installed_on, success FROM flyway_schema_history WHERE version IN ('14', '15') ORDER BY installed_rank;" \
+              || true
             echo "::endgroup::"
-            
+
+            echo "::group::share_link Schema"
+            docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery \
+              -e "SELECT ORDINAL_POSITION, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='vie_gallery' AND TABLE_NAME='share_link' AND COLUMN_NAME IN ('short_code', 'raw_token') ORDER BY ORDINAL_POSITION;" \
+              || true
+            docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery \
+              -e "SELECT INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, INDEX_TYPE FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA='vie_gallery' AND TABLE_NAME='share_link' AND INDEX_NAME IN ('uk_share_link_short_code', 'idx_share_link_raw_token') ORDER BY INDEX_NAME, SEQ_IN_INDEX;" \
+              || true
+            echo "::endgroup::"
+
             exit 1
           fi
 
