@@ -129,45 +129,13 @@ jobs:
           # feeds the compose variables; without it the API boots with empty
           # secrets and Nginx answers every request with 502.
           
-          # Start containers in detached mode without waiting
-          docker compose -f docker-compose.production.yml --env-file .env.production up -d
-
-          # Wait for MySQL to be ready for migration checks
-          echo "Waiting for MySQL to be ready..."
-          for i in {1..30}; do
-            if docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 -e "SELECT 1" >/dev/null 2>&1; then
-              echo "MySQL is ready"
-              break
-            fi
-            sleep 2
-          done
-
-          # Stop API container before applying migration
-          echo "Stopping API container for migration..."
-          docker stop vie-gallery-api || true
-
-          # Pre-flight check: ensure raw_token column exists before API starts
-          echo "Checking for raw_token column in share_link table..."
-          RAW_TOKEN_EXISTS=$(docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery \
-            -sN -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='vie_gallery' AND TABLE_NAME='share_link' AND COLUMN_NAME='raw_token';")
-          
-          if [ "$RAW_TOKEN_EXISTS" -eq "0" ]; then
-            echo "⚠️  raw_token column missing - applying migration now..."
-            docker exec vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_gallery -e "
-              ALTER TABLE share_link ADD COLUMN raw_token VARCHAR(255) NULL COMMENT '原始未哈希 token（仅新建时填充，便于直接复制）';
-              CREATE INDEX idx_share_link_raw_token ON share_link(raw_token);
-              INSERT INTO flyway_schema_history (installed_rank, version, description, type, script, checksum, installed_by, execution_time, success)
-              SELECT COALESCE(MAX(installed_rank), 0) + 1, '15', 'add raw token to share link', 'SQL', 'V15__add_raw_token_to_share_link.sql', NULL, 'root@%', 0, 1
-              FROM flyway_schema_history
-              WHERE NOT EXISTS (SELECT 1 FROM flyway_schema_history WHERE version = '15');
-            "
-            echo "✅ Migration applied successfully"
-          else
-            echo "✅ raw_token column exists"
-          fi
-
-          # Start API and wait for all containers to become healthy
-          echo "Starting API container and waiting for health checks..."
+          # Start all containers and wait for health checks. Flyway runs
+          # automatically inside the API container on boot and is the single
+          # source of truth for schema changes — no manual SQL is applied
+          # here. The API's compose healthcheck already depends on mysql
+          # being service_healthy first, so there is no need to poll MySQL
+          # separately before this.
+          echo "Starting containers and waiting for health checks..."
           docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait --wait-timeout 240
           
           # If health check still fails, get detailed logs
