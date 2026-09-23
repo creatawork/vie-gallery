@@ -122,5 +122,5 @@ docker exec -i vie-gallery-mysql mysql -uvie_user -pvie_password_2026 vie_galler
 
 ---
 
-**最后更新**: 2026-09-22  
-**状态**: 等待在服务器上执行诊断和修复
+**最后更新**: 2026-09-23
+**状态**: ✅ 已解决 — 根因是 V15 手动插入的 Flyway 历史 checksum 为 NULL 导致 validate 失败，已修正 checksum 并补齐缺失索引，详见 [api-health-final-resolution.md](./api-health-final-resolution.md)
