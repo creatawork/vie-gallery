@@ -58,7 +58,13 @@ export function useShareDelivery(
   const generating = ref(false)
   const revoking = ref(false)
   const savingPassword = ref(false)
-  const latestCreatedLink = ref<{ shareUrl: string; expiresAt?: string; rawToken?: string } | null>(null)
+  const latestCreatedLink = ref<{
+    shareUrl: string
+    shortUrl: string | null
+    expiresAt?: string
+    rawToken?: string
+  } | null>(null)
+  const shortUrls = ref<Record<string, string>>({})
   const error = ref<string | null>(null)
 
   function viewerBaseUrl(slug: string) {
@@ -98,6 +104,24 @@ export function useShareDelivery(
     }
   }
 
+  /**
+   * 为分享链接生成短链接（幂等），失败时返回 null 并降级使用完整链接。
+   */
+  async function ensureShortLink(shareLinkId: string): Promise<string | null> {
+    const cached = shortUrls.value[shareLinkId]
+    if (cached) return cached
+    try {
+      const response = await apiFetch(`/api/share-links/${shareLinkId}/short-url`, { method: 'POST' })
+      if (!response.ok) return null
+      const data = await response.json() as { shortCode: string; shortUrl: string }
+      if (!data.shortUrl) return null
+      shortUrls.value = { ...shortUrls.value, [shareLinkId]: data.shortUrl }
+      return data.shortUrl
+    } catch {
+      return null
+    }
+  }
+
   async function createShareLink(expiryDays: number = 30): Promise<string> {
     const g = currentGallery.value
     if (!g) throw new Error('展厅信息未就绪。')
@@ -114,10 +138,21 @@ export function useShareDelivery(
         body: JSON.stringify(requestBody)
       })
       if (!response.ok) throw new Error('生成分享链接失败。')
-      const data = await response.json() as { shareUrl?: string; rawToken?: string; expiresAt?: string }
+      const data = await response.json() as {
+        id?: string
+        shareUrl?: string
+        rawToken?: string
+        expiresAt?: string
+      }
       const finalUrl = normalizeShareUrl(data.shareUrl || '', g.slug, data.rawToken)
+      // 短链接生成失败时静默降级：确认框仍然展示完整链接
+      let shortUrl: string | null = null
+      if (data.id) {
+        shortUrl = await ensureShortLink(data.id)
+      }
       latestCreatedLink.value = {
         shareUrl: finalUrl,
+        shortUrl,
         expiresAt: data.expiresAt,
         rawToken: data.rawToken
       }
@@ -191,9 +226,11 @@ export function useShareDelivery(
     revoking,
     savingPassword,
     latestCreatedLink,
+    shortUrls,
     error,
     loadShareLinks,
     createShareLink,
+    ensureShortLink,
     revokeShareLink,
     setGalleryPassword,
     clearGalleryPassword,

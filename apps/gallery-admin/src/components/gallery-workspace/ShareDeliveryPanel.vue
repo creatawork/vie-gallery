@@ -36,9 +36,11 @@ const {
   revoking,
   savingPassword,
   latestCreatedLink,
+  shortUrls,
   error,
   loadShareLinks,
   createShareLink,
+  ensureShortLink,
   revokeShareLink,
   setGalleryPassword,
   clearGalleryPassword,
@@ -57,6 +59,23 @@ const switchingVisibility = ref(false)
 const generatingPoster = ref(false)
 const posterTemplate = ref<string>('MINIMAL')
 const generatedPosterUrl = ref<string | null>(null)
+const generatingShortFor = ref<string | null>(null)
+
+// 为列表中的已有链接补生成短链接并直接复制
+async function handleGenerateShortLink(link: ShareLink) {
+  if (generatingShortFor.value) return
+  generatingShortFor.value = link.id
+  try {
+    const url = await ensureShortLink(link.id)
+    if (url) {
+      await copyUrl(url)
+    } else {
+      toast.error('短链接生成失败，请稍后重试。')
+    }
+  } finally {
+    generatingShortFor.value = null
+  }
+}
 
 async function handleVisibilityChange(event: Event) {
   const target = event.target as HTMLSelectElement
@@ -405,12 +424,26 @@ function shareStatusLabel(status: string) {
                 <span class="remaining-tag">{{ formatRemaining(latestCreatedLink.expiresAt) }}</span>
               </div>
               <div class="copy-url-bar">
-                <input readonly :value="latestCreatedLink.shareUrl" class="url-input" />
-                <button class="btn btn-copy" type="button" @click="copyUrl(latestCreatedLink.shareUrl)">
+                <input
+                  readonly
+                  :value="latestCreatedLink.shortUrl || latestCreatedLink.shareUrl"
+                  class="url-input"
+                />
+                <button
+                  class="btn btn-copy"
+                  type="button"
+                  @click="copyUrl(latestCreatedLink.shortUrl || latestCreatedLink.shareUrl)"
+                >
                   <Icon :name="copied ? 'check' : 'copy'" :size="14" />
                   <span>{{ copied ? '已复制' : '复制链接' }}</span>
                 </button>
               </div>
+              <p v-if="latestCreatedLink.shortUrl" class="delivery-note full-url-note">
+                完整链接（同样有效）：<span class="full-url-text">{{ latestCreatedLink.shareUrl }}</span>
+              </p>
+              <p v-else class="delivery-note full-url-note">
+                短链接生成失败，可使用上方完整链接。
+              </p>
               <p class="delivery-note">
                 将此链接直接发送给访客，访客无需注册账号即可进入展厅体验沉浸式画廊。
               </p>
@@ -441,8 +474,23 @@ function shareStatusLabel(status: string) {
                     <span class="meta-dot">·</span>
                     <span>最近访问：{{ formatLastAccessed(link.lastAccessedAt) }}</span>
                   </div>
+                  <div v-if="link.status === 'ACTIVE' && shortUrls[link.id]" class="link-short-row">
+                    <span class="link-short-url">{{ shortUrls[link.id] }}</span>
+                    <button class="btn-link btn-xs-link" type="button" @click="copyUrl(shortUrls[link.id])">
+                      复制
+                    </button>
+                  </div>
                 </div>
                 <div class="link-item-actions">
+                  <button
+                    v-if="link.status === 'ACTIVE' && !shortUrls[link.id]"
+                    class="btn btn-ghost btn-xs"
+                    type="button"
+                    :disabled="generatingShortFor === link.id"
+                    @click="handleGenerateShortLink(link)"
+                  >
+                    {{ generatingShortFor === link.id ? '生成中…' : '生成短链' }}
+                  </button>
                   <button
                     v-if="link.status === 'ACTIVE'"
                     class="btn btn-danger-ghost btn-xs"
@@ -843,6 +891,16 @@ function shareStatusLabel(status: string) {
   color: #047857;
 }
 
+.full-url-note {
+  color: #64748b;
+  word-break: break-all;
+}
+
+.full-url-text {
+  font-size: 11px;
+  color: #475569;
+}
+
 .poster-preview {
   margin: 16px 0;
   padding: 12px;
@@ -945,6 +1003,26 @@ function shareStatusLabel(status: string) {
   opacity: 0.5;
 }
 
+.link-short-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #047857;
+}
+
+.link-short-url {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.btn-xs-link {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0;
+  flex-shrink: 0;
+}
+
 .modal-footer {
   display: flex;
   align-items: center;
@@ -980,6 +1058,12 @@ function shareStatusLabel(status: string) {
 
 .btn-danger-ghost:hover {
   background: #fef2f2;
+}
+
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 11.5px;
+  border-radius: 6px;
 }
 
 .modal-fade-enter-active,

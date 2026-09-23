@@ -64,6 +64,11 @@ public class MyBatisShareLinkRepository implements ShareLinkRepository {
     }
 
     @Override
+    public void rotateToken(UUID id, String tokenHash, String rawToken, Instant updatedAt) {
+        mapper.updateToken(id.toString(), tokenHash, rawToken, localDateTime(updatedAt));
+    }
+
+    @Override
     public List<ShareLink> findByGalleryId(UUID galleryId) {
         return mapper.findByGalleryId(galleryId.toString()).stream()
                 .map(MyBatisShareLinkRepository::toDomain)

@@ -138,7 +138,15 @@ class CrossTenantAccessAuthorizationTest {
             ShareLink current = values.get(id);
             if (current != null) {
                 values.put(id, new ShareLink(current.getId(), current.getGalleryId(), current.getTokenHash(),
-                        current.getShortCode(), current.getRawToken(), current.getExpiresAt(), 
+                        current.getShortCode(), current.getRawToken(), current.getExpiresAt(),
+                        current.getRevokedAt(), current.getLastAccessedAt(), current.getCreatedAt(), updatedAt));
+            }
+        }
+        public void rotateToken(UUID id, String tokenHash, String rawToken, Instant updatedAt) {
+            ShareLink current = values.get(id);
+            if (current != null) {
+                values.put(id, new ShareLink(current.getId(), current.getGalleryId(), tokenHash,
+                        current.getShortCode(), rawToken, current.getExpiresAt(),
                         current.getRevokedAt(), current.getLastAccessedAt(), current.getCreatedAt(), updatedAt));
             }
         }

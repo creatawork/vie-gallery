@@ -36,6 +36,15 @@ public interface ShareLinkMapper {
             @Param("updatedAt") LocalDateTime updatedAt
     );
 
+    @Update("UPDATE share_link SET token_hash = #{tokenHash}, raw_token = #{rawToken}, updated_at = #{updatedAt} " +
+            "WHERE id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
+    int updateToken(
+            @Param("id") String id,
+            @Param("tokenHash") String tokenHash,
+            @Param("rawToken") String rawToken,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
     @Select("SELECT " + COLUMNS + " FROM share_link WHERE gallery_id = UUID_TO_BIN(#{galleryId}) AND deleted_at IS NULL " +
             "ORDER BY created_at DESC")
     List<Map<String, Object>> findByGalleryId(@Param("galleryId") String galleryId);

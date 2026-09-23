@@ -190,7 +190,7 @@ class ShareLinkFacadeTest {
         ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().minusSeconds(3600), null);
         fixture.links.assignShortCode(link.getId(), "exp123", Instant.now());
 
-        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.resolveShortLink("exp123"));
+        assertCode("SHORT_LINK_INVALID", () -> fixture.facade.resolveShortLink("exp123"));
     }
 
     @Test
@@ -202,7 +202,7 @@ class ShareLinkFacadeTest {
         ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), Instant.now());
         fixture.links.assignShortCode(link.getId(), "rev123", Instant.now());
 
-        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.resolveShortLink("rev123"));
+        assertCode("SHORT_LINK_INVALID", () -> fixture.facade.resolveShortLink("rev123"));
     }
 
     @Test
@@ -211,7 +211,66 @@ class ShareLinkFacadeTest {
         Gallery gallery = gallery(tenantId, "test-gallery");
         Fixture fixture = new Fixture(tenantId, gallery);
 
-        assertCode("SHARE_LINK_NOT_FOUND", () -> fixture.facade.resolveShortLink("notfound"));
+        assertCode("SHORT_LINK_NOT_FOUND", () -> fixture.facade.resolveShortLink("notfound"));
+    }
+
+    @Test
+    void createShortUrlAssignsShortCodeAndKeepsRawToken() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "short-url-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), null);
+        CreateShortUrlResult result = fixture.facade.createShortUrl(link.getId().toString());
+
+        assertNotNull(result.shortCode());
+        assertEquals(6, result.shortCode().length());
+        assertTrue(result.shortUrl().matches("https://viewer\\.test/s/[A-Za-z0-9]{6}"));
+        ShareLink updated = fixture.links.findById(link.getId()).orElseThrow();
+        assertEquals(result.shortCode(), updated.getShortCode());
+        assertEquals("raw-token", updated.getRawToken());
+    }
+
+    @Test
+    void createShortUrlRotatesTokenForLegacyLinkMissingRawToken() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "legacy-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+
+        // 短链接功能上线前创建的链接没有保存 rawToken
+        UUID id = UUID.randomUUID();
+        ShareLink legacy = new ShareLink(id, gallery.id(), fixture.tokens.hashToken("legacy-token"), null,
+                Instant.now().plusSeconds(3600), null, null, CREATED_AT, CREATED_AT);
+        fixture.links.save(legacy);
+
+        CreateShortUrlResult result = fixture.facade.createShortUrl(id.toString());
+
+        ShareLink updated = fixture.links.findById(id).orElseThrow();
+        assertNotNull(updated.getRawToken());
+        assertFalse(updated.getRawToken().isBlank());
+        assertEquals(fixture.tokens.hashToken(updated.getRawToken()), updated.getTokenHash());
+        assertEquals(result.shortCode(), updated.getShortCode());
+
+        // 轮换后的 token 必须能让短链接重定向成功
+        ShortLinkTarget target = fixture.facade.resolveShortLink(result.shortCode());
+        assertEquals("https://viewer.test/g/legacy-gallery?t=" + updated.getRawToken(), target.fullUrl());
+    }
+
+    @Test
+    void createShortUrlIsIdempotent() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "idempotent-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), null);
+        CreateShortUrlResult first = fixture.facade.createShortUrl(link.getId().toString());
+        CreateShortUrlResult second = fixture.facade.createShortUrl(link.getId().toString());
+
+        assertEquals(first.shortCode(), second.shortCode());
+        assertEquals(first.shortUrl(), second.shortUrl());
     }
 
     private static ShareLinkView viewFor(List<ShareLinkView> views, UUID id) {
@@ -245,7 +304,7 @@ class ShareLinkFacadeTest {
 
         ShareLink addLink(Gallery gallery, String rawToken, Instant expiresAt, Instant revokedAt) {
             UUID id = UUID.randomUUID();
-            ShareLink link = new ShareLink(id, gallery.id(), tokens.hashToken(rawToken), null,
+            ShareLink link = new ShareLink(id, gallery.id(), tokens.hashToken(rawToken), null, rawToken,
                     expiresAt, revokedAt, null, CREATED_AT, CREATED_AT);
             links.save(link);
             return link;
@@ -312,6 +371,13 @@ class ShareLinkFacadeTest {
             if (link == null) return;
             values.put(id, new ShareLink(link.getId(), link.getGalleryId(), link.getTokenHash(), shortCode,
                     link.getRawToken(), link.getExpiresAt(), link.getRevokedAt(), link.getLastAccessedAt(), link.getCreatedAt(), updatedAt));
+        }
+
+        public void rotateToken(UUID id, String tokenHash, String rawToken, Instant updatedAt) {
+            ShareLink link = values.get(id);
+            if (link == null) return;
+            values.put(id, new ShareLink(link.getId(), link.getGalleryId(), tokenHash, link.getShortCode(),
+                    rawToken, link.getExpiresAt(), link.getRevokedAt(), link.getLastAccessedAt(), link.getCreatedAt(), updatedAt));
         }
 
         public List<ShareLink> findByGalleryId(UUID galleryId) {

@@ -37,6 +37,12 @@ public interface ShareLinkRepository {
     void assignShortCode(UUID id, String shortCode, Instant updatedAt);
 
     /**
+     * 轮换分享链接的 token（为短链接功能上线前的历史链接补齐重定向所需的原始 token，
+     * 旧 token 与长链接随之失效）
+     */
+    void rotateToken(UUID id, String tokenHash, String rawToken, Instant updatedAt);
+
+    /**
      * 查找相册的所有分享链接（包括已撤销和过期）
      */
     List<ShareLink> findByGalleryId(UUID galleryId);

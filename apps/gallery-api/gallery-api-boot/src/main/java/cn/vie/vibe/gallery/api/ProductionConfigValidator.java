@@ -72,5 +72,11 @@ public class ProductionConfigValidator {
                 || !(galleryPublicBaseUrl.startsWith("https://") || galleryPublicBaseUrl.startsWith("http://"))) {
             throw new IllegalStateException("Production configuration error: GALLERY_PUBLIC_BASE_URL must be an absolute http(s) URL.");
         }
+        // 必须是站点根地址：后端自行拼接 /g/{slug} 与 /s/{code}，
+        // 带路径后缀（如 /g）会拼出 …/g/g/{slug} 与 …/g/s/{code} 的坏链接
+        String afterScheme = galleryPublicBaseUrl.substring(galleryPublicBaseUrl.indexOf("://") + 3);
+        if (afterScheme.indexOf('/') >= 0) {
+            throw new IllegalStateException("Production configuration error: GALLERY_PUBLIC_BASE_URL must be the site origin without a path suffix (e.g. https://gallery.vie-vibe.cn); /g and /s paths are appended by the backend.");
+        }
     }
 }

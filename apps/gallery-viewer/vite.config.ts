@@ -9,6 +9,11 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8088',
         changeOrigin: true
+      },
+      // 短链接公开重定向（后端 302 到 /g/{slug}?t=…）
+      '/s': {
+        target: 'http://localhost:8088',
+        changeOrigin: true
       }
     }
   },

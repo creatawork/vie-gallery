@@ -480,11 +480,19 @@ class PublicAccessFacadeTest {
         }
 
         public void assignShortCode(UUID id, String shortCode, Instant updatedAt) {
-            ShareLink link = values.get(id);
-            if (link != null) {
-                values.put(id, new ShareLink(link.getId(), link.getGalleryId(), link.getTokenHash(),
-                        link.getShortCode(), link.getRawToken(), link.getExpiresAt(), 
-                        link.getRevokedAt(), link.getLastAccessedAt(), link.getCreatedAt(), updatedAt));
+            ShareLink current = values.get(id);
+            if (current != null) {
+                values.put(id, new ShareLink(current.getId(), current.getGalleryId(), current.getTokenHash(),
+                        current.getShortCode(), current.getRawToken(), current.getExpiresAt(),
+                        current.getRevokedAt(), current.getLastAccessedAt(), current.getCreatedAt(), updatedAt));
+            }
+        }
+        public void rotateToken(UUID id, String tokenHash, String rawToken, Instant updatedAt) {
+            ShareLink current = values.get(id);
+            if (current != null) {
+                values.put(id, new ShareLink(current.getId(), current.getGalleryId(), tokenHash,
+                        current.getShortCode(), rawToken, current.getExpiresAt(),
+                        current.getRevokedAt(), current.getLastAccessedAt(), current.getCreatedAt(), updatedAt));
             }
         }
 

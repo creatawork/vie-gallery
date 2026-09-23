@@ -84,9 +84,10 @@ services:
       STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
       STORAGE_BUCKET: ${STORAGE_BUCKET:-vie-gallery}
-      # URLs
+      # 站点根地址，不能带 /g、/app 等路径后缀——
+      # 分享链接 /g/{slug} 和短链接 /s/{code} 由后端在该地址后拼接
       ADMIN_PUBLIC_BASE_URL: ${ADMIN_PUBLIC_BASE_URL:-http://gallery.vie-vibe.cn/app}
-      GALLERY_PUBLIC_BASE_URL: ${GALLERY_PUBLIC_BASE_URL:-http://gallery.vie-vibe.cn/g}
+      GALLERY_PUBLIC_BASE_URL: ${GALLERY_PUBLIC_BASE_URL:-https://gallery.vie-vibe.cn}
       # Mail (optional - values come from .env.production via env_file)
       MAIL_HOST: ${MAIL_HOST:-localhost}
       MAIL_PORT: ${MAIL_PORT:-587}

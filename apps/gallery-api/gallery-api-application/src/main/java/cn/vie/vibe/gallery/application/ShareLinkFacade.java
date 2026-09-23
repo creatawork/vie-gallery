@@ -188,30 +188,7 @@ public class ShareLinkFacade {
      * 为现有分享链接生成短码
      */
     public CreateShortUrlResult generateShortLink(String shareLinkId) {
-        TenantContext context = authorization.requireOwner();
-        UUID linkId = UUID.fromString(shareLinkId);
-
-        ShareLink shareLink = shareLinkRepository.findById(linkId)
-                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
-
-        // 验证相册属于当前租户
-        Gallery gallery = galleryRepository.findById(shareLink.getGalleryId())
-                .filter(g -> g.tenantId().equals(context.tenantId()))
-                .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
-
-        // 如果已有短码，直接返回
-        if (shareLink.getShortCode() != null) {
-            String shortUrl = String.format("%s/s/%s", publicBaseUrl, shareLink.getShortCode());
-            return new CreateShortUrlResult(shareLink.getId(), shareLink.getShortCode(), shortUrl);
-        }
-
-        // 生成唯一短码
-        String shortCode = generateUniqueShortCode();
-        Instant now = Instant.now();
-        shareLinkRepository.assignShortCode(linkId, shortCode, now);
-
-        String shortUrl = String.format("%s/s/%s", publicBaseUrl, shortCode);
-        return new CreateShortUrlResult(linkId, shortCode, shortUrl);
+        return createShortUrl(shareLinkId);
     }
 
     /**
@@ -317,6 +294,16 @@ public class ShareLinkFacade {
                 .filter(g -> g.tenantId().equals(context.tenantId()))
                 .orElseThrow(() -> new DomainException("SHARE_LINK_NOT_FOUND", "Share link not found"));
 
+        Instant now = Instant.now();
+        String rawToken = shareLink.getRawToken();
+
+        // 短链接功能上线前的历史链接没有保存原始 token，无法完成 /s/{code} 重定向；
+        // 为其轮换新 token（旧长链接随之失效），否则生成的短码会指向死链
+        if (rawToken == null || rawToken.isBlank()) {
+            rawToken = tokenGenerator.generateToken();
+            shareLinkRepository.rotateToken(shareLink.getId(), tokenGenerator.hashToken(rawToken), rawToken, now);
+        }
+
         // 如果已有短码，直接返回
         if (shareLink.getShortCode() != null) {
             String shortUrl = String.format("%s/s/%s", publicBaseUrl, shareLink.getShortCode());
@@ -325,7 +312,6 @@ public class ShareLinkFacade {
 
         // 生成短码（重试机制处理冲突）
         String shortCode = generateUniqueShortCode();
-        Instant now = Instant.now();
         shareLinkRepository.assignShortCode(linkId, shortCode, now);
 
         String shortUrl = String.format("%s/s/%s", publicBaseUrl, shortCode);
