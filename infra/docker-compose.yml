@@ -15,6 +15,10 @@ services:
       STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-vie_local_secret}
       STORAGE_BUCKET: ${STORAGE_BUCKET:-vie-gallery}
       SESSION_COOKIE_SECURE: "false"
+      # 本地开发默认值；infra/.env 或生产环境必须覆盖为强随机密钥
+      GALLERY_SECURITY_ENCRYPTION_SECRET: ${GALLERY_SECURITY_ENCRYPTION_SECRET:-local-dev-encryption-secret-change-me}
+      GALLERY_SECURITY_ENCRYPTION_SALT: ${GALLERY_SECURITY_ENCRYPTION_SALT:-local-dev-encryption-salt}
+      GALLERY_SECURITY_JWT_SECRET: ${GALLERY_SECURITY_JWT_SECRET:-local-dev-jwt-secret-change-me}
     ports: ["${API_PORT:-8080}:8080"]
     volumes: ["../apps/gallery-api/gallery-api-boot/target/gallery-api-boot-0.1.0-SNAPSHOT.jar:/app/gallery-api.jar:ro"]
     depends_on:
