@@ -149,12 +149,13 @@
   - API：`POST /api/galleries/{id}/share-poster`
   - 文件：`apps/gallery-api/.../SharePosterService.java`（新建）
 
-- [ ] **短链接服务**
+- [x] **短链接服务**（2026-09-23 完成并线上验证；根因与修复记录见 [`short-link-incident-2026-09-23.md`](short-link-incident-2026-09-23.md)）
   - `/s/abc123` 替代 `/g/:slug?t=<token>` 长链接
   - 短链生成算法（Base62 编码）
   - 短链访问重定向到完整 URL
   - API：`POST /api/share-links/{id}/short-url`
   - 文件：短链控制器和服务
+  - 补充：管理后台生成分享链接后自动展示短链；nginx `/s/` 路由与安全白名单已放行；历史链接补短链时自动轮换 token
 
 - [ ] **分享统计增强**
   - 访客来源（Referer 头）、设备类型（User-Agent 解析）
