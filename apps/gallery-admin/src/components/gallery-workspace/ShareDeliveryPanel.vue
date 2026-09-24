@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { Gallery, ShareLink } from '@vie/gallery-contracts'
 import Icon from '../Icon.vue'
 import ConfirmModal from '../ConfirmModal.vue'
+import ShareButtons from '../ShareButtons.vue'
 import { apiFetch } from '../../api'
 import {
   useShareDelivery,
@@ -61,6 +62,23 @@ const posterTemplate = ref<string>('MINIMAL')
 const generatedPosterUrl = ref<string | null>(null)
 const generatingShortFor = ref<string | null>(null)
 
+// 列表中展开分享按钮的链接（存当前可分享的短链接）
+const sharingLink = ref<{ id: string; url: string } | null>(null)
+
+// 点击列表行的「分享」：确保短链接后展开快捷分享按钮
+async function toggleShareRow(link: ShareLink) {
+  if (sharingLink.value?.id === link.id) {
+    sharingLink.value = null
+    return
+  }
+  const url = shortUrls.value[link.id] || await ensureShortLink(link.id)
+  if (!url) {
+    toast.error('短链接生成失败，无法分享，请稍后重试。')
+    return
+  }
+  sharingLink.value = { id: link.id, url }
+}
+
 // 为列表中的已有链接补生成短链接并直接复制
 async function handleGenerateShortLink(link: ShareLink) {
   if (generatingShortFor.value) return
@@ -104,6 +122,7 @@ watch(() => props.show, (isShown) => {
     newPasswordInput.value = ''
     copied.value = false
     generatedPosterUrl.value = null
+    sharingLink.value = null
     void loadShareLinks()
   }
 })
@@ -447,6 +466,12 @@ function shareStatusLabel(status: string) {
               <p class="delivery-note">
                 将此链接直接发送给访客，访客无需注册账号即可进入展厅体验沉浸式画廊。
               </p>
+              <ShareButtons
+                :share-url="latestCreatedLink.shortUrl || latestCreatedLink.shareUrl"
+                :gallery-name="gallery?.name || ''"
+                :share-link-id="latestCreatedLink.id"
+                :cover-url="gallery?.coverThumbnailUrl || null"
+              />
             </section>
           </Transition>
 
@@ -483,6 +508,15 @@ function shareStatusLabel(status: string) {
                 </div>
                 <div class="link-item-actions">
                   <button
+                    v-if="link.status === 'ACTIVE'"
+                    class="btn btn-ghost btn-xs"
+                    type="button"
+                    :disabled="generatingShortFor === link.id"
+                    @click="toggleShareRow(link)"
+                  >
+                    {{ sharingLink?.id === link.id ? '收起分享' : '分享' }}
+                  </button>
+                  <button
                     v-if="link.status === 'ACTIVE' && !shortUrls[link.id]"
                     class="btn btn-ghost btn-xs"
                     type="button"
@@ -499,6 +533,15 @@ function shareStatusLabel(status: string) {
                   >
                     撤销链接
                   </button>
+                </div>
+                <div v-if="link.status === 'ACTIVE' && sharingLink?.id === link.id" class="link-share-row">
+                  <ShareButtons
+                    compact
+                    :share-url="sharingLink.url"
+                    :gallery-name="gallery?.name || ''"
+                    :share-link-id="link.id"
+                    :cover-url="gallery?.coverThumbnailUrl || null"
+                  />
                 </div>
               </li>
             </ul>
@@ -945,6 +988,13 @@ function shareStatusLabel(status: string) {
   background: #f8fafc;
   border-radius: 10px;
   border: 1px solid #eef2f6;
+  flex-wrap: wrap;
+}
+
+.link-share-row {
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
 }
 
 .link-item.status-revoked,

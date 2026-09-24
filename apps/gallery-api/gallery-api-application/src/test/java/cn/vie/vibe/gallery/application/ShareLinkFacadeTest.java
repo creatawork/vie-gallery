@@ -168,6 +168,41 @@ class ShareLinkFacadeTest {
     }
 
     @Test
+    void generateQrCodeReturnsShortUrlAndPngBytes() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "summer-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), null);
+        fixture.links.assignShortCode(link.getId(), "fixed1", Instant.now());
+
+        GenerateShareLinkQrResult result = fixture.facade.generateQrCode(link.getId().toString());
+
+        assertEquals("https://viewer.test/s/fixed1", result.shareUrl());
+        assertNotNull(result.pngBytes());
+        assertTrue(result.pngBytes().length > 0);
+        // PNG 文件签名
+        assertEquals(0x89, result.pngBytes()[0] & 0xFF);
+        assertEquals(0x50, result.pngBytes()[1] & 0xFF);
+        assertEquals(0x4E, result.pngBytes()[2] & 0xFF);
+        assertEquals(0x47, result.pngBytes()[3] & 0xFF);
+    }
+
+    @Test
+    void editorCannotGenerateShareLinkQrCode() {
+        UUID tenantId = UUID.randomUUID();
+        Gallery gallery = gallery(tenantId, "editor-gallery");
+        Fixture fixture = new Fixture(tenantId, gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.EDITOR));
+
+        ShareLink link = fixture.addLink(gallery, "raw-token", Instant.now().plusSeconds(3600), null);
+
+        assertCode(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE,
+                () -> fixture.facade.generateQrCode(link.getId().toString()));
+    }
+
+    @Test
     void resolveShortLinkReturnsFullUrlWithToken() {
         UUID tenantId = UUID.randomUUID();
         Gallery gallery = gallery(tenantId, "summer-gallery");
@@ -444,6 +479,10 @@ class ShareLinkFacadeTest {
         @Override
         public String generatePoster(GalleryInfo gallery, String shareUrl, PosterTemplate template) {
             return "https://test.example.com/poster.png";
+        }
+        @Override
+        public byte[] generateQrCodePng(String content) {
+            return new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
         }
     }
 

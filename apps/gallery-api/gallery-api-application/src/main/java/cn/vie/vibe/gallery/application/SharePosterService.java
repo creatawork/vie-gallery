@@ -83,6 +83,21 @@ public class SharePosterService {
     }
 
     /**
+     * 生成分享链接二维码 PNG（用于微信扫码等社交分享场景）
+     *
+     * @param content 二维码内容（通常是短链接 URL）
+     * @return 二维码 PNG 图片字节
+     */
+    public byte[] generateQrCodePng(String content) {
+        BufferedImage qrCode = qrCodeGenerator.generate(content, 280, 280);
+        try {
+            return imageToBytes(qrCode, "PNG");
+        } catch (IOException e) {
+            throw new SharePosterGenerationException("Failed to encode QR code image: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 极简风格海报 - 白色背景，简洁排版
      */
     private BufferedImage generateMinimalPoster(GalleryInfo gallery, BufferedImage cover, BufferedImage qrCode) {

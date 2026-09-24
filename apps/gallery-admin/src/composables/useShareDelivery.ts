@@ -59,6 +59,7 @@ export function useShareDelivery(
   const revoking = ref(false)
   const savingPassword = ref(false)
   const latestCreatedLink = ref<{
+    id: string
     shareUrl: string
     shortUrl: string | null
     expiresAt?: string
@@ -151,6 +152,7 @@ export function useShareDelivery(
         shortUrl = await ensureShortLink(data.id)
       }
       latestCreatedLink.value = {
+        id: data.id || '',
         shareUrl: finalUrl,
         shortUrl,
         expiresAt: data.expiresAt,

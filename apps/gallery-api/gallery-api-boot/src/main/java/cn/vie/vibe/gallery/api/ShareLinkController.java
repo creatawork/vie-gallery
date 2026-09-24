@@ -3,6 +3,7 @@ package cn.vie.vibe.gallery.api;
 import cn.vie.vibe.gallery.application.CreateShareLinkCommand;
 import cn.vie.vibe.gallery.application.CreateShareLinkResult;
 import cn.vie.vibe.gallery.application.CreateShortUrlResult;
+import cn.vie.vibe.gallery.application.GenerateShareLinkQrResult;
 import cn.vie.vibe.gallery.application.GenerateSharePosterCommand;
 import cn.vie.vibe.gallery.application.GenerateSharePosterResult;
 import cn.vie.vibe.gallery.application.ShareLinkFacade;
@@ -10,7 +11,10 @@ import cn.vie.vibe.gallery.application.ShareLinkView;
 import cn.vie.vibe.gallery.application.ShortLinkTarget;
 import cn.vie.vibe.gallery.domain.ShareLinkStatus;
 import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -99,6 +103,18 @@ public class ShareLinkController {
                 target.fullUrl(),
                 target.gallerySlug()
         );
+    }
+
+    /**
+     * 生成分享链接二维码（微信扫码分享用）
+     */
+    @GetMapping("/api/share-links/{shareLinkId}/qrcode")
+    public ResponseEntity<byte[]> generateQrCode(@PathVariable("shareLinkId") String shareLinkId) {
+        GenerateShareLinkQrResult result = shareLinkFacade.generateQrCode(shareLinkId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_PNG)
+                .cacheControl(CacheControl.noStore())
+                .body(result.pngBytes());
     }
 
     /**

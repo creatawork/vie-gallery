@@ -319,6 +319,17 @@ public class ShareLinkFacade {
     }
 
     /**
+     * 为分享链接生成二维码（微信扫码分享用）
+     *
+     * 二维码基于短链接生成；复用 createShortUrl 的租户鉴权与历史链接 token 轮换逻辑
+     */
+    public GenerateShareLinkQrResult generateQrCode(String shareLinkId) {
+        CreateShortUrlResult shortUrl = createShortUrl(shareLinkId);
+        byte[] pngBytes = sharePosterService.generateQrCodePng(shortUrl.shortUrl());
+        return new GenerateShareLinkQrResult(shortUrl.shortUrl(), pngBytes);
+    }
+
+    /**
      * 解析短码到完整的分享链接 URL（供公开重定向控制器使用）
      * 
      * 短码重定向到带原始 token 的完整 URL：/g/{slug}?t={rawToken}
