@@ -8,6 +8,8 @@ export interface ViewerSeoState {
   slug: string
   isPublicReady: boolean
   gallery: PublicGalleryResponse | null
+  /** 创作者未设置封面时，用第一张照片缩略图兜底做社交预览 */
+  fallbackCoverUrl?: string | null
 }
 
 let previousTitle: string | undefined
@@ -33,7 +35,7 @@ function safeDescription(gallery: PublicGalleryResponse, title: string): string 
   const photoCount = Number.isFinite(gallery.photoCount) && gallery.photoCount >= 0
     ? Math.floor(gallery.photoCount)
     : 0
-  return cleanText(`${title} · VIE Gallery，探索 ${photoCount} 张照片。`, 180)
+  return cleanText(`走进「${title}」，沉浸式探索 ${photoCount} 张照片。`, 180)
 }
 
 function canonicalUrl(slug: string): string {
@@ -91,6 +93,32 @@ function setCanonical(href: string) {
   document.head.appendChild(link)
 }
 
+const WECHAT_COVER_ELEMENT_ID = 'vie-wechat-share-cover'
+
+/**
+ * 微信/QQ 内置浏览器生成分享卡片时读取页面内第一张真实加载的 <img>；
+ * 3D 展厅的照片全部渲染在 WebGL canvas 上，DOM 中没有图片可抓，
+ * 因此在屏外注入一张封面图（不能用 display:none，否则不会被读取）。
+ */
+function syncShareCoverImage(imageUrl: string | undefined) {
+  let coverImg = document.getElementById(WECHAT_COVER_ELEMENT_ID) as HTMLImageElement | null
+  if (!imageUrl) {
+    coverImg?.remove()
+    return
+  }
+  if (!coverImg) {
+    coverImg = document.createElement('img')
+    coverImg.id = WECHAT_COVER_ELEMENT_ID
+    coverImg.alt = ''
+    coverImg.style.cssText =
+      'position:fixed;left:-9999px;top:0;width:320px;height:320px;object-fit:cover;pointer-events:none;'
+    document.body.appendChild(coverImg)
+  }
+  if (coverImg.src !== imageUrl) {
+    coverImg.src = imageUrl
+  }
+}
+
 function setRobots(content: string) {
   if (!initialized) {
     previousRobotsElement = document.head.querySelector('meta[name="robots"]') || null
@@ -124,17 +152,20 @@ export function applyViewerSeo(next: ViewerSeoState) {
 
   if (!next.isPublicReady || !next.gallery || next.gallery.accessState !== 'READY' || next.gallery.visibility !== 'PUBLIC') {
     document.title = previousTitle || 'VIE Gallery'
+    syncShareCoverImage(undefined)
     return
   }
 
   const title = safeTitle(next.gallery)
   const description = safeDescription(next.gallery, title)
-  const image = safeImageUrl(next.gallery.cover?.url)
+  const image = safeImageUrl(next.gallery.cover?.url) ?? safeImageUrl(next.fallbackCoverUrl)
 
   document.title = `${title} · VIE Gallery`
+  syncShareCoverImage(image)
   setMeta('name', 'description', description)
   const canonical = canonicalUrl(next.slug)
   setCanonical(canonical)
+  setMeta('property', 'og:site_name', 'VIE Gallery')
   setMeta('property', 'og:title', title)
   setMeta('property', 'og:description', description)
   setMeta('property', 'og:url', canonical)
@@ -149,6 +180,7 @@ export function applyViewerSeo(next: ViewerSeoState) {
 export function clearViewerSeo() {
   if (typeof document === 'undefined') return
   removeManagedTags()
+  document.getElementById(WECHAT_COVER_ELEMENT_ID)?.remove()
   if (managedRobots) {
     if (previousRobotsElement) {
       managedRobots.removeAttribute(MANAGED_ATTRIBUTE)

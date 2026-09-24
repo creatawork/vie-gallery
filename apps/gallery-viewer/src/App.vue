@@ -8,6 +8,7 @@ import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
 import ErrorState from './components/ErrorState.vue'
 import LightboxModal from './components/LightboxModal.vue'
+import VisitorShareModal from './components/VisitorShareModal.vue'
 import Icon from './components/Icon.vue'
 
 // 从 URL 获取 slug。生产环境没有 slug 时不回退 demo 内容。
@@ -18,8 +19,13 @@ const viewer = useViewerState(slug)
 
 // SEO defaults to noindex until the public gallery has loaded successfully.
 watch(
-  () => [viewer.state.value, viewer.gallery.value, viewer.isPublicReady.value],
-  () => applyViewerSeo({ slug, isPublicReady: viewer.isPublicReady.value, gallery: viewer.gallery.value }),
+  () => [viewer.state.value, viewer.gallery.value, viewer.isPublicReady.value, viewer.photos.value],
+  () => applyViewerSeo({
+    slug,
+    isPublicReady: viewer.isPublicReady.value,
+    gallery: viewer.gallery.value,
+    fallbackCoverUrl: viewer.photos.value?.[0]?.thumbnailUrl ?? null
+  }),
   { immediate: true }
 )
 
@@ -42,7 +48,7 @@ const lightboxIndex = ref(0)
 // HUD Controls
 const showPresetMenu = ref(false)
 const currentPreset = ref('starry-night')
-const copied = ref(false)
+const showShareSheet = ref(false)
 const isFullscreen = ref(false)
 
 // 电影级巡航与交互增强
@@ -520,18 +526,6 @@ function openLightbox(index: number) {
   showLightbox.value = true
 }
 
-async function copyShareLink() {
-  try {
-    await navigator.clipboard.writeText(window.location.href)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2500)
-  } catch (e) {
-    console.error('Copy failed', e)
-  }
-}
-
 async function selectPreset(presetName: string) {
   currentPreset.value = presetName
   showPresetMenu.value = false
@@ -742,9 +736,9 @@ async function selectPreset(presetName: string) {
           </button>
 
           <!-- Share Button -->
-          <button class="hud-icon-btn share-btn" :class="{ copied }" title="复制分享链接" @click="copyShareLink">
-            <Icon :name="copied ? 'check' : 'share'" :size="17" />
-            <span>{{ copied ? '已复制' : '分享' }}</span>
+          <button class="hud-icon-btn share-btn" title="分享给朋友" @click="showShareSheet = true">
+            <Icon name="share" :size="17" />
+            <span>分享</span>
           </button>
         </div>
       </header>
@@ -856,6 +850,14 @@ async function selectPreset(presetName: string) {
         :allow-download="viewer.allowDownload.value"
         @close="showLightbox = false"
         @select="idx => lightboxIndex = idx"
+      />
+
+      <!-- 访客分享面板：微信/QQ 内置浏览器引导 + 系统分享 + 复制链接 -->
+      <VisitorShareModal
+        :show="showShareSheet"
+        :gallery-title="viewer.gallery.value?.title || ''"
+        :photo-count="viewer.total.value"
+        @close="showShareSheet = false"
       />
     </div>
   </div>
@@ -1067,11 +1069,6 @@ async function selectPreset(presetName: string) {
   background: rgba(16, 185, 129, 0.2);
   color: #34d399;
   border-color: rgba(16, 185, 129, 0.5);
-}
-
-.share-btn.copied {
-  background: #10b981;
-  color: #ffffff;
 }
 
 /* Preset Dropdown */
