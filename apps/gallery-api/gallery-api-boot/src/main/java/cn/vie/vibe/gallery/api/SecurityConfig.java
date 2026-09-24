@@ -56,7 +56,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/api/auth/csrf", "/api/auth/register", "/api/auth/login",
                                 "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password",
                                 "/api/public/g/**",
-                                "/s/**").permitAll()
+                                "/s/**",
+                                "/error").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(authenticationEntryPoint)
