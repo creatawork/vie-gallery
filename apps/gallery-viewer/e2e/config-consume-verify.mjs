@@ -1,7 +1,7 @@
 /**
  * 访客端配置消费验证（API mock，无需后端）。
  * 前置：viewer dev server (5174) 已启动。
- * 验证：camera.autoRotate 初始生效（HUD 巡航按钮激活）、
+ * 验证：camera.autoRotate/introFlight 生效、光照时段/星迹拖尾/新粒子配置可下发、
  *       background/theme.accent 已废弃（不再注入 --accent 等 CSS 变量）。
  */
 import { chromium } from '@playwright/test'
@@ -11,20 +11,27 @@ const SLUG = 'demo-gallery'
 const CONFIG = {
   presetName: 'custom',
   layout: { mode: 'sphere' },
-  particles: { enabled: true, types: ['stars'], density: 1 },
+  particles: { enabled: true, types: ['stars', 'fireflies', 'meteors'], density: 1 },
   effects: {
     bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
     fog: { enabled: false, color: '#0f172a', density: 0 },
     photoFloat: false
   },
-  camera: { autoRotate: true },
-  interaction: { clickRipple: true },
-  audio: { bgm: { enabled: false }, sfx: { enabled: true } }
+  camera: { autoRotate: true, introFlight: true },
+  interaction: { clickRipple: true, cursorTrail: true },
+  audio: { bgm: { enabled: false }, sfx: { enabled: true } },
+  lighting: { timeOfDay: 'sunset', autoColorAdapt: true }
 }
 
 async function main() {
   const browser = await chromium.launch()
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  const errors = []
+  page.on('pageerror', err => errors.push(`pageerror: ${err.message}`))
+  page.on('console', msg => {
+    if (msg.type() === 'error') errors.push(`console: ${msg.text()}`)
+  })
 
   await page.route(`**/api/public/g/${SLUG}/photos*`, route =>
     route.fulfill({
@@ -59,8 +66,9 @@ async function main() {
   if (tourActive < 1) failed.push('camera.autoRotate 未生效（HUD 巡航按钮未激活）')
   if (accentVar !== '') failed.push(`点缀色已废弃，但 --accent 仍被注入（实际: "${accentVar}"）`)
   if (brandVar !== '') failed.push(`点缀色已废弃，但 --brand-emerald 仍被注入（实际: "${brandVar}"）`)
+  if (errors.length) failed.push(`页面存在 ${errors.length} 条错误（含新粒子/拖尾着色器）`)
 
-  console.log(JSON.stringify({ tourActive, accentVar, brandVar, failed }, null, 2))
+  console.log(JSON.stringify({ tourActive, accentVar, brandVar, errors: errors.slice(0, 5), failed }, null, 2))
   await browser.close()
   if (failed.length) process.exitCode = 1
 }

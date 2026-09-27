@@ -40,10 +40,20 @@ const PARTICLE_TYPES = [
   { id: 'stars', label: '星尘' },
   { id: 'sakura', label: '樱花' },
   { id: 'hearts', label: '心形' },
-  { id: 'snow', label: '雪花' }
+  { id: 'snow', label: '雪花' },
+  { id: 'fireflies', label: '萤火虫' },
+  { id: 'meteors', label: '流星' }
 ] as const
 
 const FOG_COLORS = ['#e8f0ea', '#163124', '#0c4a6e', '#7c2d12', '#0f172a', '#4a0e2e']
+
+const LIGHTING_TIMES = [
+  { id: 'auto', label: '跟随时刻' },
+  { id: 'sunrise', label: '清晨' },
+  { id: 'noon', label: '正午' },
+  { id: 'sunset', label: '黄昏' },
+  { id: 'night', label: '夜晚' }
+] as const
 
 interface ConfigVersionItem {
   id: string
@@ -165,14 +175,20 @@ function getCleanConfig() {
       photoFloat: !!config.effects?.photoFloat
     },
     camera: {
-      autoRotate: !!config.camera?.autoRotate
+      autoRotate: !!config.camera?.autoRotate,
+      introFlight: !!config.camera?.introFlight
     },
     interaction: {
-      clickRipple: config.interaction?.clickRipple ?? true
+      clickRipple: config.interaction?.clickRipple ?? true,
+      cursorTrail: !!config.interaction?.cursorTrail
     },
     audio: {
       bgm: { enabled: !!config.audio?.bgm?.enabled },
       sfx: { enabled: config.audio?.sfx?.enabled ?? true }
+    },
+    lighting: {
+      timeOfDay: config.lighting?.timeOfDay || 'auto',
+      autoColorAdapt: config.lighting?.autoColorAdapt ?? true
     }
   }
 }
@@ -185,8 +201,13 @@ function ensureConfigDefaults() {
   if (!config.effects.fog) config.effects.fog = { enabled: false, color: '#0f172a', density: 0.0008 }
   if (config.effects.photoFloat === undefined) config.effects.photoFloat = true
   if (!config.layout) config.layout = { mode: 'sphere' }
-  if (!config.interaction) config.interaction = { clickRipple: true }
-  if (!config.camera) config.camera = { autoRotate: false }
+  if (!config.interaction) config.interaction = { clickRipple: true, cursorTrail: false }
+  if (config.interaction.cursorTrail === undefined) config.interaction.cursorTrail = false
+  if (!config.camera) config.camera = { autoRotate: false, introFlight: false }
+  if (config.camera.introFlight === undefined) config.camera.introFlight = false
+  if (!config.lighting) config.lighting = { timeOfDay: 'auto', autoColorAdapt: true }
+  if (!config.lighting.timeOfDay) config.lighting.timeOfDay = 'auto'
+  if (config.lighting.autoColorAdapt === undefined) config.lighting.autoColorAdapt = true
 }
 
 function deepMerge(target: any, source: any) {
@@ -293,9 +314,10 @@ const config = reactive({
     fog: { enabled: true, color: '#e8f0ea', density: 0.0007 },
     photoFloat: true
   },
-  interaction: { clickRipple: true },
-  camera: { autoRotate: false },
-  audio: { bgm: { enabled: true }, sfx: { enabled: true } }
+  interaction: { clickRipple: true, cursorTrail: false },
+  camera: { autoRotate: false, introFlight: false },
+  audio: { bgm: { enabled: true }, sfx: { enabled: true } },
+  lighting: { timeOfDay: 'auto' as string, autoColorAdapt: true }
 })
 
 const hasDraftChanges = computed(() => savedDraftJson.value !== JSON.stringify(getCleanConfig()))
@@ -471,6 +493,13 @@ function setFogColor(color: string) {
   scheduleAutoSave()
 }
 
+function setLightingTime(time: string) {
+  if (!canConfigWrite.value) return
+  config.lighting.timeOfDay = time
+  config.presetName = 'custom'
+  scheduleAutoSave()
+}
+
 function applyPreset(name: string) {
   if (!canConfigWrite.value) return
   const presets: Record<string, Partial<typeof config>> = {
@@ -483,35 +512,38 @@ function applyPreset(name: string) {
         fog: { enabled: false, color: '#e8f0ea', density: 0 },
         photoFloat: false
       },
-      interaction: { clickRipple: true },
-      camera: { autoRotate: false },
-      audio: { bgm: { enabled: false }, sfx: { enabled: true } }
+      interaction: { clickRipple: true, cursorTrail: false },
+      camera: { autoRotate: false, introFlight: false },
+      audio: { bgm: { enabled: false }, sfx: { enabled: true } },
+      lighting: { timeOfDay: 'noon', autoColorAdapt: false }
     },
     'forest-dream': {
       presetName: 'forest-dream',
       layout: { mode: 'helix' },
-      particles: { enabled: true, types: ['sakura', 'stars'], density: 1 },
+      particles: { enabled: true, types: ['sakura', 'fireflies'], density: 1 },
       effects: {
         bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
         fog: { enabled: true, color: '#163124', density: 0.0006 },
         photoFloat: true
       },
-      interaction: { clickRipple: true },
-      camera: { autoRotate: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } }
+      interaction: { clickRipple: true, cursorTrail: false },
+      camera: { autoRotate: false, introFlight: false },
+      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
+      lighting: { timeOfDay: 'sunrise', autoColorAdapt: true }
     },
     'starry-night': {
       presetName: 'starry-night',
       layout: { mode: 'sphere' },
-      particles: { enabled: true, types: ['stars'], density: 1.2 },
+      particles: { enabled: true, types: ['stars', 'meteors'], density: 1.2 },
       effects: {
         bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
         fog: { enabled: false, color: '#0f172a', density: 0 },
         photoFloat: false
       },
-      interaction: { clickRipple: true },
-      camera: { autoRotate: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } }
+      interaction: { clickRipple: true, cursorTrail: true },
+      camera: { autoRotate: false, introFlight: false },
+      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
+      lighting: { timeOfDay: 'night', autoColorAdapt: true }
     },
     'ocean-breeze': {
       presetName: 'ocean-breeze',
@@ -522,9 +554,10 @@ function applyPreset(name: string) {
         fog: { enabled: true, color: '#0c4a6e', density: 0.0008 },
         photoFloat: false
       },
-      interaction: { clickRipple: true },
-      camera: { autoRotate: true },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } }
+      interaction: { clickRipple: true, cursorTrail: false },
+      camera: { autoRotate: true, introFlight: false },
+      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
+      lighting: { timeOfDay: 'noon', autoColorAdapt: true }
     },
     'sunset-glow': {
       presetName: 'sunset-glow',
@@ -535,22 +568,24 @@ function applyPreset(name: string) {
         fog: { enabled: true, color: '#7c2d12', density: 0.0005 },
         photoFloat: true
       },
-      interaction: { clickRipple: true },
-      camera: { autoRotate: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } }
+      interaction: { clickRipple: true, cursorTrail: true },
+      camera: { autoRotate: false, introFlight: false },
+      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
+      lighting: { timeOfDay: 'sunset', autoColorAdapt: true }
     },
     romantic: {
       presetName: 'romantic',
       layout: { mode: 'spiral' },
-      particles: { enabled: true, types: ['hearts'], density: 1 },
+      particles: { enabled: true, types: ['hearts', 'fireflies'], density: 1 },
       effects: {
         bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
         fog: { enabled: false, color: '#4a0e2e', density: 0 },
         photoFloat: true
       },
-      interaction: { clickRipple: true },
-      camera: { autoRotate: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } }
+      interaction: { clickRipple: true, cursorTrail: true },
+      camera: { autoRotate: false, introFlight: false },
+      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
+      lighting: { timeOfDay: 'night', autoColorAdapt: true }
     }
   }
   const next = presets[name]
@@ -993,6 +1028,40 @@ onUnmounted(() => {
             </label>
           </div>
 
+          <label class="field-label">光照时段</label>
+          <div class="chip-row">
+            <button
+              v-for="item in LIGHTING_TIMES"
+              :key="item.id"
+              class="chip"
+              :class="{ active: config.lighting.timeOfDay === item.id }"
+              type="button"
+              :disabled="!canConfigWrite"
+              @click="setLightingTime(item.id)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+
+          <div class="toggle-row">
+            <div class="slider-row">
+              <Icon name="sparkles" :size="15" />
+              <span>
+                照片主色适应
+                <span class="help-tip" title="点击照片时，环境光会缓缓染上这张照片的主色调">ⓘ</span>
+              </span>
+            </div>
+            <label class="switch">
+              <input
+                v-model="config.lighting.autoColorAdapt"
+                type="checkbox"
+                :disabled="!canConfigWrite"
+                @change="onAtmosphereInput"
+              />
+              <span></span>
+            </label>
+          </div>
+
           <div class="slider-row">
             <Icon name="cloud" :size="15" />
             <div class="slider-copy">
@@ -1040,6 +1109,25 @@ onUnmounted(() => {
 
           <div class="toggle-row">
             <div class="slider-row">
+              <Icon name="mouse-pointer" :size="15" />
+              <span>
+                星迹拖尾
+                <span class="help-tip" title="鼠标划过画面时带出一串金色星尘轨迹">ⓘ</span>
+              </span>
+            </div>
+            <label class="switch">
+              <input
+                v-model="config.interaction.cursorTrail"
+                type="checkbox"
+                :disabled="!canConfigWrite"
+                @change="scheduleAutoSave"
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div class="slider-row">
               <Icon name="star" :size="15" />
               <span>
                 点击涟漪
@@ -1080,11 +1168,30 @@ onUnmounted(() => {
               </span>
             </div>
             <label class="switch">
-              <input 
-                v-model="config.camera.autoRotate" 
-                type="checkbox" 
-                :disabled="!canConfigWrite" 
-                @change="scheduleAutoSave" 
+              <input
+                v-model="config.camera.autoRotate"
+                type="checkbox"
+                :disabled="!canConfigWrite"
+                @change="scheduleAutoSave"
+              />
+              <span></span>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div class="slider-row">
+              <Icon name="eye" :size="15" />
+              <span>
+                开场电影运镜
+                <span class="help-tip" title="进入展厅时镜头从远景高位弧线推进，下次进入生效">ⓘ</span>
+              </span>
+            </div>
+            <label class="switch">
+              <input
+                v-model="config.camera.introFlight"
+                type="checkbox"
+                :disabled="!canConfigWrite"
+                @change="scheduleAutoSave"
               />
               <span></span>
             </label>

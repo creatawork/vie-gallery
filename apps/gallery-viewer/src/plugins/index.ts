@@ -3,6 +3,7 @@ export { LayoutPlugin } from './LayoutPlugin'
 export { ClickRipplePlugin } from './ClickRipplePlugin'
 export { LightingPlugin } from './LightingPlugin'
 export { PhotoFadePlugin } from './PhotoFadePlugin'
+export { CursorTrailPlugin } from './CursorTrailPlugin'
 
 // Visual effects plugins (from vie-mei)
 export { ParticlesPlugin } from './ParticlesPlugin'
@@ -30,6 +31,7 @@ export const pluginRegistry = {
   ClickRipple: () => import('./ClickRipplePlugin').then(m => new m.ClickRipplePlugin()),
   Lighting: () => import('./LightingPlugin').then(m => new m.LightingPlugin()),
   PhotoFade: () => import('./PhotoFadePlugin').then(m => new m.PhotoFadePlugin()),
+  CursorTrail: () => import('./CursorTrailPlugin').then(m => new m.CursorTrailPlugin()),
 
   // Visual effects
   Particles: () => import('./ParticlesPlugin').then(m => new m.ParticlesPlugin()),

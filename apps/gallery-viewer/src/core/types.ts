@@ -32,7 +32,7 @@ export interface ViewerConfig {
   // 粒子系统
   particles: {
     enabled: boolean
-    types: Array<'stars' | 'hearts' | 'sakura' | 'snow'>
+    types: Array<'stars' | 'hearts' | 'sakura' | 'snow' | 'fireflies' | 'meteors'>
     density?: number
   }
 
@@ -69,6 +69,8 @@ export interface ViewerConfig {
   // 相机行为
   camera?: {
     autoRotate?: boolean
+    /** 进场电影式运镜：开场从远景高位弧线推进到默认机位 */
+    introFlight?: boolean
   }
 
   // 交互特效

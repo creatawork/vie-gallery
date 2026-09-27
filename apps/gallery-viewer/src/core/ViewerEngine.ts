@@ -56,6 +56,7 @@ export class ViewerEngine {
   private idleTimer: number | null = null
   private isIdle = false
   private activeTransitionsCount = 0
+  private introFlightPlayed = false
 
   // 性能 APM 探针
   private frameCount = 0
@@ -171,6 +172,10 @@ export class ViewerEngine {
       pluginsToInstall.push('ClickRipple')
     }
 
+    if (config.interaction?.cursorTrail) {
+      pluginsToInstall.push('CursorTrail')
+    }
+
     // 批量安装
     await this.pluginManager.installAll(pluginsToInstall)
 
@@ -237,7 +242,20 @@ export class ViewerEngine {
       }
     }
 
-    // 4. 广播配置更新事件给所有已装配的插件
+    // 4. 处理星迹拖尾开启/关闭
+    if (newConfig.interaction?.cursorTrail !== undefined) {
+      const prevTrail = prevConfig.interaction?.cursorTrail
+      const nextTrail = newConfig.interaction.cursorTrail
+      const trailInstalled = this.pluginManager.isInstalled('CursorTrail')
+
+      if (!prevTrail && nextTrail && !trailInstalled) {
+        await this.pluginManager.install('CursorTrail')
+      } else if (prevTrail && !nextTrail && trailInstalled) {
+        this.pluginManager.uninstall('CursorTrail')
+      }
+    }
+
+    // 5. 广播配置更新事件给所有已装配的插件
     this.eventBus.emit('config:change', merged)
     this.eventBus.emit('config:update', merged)
   }
@@ -384,7 +402,56 @@ export class ViewerEngine {
     this.isRunning = true
     this.clock.start()
     this.lastRenderTime = performance.now()
+
+    // 开场电影运镜只随引擎首次启动播放一次
+    if (!this.introFlightPlayed) {
+      this.introFlightPlayed = true
+      if (this.configManager.getConfig().camera?.introFlight) {
+        this.playIntroFlight()
+      }
+    }
+
     this.animate()
+  }
+
+  /**
+   * 开场电影式运镜：镜头从远景高位沿弧线推进至默认机位。
+   * 直接对相机位置做贝塞尔插值（与照片聚焦飞行同一模式），
+   * OrbitControls 每帧从当前相机位置派生状态，二者可共存。
+   */
+  private playIntroFlight(): void {
+    const controls = this.controls
+    if (!controls) return
+
+    const endPos = this.camera.position.clone()
+    // 起点：默认机位的右后上方拉远，制造俯冲推进感
+    const startPos = endPos.clone().add(new THREE.Vector3(900, 620, 1500))
+
+    this.notifyTransitionStart()
+    this.camera.position.copy(startPos)
+
+    const duration = 2600
+    const startTime = performance.now()
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startTime) / duration)
+      const ease = 1 - Math.pow(1 - t, 4)
+
+      this.camera.position.lerpVectors(startPos, endPos, ease)
+      // 正弦弧线抬升，让推进路径带一点"掠过"的弧度
+      this.camera.position.y += Math.sin(ease * Math.PI) * 70
+      controls.update()
+
+      if (t < 1) {
+        requestAnimationFrame(step)
+      } else {
+        this.camera.position.copy(endPos)
+        controls.update()
+        this.notifyTransitionEnd()
+      }
+    }
+
+    requestAnimationFrame(step)
   }
 
   /**

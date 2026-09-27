@@ -23,9 +23,10 @@ const DRAFT_CONFIG = {
     fog: { enabled: false, color: '#0f172a', density: 0 },
     photoFloat: true
   },
-  camera: { autoRotate: false },
-  interaction: { clickRipple: true },
-  audio: { bgm: { enabled: true }, sfx: { enabled: true } }
+  camera: { autoRotate: false, introFlight: false },
+  interaction: { clickRipple: true, cursorTrail: false },
+  audio: { bgm: { enabled: true }, sfx: { enabled: true } },
+  lighting: { timeOfDay: 'auto', autoColorAdapt: true }
 }
 
 const draftJson = JSON.stringify(DRAFT_CONFIG)
@@ -154,30 +155,42 @@ async function main() {
   await page.waitForTimeout(300)
   await page.screenshot({ path: `${OUT}/03-fog.png` })
 
-  // 自动漫游开关 → 应写入 camera.autoRotate
-  await page.click('.toggle-row:has-text("自动漫游") label.switch')
-  await page.waitForTimeout(1500) // 等防抖保存落盘
-  await page.screenshot({ path: `${OUT}/04-autorotate.png` })
+  // 光照时段：黄昏 + 星迹拖尾开关
+  const lightingChips = await page.locator('.side-block:has(h2:text-is("氛围")) .chip').count()
+  await page.click('.side-block:has(h2:text-is("氛围")) .chip:has-text("黄昏")')
+  await page.click('.toggle-row:has-text("星迹拖尾") label.switch')
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${OUT}/04-lighting.png` })
 
-  // 高级 tab：辉光微调 + 粒子
+  // 自动漫漫漫游开关 → 应写入 camera.autoRotate
+  await page.click('.toggle-row:has-text("自动漫游") label.switch')
+  await page.click('.toggle-row:has-text("开场电影运镜") label.switch')
+  await page.waitForTimeout(1500) // 等防抖保存落盘
+  await page.screenshot({ path: `${OUT}/05-camera.png` })
+
+  // 高级 tab：辉光微调 + 粒子（含新增萤火虫/流星）
   await page.click('.side-tab:has-text("高级")')
   await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/05-advanced.png` })
+  const meteorChip = await page.locator('.particle-chips .chip:has-text("流星")').count()
+  await page.click('.particle-chips .chip:has-text("流星")')
+  await page.click('.particle-chips .chip:has-text("萤火虫")')
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: `${OUT}/06-advanced.png` })
 
   // 版本 tab：当前线上版本标注
   await page.click('.side-tab:has-text("版本")')
   await page.waitForTimeout(300)
   const currentLabel = await page.locator('.history-row strong:has-text("当前线上版本")').count()
-  await page.screenshot({ path: `${OUT}/06-history.png` })
+  await page.screenshot({ path: `${OUT}/07-history.png` })
 
   // 发布链路
   await page.waitForTimeout(1200) // 等自动保存完成后按钮可用
   await page.click('.btn.solid:has-text("同步到访客端")')
   await page.waitForTimeout(400)
-  await page.screenshot({ path: `${OUT}/07-publish-confirm.png` })
+  await page.screenshot({ path: `${OUT}/08-publish-confirm.png` })
   await page.click('.modal-card button:has-text("确认同步")')
   await page.waitForTimeout(800)
-  await page.screenshot({ path: `${OUT}/08-published.png` })
+  await page.screenshot({ path: `${OUT}/09-published.png` })
 
   // 断言
   const lastSave = savedBodies.at(-1)?.configJson ? JSON.parse(savedBodies.at(-1).configJson) : null
@@ -185,6 +198,8 @@ async function main() {
     backgroundCards,
     accentSwatches,
     fogSwatchesShown: fogSwatches >= 6,
+    lightingChipsShown: lightingChips >= 5,
+    meteorChipShown: meteorChip === 1,
     historyCurrentLabel: currentLabel >= 1,
     autosaveCount: savedBodies.length,
     publishCount: publishCalls.length,
@@ -192,6 +207,11 @@ async function main() {
     savedTheme: lastSave?.theme,
     savedFogColor: lastSave?.effects?.fog?.color,
     savedFogEnabled: lastSave?.effects?.fog?.enabled,
+    savedLightingTime: lastSave?.lighting?.timeOfDay,
+    savedAutoColorAdapt: lastSave?.lighting?.autoColorAdapt,
+    savedCursorTrail: lastSave?.interaction?.cursorTrail,
+    savedIntroFlight: lastSave?.camera?.introFlight,
+    savedParticleTypes: lastSave?.particles?.types,
     savedAutoRotate: lastSave?.camera?.autoRotate,
     savedPhotoFloat: lastSave?.effects?.photoFloat
   }
@@ -199,11 +219,18 @@ async function main() {
   if (backgroundCards !== 0) failed.push('空间背景配置卡片未移除')
   if (accentSwatches !== 0) failed.push('点缀色色板未移除')
   if (!checks.fogSwatchesShown) failed.push('雾色色板未出现')
+  if (!checks.lightingChipsShown) failed.push('光照时段选项未出现')
+  if (!checks.meteorChipShown) failed.push('流星粒子选项未出现')
   if (!checks.historyCurrentLabel) failed.push('版本历史缺少“当前线上版本”标注')
   if (checks.savedBackground !== undefined) failed.push('background 不应再写入配置')
   if (checks.savedTheme !== undefined) failed.push('theme 不应再写入配置')
   if (checks.savedFogColor !== '#0c4a6e') failed.push('雾色未保存')
   if (!checks.savedFogEnabled) failed.push('雾效未随滑块启用')
+  if (checks.savedLightingTime !== 'sunset') failed.push('光照时段未保存为 sunset')
+  if (checks.savedAutoColorAdapt !== true) failed.push('照片主色适应未持久化')
+  if (checks.savedCursorTrail !== true) failed.push('星迹拖尾未持久化')
+  if (checks.savedIntroFlight !== true) failed.push('开场电影运镜未持久化')
+  if (!Array.isArray(checks.savedParticleTypes) || !checks.savedParticleTypes.includes('meteors') || !checks.savedParticleTypes.includes('fireflies')) failed.push('新粒子类型未保存')
   if (checks.savedAutoRotate !== true) failed.push('自动漫游未持久化')
   if (checks.savedPhotoFloat !== true) failed.push('照片悬浮未持久化')
   if (checks.publishCount < 1) failed.push('发布请求未发出')

@@ -35,27 +35,30 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
     layout: { mode: 'sphere' },
     particles: { enabled: false, types: [] },
     effects: { bloom: { enabled: false }, fog: { enabled: false } },
-    interaction: { clickRipple: true }
+    interaction: { clickRipple: true, cursorTrail: false },
+    lighting: { timeOfDay: 'noon', autoColorAdapt: false }
   },
   'forest-dream': {
     presetName: 'forest-dream',
     layout: { mode: 'helix' },
-    particles: { enabled: true, types: ['sakura', 'stars'], density: 1.0 },
+    particles: { enabled: true, types: ['sakura', 'fireflies'], density: 1.0 },
     effects: {
       bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
       fog: { enabled: true, color: '#163124', density: 0.0006 }
     },
-    interaction: { clickRipple: true }
+    interaction: { clickRipple: true, cursorTrail: false },
+    lighting: { timeOfDay: 'sunrise', autoColorAdapt: true }
   },
   'starry-night': {
     presetName: 'starry-night',
     layout: { mode: 'sphere' },
-    particles: { enabled: true, types: ['stars'], density: 1.2 },
+    particles: { enabled: true, types: ['stars', 'meteors'], density: 1.2 },
     effects: {
       bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
       fog: { enabled: false }
     },
-    interaction: { clickRipple: true }
+    interaction: { clickRipple: true, cursorTrail: true },
+    lighting: { timeOfDay: 'night', autoColorAdapt: true }
   },
   'ocean-breeze': {
     presetName: 'ocean-breeze',
@@ -65,7 +68,8 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
       bloom: { enabled: false },
       fog: { enabled: true, color: '#0c4a6e', density: 0.0008 }
     },
-    interaction: { clickRipple: true }
+    interaction: { clickRipple: true, cursorTrail: false },
+    lighting: { timeOfDay: 'noon', autoColorAdapt: true }
   },
   'sunset-glow': {
     presetName: 'sunset-glow',
@@ -75,17 +79,19 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
       bloom: { enabled: true, strength: 0.85, radius: 0.6, threshold: 0.2 },
       fog: { enabled: true, color: '#7c2d12', density: 0.0005 }
     },
-    interaction: { clickRipple: true }
+    interaction: { clickRipple: true, cursorTrail: true },
+    lighting: { timeOfDay: 'sunset', autoColorAdapt: true }
   },
   'romantic': {
     presetName: 'romantic',
     layout: { mode: 'spiral' },
-    particles: { enabled: true, types: ['hearts'], density: 1.0 },
+    particles: { enabled: true, types: ['hearts', 'fireflies'], density: 1.0 },
     effects: {
       bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
       fog: { enabled: false }
     },
-    interaction: { clickRipple: true }
+    interaction: { clickRipple: true, cursorTrail: true },
+    lighting: { timeOfDay: 'night', autoColorAdapt: true }
   }
 }
 
@@ -117,10 +123,16 @@ const DEFAULT_CONFIG: ViewerConfig = {
     photoFloat: true
   },
   camera: {
-    autoRotate: false
+    autoRotate: false,
+    introFlight: false
   },
   interaction: {
-    clickRipple: true
+    clickRipple: true,
+    cursorTrail: false
+  },
+  lighting: {
+    timeOfDay: 'auto',
+    autoColorAdapt: true
   },
   audio: {
     bgm: {
@@ -333,7 +345,7 @@ export class ConfigManager {
     const particles = params.get('particles')
     if (particles) {
       const types = particles.split(',').filter(t =>
-        ['stars', 'hearts', 'sakura', 'snow'].includes(t)
+        ['stars', 'hearts', 'sakura', 'snow', 'fireflies', 'meteors'].includes(t)
       )
       if (types.length > 0) {
         baseConfig.particles = { enabled: true, types }

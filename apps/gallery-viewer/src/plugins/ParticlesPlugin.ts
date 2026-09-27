@@ -9,6 +9,8 @@ import type { ViewerPlugin, ViewerContext } from '../core/types'
  * - sakura: 落樱花瓣（3D 翻滚自旋 + 重力空气阻尼）
  * - hearts: 心动浪漫（心形参数网格 + 心跳脉冲律动）
  * - snow: 晶莹静雪（六角晶体散射 + 柔和气流飘荡）
+ * - fireflies: 夏夜萤火（游走漂浮 + 呼吸式明灭发光）
+ * - meteors: 流星雨（拖尾划痕 + 随机划落周期）
  * 
  * 性能优化：
  * - 设备性能自适应粒子数量
@@ -25,6 +27,8 @@ interface ParticleCountConfig {
   sakura: number
   hearts: number
   snow: number
+  fireflies: number
+  meteors: number
 }
 
 function getParticleCountByQuality(quality: 'low' | 'mid' | 'high', isMobile: boolean): ParticleCountConfig {
@@ -33,21 +37,27 @@ function getParticleCountByQuality(quality: 'low' | 'mid' | 'high', isMobile: bo
       stars: 300,
       sakura: 60,
       hearts: 40,
-      snow: 200
+      snow: 200,
+      fireflies: 70,
+      meteors: 8
     }
   } else if (quality === 'mid') {
     return {
       stars: 600,
       sakura: 120,
       hearts: 80,
-      snow: 400
+      snow: 400,
+      fireflies: 140,
+      meteors: 14
     }
   } else {
     return {
       stars: 1200,
       sakura: 200,
       hearts: 130,
-      snow: 800
+      snow: 800,
+      fireflies: 240,
+      meteors: 22
     }
   }
 }
@@ -126,6 +136,12 @@ export class ParticlesPlugin implements ViewerPlugin {
           break
         case 'snow':
           system = new SnowSystem(this.context.scene, particleCount.snow)
+          break
+        case 'fireflies':
+          system = new FirefliesSystem(this.context.scene, particleCount.fireflies)
+          break
+        case 'meteors':
+          system = new MeteorSystem(this.context.scene, particleCount.meteors)
           break
         default:
           continue
@@ -603,5 +619,234 @@ class SnowSystem implements ParticleSystem {
     this.scene.remove(this.mesh)
     this.mesh.geometry.dispose()
     ;(this.mesh.material as THREE.Material).dispose()
+  }
+}
+
+/**
+ * 5. 夏夜萤火系统 (FirefliesSystem)
+ * 特点：多频正弦游走漂移 + 呼吸/脉冲式明灭发光，琥珀金与萤绿双色
+ */
+class FirefliesSystem implements ParticleSystem {
+  private mesh: THREE.Points
+  private material: THREE.ShaderMaterial
+  private scene: THREE.Scene
+
+  constructor(scene: THREE.Scene, count: number) {
+    this.scene = scene
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(count * 3)
+    const seeds = new Float32Array(count)
+    const scales = new Float32Array(count)
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 1800
+      positions[i * 3 + 1] = -250 + Math.random() * 800
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 1600
+      seeds[i] = Math.random() * 100
+      scales[i] = 0.7 + Math.random() * 1.3
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1))
+    geometry.setAttribute('aScale', new THREE.BufferAttribute(scales, 1))
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 }
+      },
+      vertexShader: `
+        uniform float uTime;
+        attribute float aSeed;
+        attribute float aScale;
+        varying float vGlow;
+        varying vec3 vColor;
+
+        void main() {
+          vec3 pos = position;
+
+          // 多频正弦叠加的无规则游走漂移
+          float t = uTime * 0.35 + aSeed;
+          pos.x += sin(t * 0.9 + aSeed) * 60.0 + sin(t * 0.37) * 40.0;
+          pos.y += sin(t * 0.7 + aSeed * 2.0) * 45.0;
+          pos.z += cos(t * 0.5 + aSeed) * 55.0;
+
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          gl_PointSize = aScale * (200.0 / -mvPosition.z);
+
+          // 呼吸式明灭 + 偶发高亮脉冲（萤火虫只在瞬间最亮）
+          float breath = 0.3 + 0.3 * sin(uTime * (0.8 + fract(aSeed) * 0.8) + aSeed);
+          float flash = pow(max(0.0, sin(uTime * 0.45 + aSeed * 3.7)), 14.0);
+          vGlow = clamp(breath + flash, 0.04, 1.0);
+
+          // 琥珀金与萤绿之间取色
+          vColor = mix(vec3(1.0, 0.75, 0.15), vec3(0.64, 0.9, 0.2), fract(aSeed * 7.31));
+        }
+      `,
+      fragmentShader: `
+        varying float vGlow;
+        varying vec3 vColor;
+
+        void main() {
+          vec2 center = gl_PointCoord - vec2(0.5);
+          float dist = length(center);
+          if (dist > 0.5) discard;
+
+          float glow = pow(1.0 - dist * 2.0, 2.2);
+          gl_FragColor = vec4(vColor, vGlow * glow);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+
+    this.mesh = new THREE.Points(geometry, this.material)
+    scene.add(this.mesh)
+  }
+
+  update(elapsed: number): void {
+    if (this.material.uniforms?.uTime) {
+      this.material.uniforms.uTime.value = elapsed
+    }
+  }
+
+  dispose(): void {
+    this.scene.remove(this.mesh)
+    this.mesh.geometry.dispose()
+    this.material.dispose()
+  }
+}
+
+/**
+ * 6. 流星雨系统 (MeteorSystem)
+ * 特点：渐隐拖尾划痕 + 随机划落周期，帧率无关的位移积分
+ */
+class MeteorSystem implements ParticleSystem {
+  private mesh: THREE.LineSegments
+  private scene: THREE.Scene
+  private count: number
+  private positions: Float32Array
+  private colors: Float32Array
+  private lastElapsed = 0
+  private meteors: Array<{
+    head: THREE.Vector3
+    dir: THREE.Vector3
+    speed: number
+    tail: number
+    active: boolean
+    respawnAt: number
+  }> = []
+
+  constructor(scene: THREE.Scene, count: number) {
+    this.scene = scene
+    this.count = count
+    this.positions = new Float32Array(count * 6)
+    this.colors = new Float32Array(count * 6)
+
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3))
+    geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3))
+
+    const material = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+
+    this.mesh = new THREE.LineSegments(geometry, material)
+    scene.add(this.mesh)
+
+    for (let i = 0; i < this.count; i++) {
+      this.meteors.push({
+        head: new THREE.Vector3(),
+        dir: new THREE.Vector3(0, -1, 0),
+        speed: 0,
+        tail: 0,
+        active: false,
+        respawnAt: Math.random() * 6
+      })
+      this.hideMeteor(i)
+    }
+  }
+
+  /** 隐藏流星：两端收缩为同一点即可让线段不可见 */
+  private hideMeteor(index: number): void {
+    const base = index * 6
+    for (let v = 0; v < 6; v++) {
+      this.positions[base + v] = 99999
+    }
+  }
+
+  private respawn(meteor: (typeof this.meteors)[number]): void {
+    meteor.head.set(
+      (Math.random() - 0.5) * 2200,
+      450 + Math.random() * 550,
+      (Math.random() - 0.5) * 1800
+    )
+    // 斜向下划落，方向带随机扰动
+    meteor.dir.set(
+      0.55 + Math.random() * 0.35,
+      -(0.5 + Math.random() * 0.4),
+      (Math.random() - 0.5) * 0.35
+    ).normalize()
+    meteor.speed = 900 + Math.random() * 700
+    meteor.tail = 160 + Math.random() * 140
+    meteor.active = true
+  }
+
+  update(elapsed: number): void {
+    const dt = Math.min(0.1, Math.max(0, elapsed - this.lastElapsed))
+    this.lastElapsed = elapsed
+
+    for (let i = 0; i < this.count; i++) {
+      const meteor = this.meteors[i]
+      const base = i * 6
+
+      if (!meteor.active) {
+        if (elapsed >= meteor.respawnAt) this.respawn(meteor)
+        else continue
+      }
+
+      meteor.head.addScaledVector(meteor.dir, meteor.speed * dt)
+
+      // 头亮尾暗（加色混合下暗色即视觉透明）
+      this.positions[base] = meteor.head.x
+      this.positions[base + 1] = meteor.head.y
+      this.positions[base + 2] = meteor.head.z
+      this.positions[base + 3] = meteor.head.x - meteor.dir.x * meteor.tail
+      this.positions[base + 4] = meteor.head.y - meteor.dir.y * meteor.tail
+      this.positions[base + 5] = meteor.head.z - meteor.dir.z * meteor.tail
+
+      this.colors[base] = 0.92
+      this.colors[base + 1] = 0.96
+      this.colors[base + 2] = 1.0
+      this.colors[base + 3] = 0.06
+      this.colors[base + 4] = 0.07
+      this.colors[base + 5] = 0.12
+
+      // 划出边界后进入随机等待，营造"偶发"感
+      if (
+        meteor.head.y < -600 ||
+        Math.abs(meteor.head.x) > 2400 ||
+        Math.abs(meteor.head.z) > 2200
+      ) {
+        meteor.active = false
+        meteor.respawnAt = elapsed + 1.5 + Math.random() * 6
+        this.hideMeteor(i)
+      }
+    }
+
+    this.mesh.geometry.attributes.position.needsUpdate = true
+    this.mesh.geometry.attributes.color.needsUpdate = true
+  }
+
+  dispose(): void {
+    this.scene.remove(this.mesh)
+    this.mesh.geometry.dispose()
+    ;(this.mesh.material as THREE.Material).dispose()
+    this.meteors = []
   }
 }
