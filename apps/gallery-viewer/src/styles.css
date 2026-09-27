@@ -9,8 +9,8 @@
   --bg-surface: #10171d;
   --text-main: #f8fafc;
   --text-sub: #94a3b8;
-  --brand-emerald: #10b981;
-  --brand-emerald-glow: rgba(16, 185, 129, 0.4);
+  --brand-emerald: var(--accent, #10b981);
+  --brand-emerald-glow: color-mix(in srgb, var(--accent, #10b981) 40%, transparent);
 
   --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
 }

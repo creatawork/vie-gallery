@@ -79,6 +79,13 @@ export interface ViewerConfig {
       enabled: boolean
       source?: 'sun' | 'moon'
     }
+    /** 照片常态悬浮微动；缺省视为开启（兼容历史配置） */
+    photoFloat?: boolean
+  }
+
+  // 相机行为
+  camera?: {
+    autoRotate?: boolean
   }
 
   // 交互特效

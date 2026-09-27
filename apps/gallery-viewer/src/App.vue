@@ -154,6 +154,9 @@ async function handlePostMessage(event: MessageEvent) {
       await init3DEngine()
     }
     if (engine) engine.applyConfig(config)
+    // 相机行为与点缀色跟随配置中心实时更新
+    applyAutoTour(config.camera?.autoRotate === true)
+    applyAccentTheme(config)
   }
 }
 
@@ -275,6 +278,11 @@ async function init3DEngine() {
     }
     engine.start()
     notifyParentReady()
+
+    // 初始相机行为与点缀色跟随已发布配置
+    const initialConfig = engine.getConfigManager().getConfig() as Record<string, any>
+    applyAutoTour(initialConfig?.camera?.autoRotate === true)
+    applyAccentTheme(initialConfig)
 
     // 监听 APM 探针
     engine.getEventBus().on('metrics:update', (metrics: EngineMetrics) => {
@@ -430,17 +438,38 @@ function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
 }
 
 /**
- * 切换无人机自动漫游巡航
+ * 应用配置中心下发的相机行为（自动漫游），配置未开启时保持访客手动控制
  */
-function toggleAutoTour() {
-  isAutoTour.value = !isAutoTour.value
+function applyAutoTour(enabled: boolean) {
+  isAutoTour.value = enabled
   if (engine && engine.getControls()) {
     const controls = engine.getControls()!
-    controls.autoRotate = isAutoTour.value
+    controls.autoRotate = enabled
     controls.autoRotateSpeed = 1.2
-    if (isAutoTour.value) {
+    if (enabled) {
       engine.wakeUp(3600000) // 保持活跃
     }
+  }
+}
+
+function toggleAutoTour() {
+  applyAutoTour(!isAutoTour.value)
+}
+
+/**
+ * 将配置的主题点缀色写入 CSS 变量，访客端 UI 与之联动
+ */
+function applyAccentTheme(config: Record<string, any> | null | undefined) {
+  const accent = config?.theme?.accent
+  const root = document.documentElement
+  if (typeof accent === 'string' && accent) {
+    root.style.setProperty('--accent', accent)
+    root.style.setProperty('--accent-strong', accent)
+    root.style.setProperty('--brand-emerald', accent)
+  } else {
+    root.style.removeProperty('--accent')
+    root.style.removeProperty('--accent-strong')
+    root.style.removeProperty('--brand-emerald')
   }
 }
 
@@ -889,7 +918,7 @@ async function selectPreset(presetName: string) {
   position: absolute;
   width: 320px;
   height: 320px;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.2) 0%, transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent, #10b981) 20%, transparent) 0%, transparent 70%);
   filter: blur(40px);
 }
 
@@ -906,10 +935,10 @@ async function selectPreset(presetName: string) {
   width: 44px;
   height: 44px;
   border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #10b981;
+  border-top-color: var(--accent, #10b981);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent, #10b981) 40%, transparent);
 }
 
 .loader-text {
@@ -963,8 +992,8 @@ async function selectPreset(presetName: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 10px #10b981;
+  background: var(--accent, #10b981);
+  box-shadow: 0 0 10px var(--accent, #10b981);
 }
 
 .brand-title {
@@ -1033,10 +1062,10 @@ async function selectPreset(presetName: string) {
 }
 
 .mode-btn.active {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, var(--accent, #10b981) 0%, #059669 100%);
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent, #10b981) 35%, transparent);
 }
 
 /* Icon Buttons */
@@ -1062,13 +1091,13 @@ async function selectPreset(presetName: string) {
 .hud-icon-btn:hover {
   background: rgba(20, 38, 31, 0.9);
   color: #f1f5f3;
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: color-mix(in srgb, var(--accent, #10b981) 30%, transparent);
 }
 
 .hud-icon-btn.active {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
-  border-color: rgba(16, 185, 129, 0.5);
+  background: color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
+  color: var(--accent-strong, #34d399);
+  border-color: color-mix(in srgb, var(--accent, #10b981) 50%, transparent);
 }
 
 /* Preset Dropdown */
@@ -1121,14 +1150,14 @@ async function selectPreset(presetName: string) {
 }
 
 .menu-item.active {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: color-mix(in srgb, var(--accent, #10b981) 15%, transparent);
+  color: var(--accent-strong, #34d399);
   font-weight: 600;
 }
 
 .check-icon {
   margin-left: auto;
-  color: #10b981;
+  color: var(--accent, #10b981);
 }
 
 @keyframes menuFadeIn {
@@ -1147,7 +1176,7 @@ async function selectPreset(presetName: string) {
   padding: 10px 14px;
   background: rgba(6, 13, 10, 0.85);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  border: 1px solid color-mix(in srgb, var(--accent, #10b981) 25%, transparent);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-family: ui-monospace, monospace;
@@ -1159,7 +1188,7 @@ async function selectPreset(presetName: string) {
   align-items: center;
   gap: 6px;
   font-weight: 700;
-  color: #10b981;
+  color: var(--accent, #10b981);
   letter-spacing: 0.08em;
   margin-bottom: 6px;
 }
@@ -1168,7 +1197,7 @@ async function selectPreset(presetName: string) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #10b981;
+  background: var(--accent, #10b981);
   animation: pulse 1.5s infinite;
 }
 
@@ -1215,14 +1244,14 @@ async function selectPreset(presetName: string) {
   padding: 6px 12px;
   background: rgba(10, 20, 16, 0.9);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(16, 185, 129, 0.4);
+  border: 1px solid color-mix(in srgb, var(--accent, #10b981) 40%, transparent);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   animation: fadeIn 0.15s ease;
 }
 
 .tag-index {
-  color: #10b981;
+  color: var(--accent, #10b981);
   font-weight: 700;
   font-size: 11px;
 }
@@ -1273,7 +1302,7 @@ async function selectPreset(presetName: string) {
 .webgl-fallback-banner button:hover,
 .webgl-fallback-banner button:focus-visible {
   color: #ffffff;
-  background: rgba(16, 185, 129, 0.2);
+  background: color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
   outline: none;
 }
 
@@ -1347,7 +1376,7 @@ async function selectPreset(presetName: string) {
   bottom: 76px;
   z-index: 2;
   padding: 9px 16px;
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  border: 1px solid color-mix(in srgb, var(--accent, #10b981) 35%, transparent);
   border-radius: 10px;
   color: #a7f3d0;
   background: rgba(10, 20, 16, 0.82);
@@ -1359,7 +1388,7 @@ async function selectPreset(presetName: string) {
 .load-more-floating:hover:not(:disabled),
 .load-more-floating:focus-visible {
   outline: none;
-  background: rgba(16, 185, 129, 0.2);
+  background: color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
 }
 
 .load-more-floating:disabled {
@@ -1387,7 +1416,7 @@ async function selectPreset(presetName: string) {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2em;
-  color: #10b981;
+  color: var(--accent, #10b981);
   margin-bottom: 12px;
 }
 
@@ -1447,17 +1476,17 @@ async function selectPreset(presetName: string) {
   display: block;
   margin: 28px auto 0;
   padding: 10px 20px;
-  border: 1px solid rgba(16, 185, 129, 0.34);
+  border: 1px solid color-mix(in srgb, var(--accent, #10b981) 34%, transparent);
   border-radius: 10px;
   color: #a7f3d0;
-  background: rgba(16, 185, 129, 0.1);
+  background: color-mix(in srgb, var(--accent, #10b981) 10%, transparent);
   font-size: 13px;
 }
 
 .load-more-btn:hover:not(:disabled),
 .load-more-btn:focus-visible {
   outline: none;
-  background: rgba(16, 185, 129, 0.2);
+  background: color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
 }
 
 .load-more-btn:disabled {
@@ -1523,8 +1552,8 @@ async function selectPreset(presetName: string) {
   box-shadow: 
     0 20px 40px rgba(0, 0, 0, 0.3),
     0 8px 16px rgba(0, 0, 0, 0.2),
-    0 0 0 1px rgba(16, 185, 129, 0.3);
-  border-color: rgba(16, 185, 129, 0.5);
+    0 0 0 1px color-mix(in srgb, var(--accent, #10b981) 30%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #10b981) 50%, transparent);
 }
 
 /* 特色照片 - 占据2列，更突出 */

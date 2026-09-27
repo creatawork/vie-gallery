@@ -144,7 +144,11 @@ const DEFAULT_CONFIG: ViewerConfig = {
       enabled: false,
       color: '#0f172a',
       density: 0.0008
-    }
+    },
+    photoFloat: true
+  },
+  camera: {
+    autoRotate: false
   },
   interaction: {
     clickRipple: true

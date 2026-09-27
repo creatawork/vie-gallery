@@ -188,7 +188,11 @@ function getCleanConfig() {
         enabled: !!config.effects?.fog?.enabled,
         color: config.effects?.fog?.color || '#0f172a',
         density: config.effects?.fog?.density ?? 0.0008
-      }
+      },
+      photoFloat: !!config.effects?.photoFloat
+    },
+    camera: {
+      autoRotate: !!config.camera?.autoRotate
     },
     interaction: {
       clickRipple: config.interaction?.clickRipple ?? true
@@ -213,7 +217,7 @@ function ensureConfigDefaults() {
   if (!config.effects) config.effects = {} as any
   if (!config.effects.bloom) config.effects.bloom = { enabled: true, strength: 0.75, radius: 0.5, threshold: 0.18 }
   if (!config.effects.fog) config.effects.fog = { enabled: false, color: '#0f172a', density: 0.0008 }
-  if (config.effects.photoFloat === undefined) config.effects.photoFloat = false
+  if (config.effects.photoFloat === undefined) config.effects.photoFloat = true
   if (!config.layout) config.layout = { mode: 'sphere' }
   if (!config.interaction) config.interaction = { clickRipple: true }
   if (!config.camera) config.camera = { autoRotate: false }
@@ -267,8 +271,16 @@ function sendLiveMessage(payload: Record<string, unknown>) {
   previewIframeRef.value?.contentWindow?.postMessage(payload, '*')
 }
 
+let livePreviewTimer: number | null = null
+
+// 拖动滑块时 input 事件高频触发，预览端每次都会重装特效插件；
+// 节流到 120ms 一条，肉眼无感知差异但避免预览卡顿。
 function refreshLivePreview() {
-  sendLiveMessage({ type: 'VIE_CONFIG_UPDATE', config: getCleanConfig() })
+  if (livePreviewTimer) return
+  livePreviewTimer = window.setTimeout(() => {
+    livePreviewTimer = null
+    sendLiveMessage({ type: 'VIE_CONFIG_UPDATE', config: getCleanConfig() })
+  }, 120)
 }
 
 function isTrustedPreviewOrigin(origin: string) {
@@ -325,7 +337,7 @@ const config = reactive({
   effects: {
     bloom: { enabled: true, strength: 1.3, radius: 0.5, threshold: 0.18 },
     fog: { enabled: true, color: '#e8f0ea', density: 0.0007 },
-    photoFloat: false
+    photoFloat: true
   },
   interaction: { clickRipple: true },
   camera: { autoRotate: false },
@@ -347,11 +359,14 @@ const syncStatus = computed(() => {
 })
 
 const displayVersions = computed(() => {
-  return versions.value.slice(0, 10).map((version, index) => ({
-    ...version,
-    title: version.title || (index === 0 ? '当前版本' : `版本 v${version.versionNumber}`),
-    current: version.id === publishedVersionId.value || (index === 0 && !publishedVersionId.value)
-  }))
+  return versions.value.slice(0, 10).map((version) => {
+    const current = version.id === publishedVersionId.value
+    return {
+      ...version,
+      current,
+      title: current ? '当前线上版本' : (version.title || `历史版本 v${version.versionNumber ?? ''}`.trim())
+    }
+  })
 })
 
 const gallerySlug = computed(() => galleryInfo.value?.slug || '')
@@ -847,6 +862,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (saveTimer) window.clearTimeout(saveTimer)
+  if (livePreviewTimer) window.clearTimeout(livePreviewTimer)
   clearHandshakeTimer()
   window.removeEventListener('message', onPreviewReady)
   window.removeEventListener('beforeunload', handleConfigBeforeUnload)
@@ -1033,25 +1049,67 @@ onUnmounted(() => {
             氛围
           </h2>
 
-          <label class="field-label">3D 背景图</label>
-          <div class="chip-row">
+          <label class="field-label">空间背景</label>
+          <div class="bg-mode-grid">
             <button
-              v-for="item in SKY_THEMES"
+              v-for="item in BG_TYPES"
               :key="item.id"
-              class="chip"
-              :class="{ active: config.background.sky.theme === item.id }"
+              class="mode-card"
+              :class="{ active: config.background.type === item.id }"
               type="button"
               :disabled="!canConfigWrite"
-              @click="setSkyTheme(item.id)"
+              @click="setBackgroundType(item.id)"
             >
-              {{ item.label }}
+              <strong>{{ item.label }}</strong>
+              <small>{{ item.id === 'sky' ? '全景天穹' : item.id === 'gradient' ? '双色渐变' : '深邃暗场' }}</small>
             </button>
           </div>
-          
-          <div class="custom-skybox-hint">
-            <Icon name="upload" :size="14" />
-            <span>自定义全景图上传功能即将推出</span>
-          </div>
+
+          <template v-if="config.background.type === 'sky'">
+            <label class="field-label">天空盒主题</label>
+            <div class="chip-row">
+              <button
+                v-for="item in SKY_THEMES"
+                :key="item.id"
+                class="chip"
+                :class="{ active: config.background.sky.theme === item.id }"
+                type="button"
+                :disabled="!canConfigWrite"
+                @click="setSkyTheme(item.id)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+
+            <div class="custom-skybox-hint">
+              <Icon name="upload" :size="14" />
+              <span>自定义全景图上传功能即将推出</span>
+            </div>
+          </template>
+
+          <template v-else-if="config.background.type === 'gradient'">
+            <label class="field-label">渐变颜色</label>
+            <div class="color-pair">
+              <label class="color-field">
+                <input
+                  type="color"
+                  v-model="config.background.gradient.colors[0]"
+                  :disabled="!canConfigWrite"
+                  @input="onAtmosphereInput"
+                />
+                <span>起色</span>
+              </label>
+              <label class="color-field">
+                <input
+                  type="color"
+                  v-model="config.background.gradient.colors[1]"
+                  :disabled="!canConfigWrite"
+                  @input="onAtmosphereInput"
+                />
+                <span>止色</span>
+              </label>
+            </div>
+          </template>
 
           <div class="slider-row">
             <Icon name="sun" :size="15" />
@@ -1067,7 +1125,7 @@ onUnmounted(() => {
             v-model.number="lightLevel"
             class="range"
             type="range"
-            min="8"
+            min="5"
             max="100"
             :disabled="!canConfigWrite || !bloomOn"
             @input="onAtmosphereInput"
@@ -1095,6 +1153,23 @@ onUnmounted(() => {
             </label>
           </div>
 
+          <div class="swatch-row">
+            <span class="swatch-label">点缀色</span>
+            <div class="swatches">
+              <button
+                v-for="color in ACCENTS"
+                :key="color"
+                class="swatch"
+                :class="{ active: accent.toLowerCase() === color.toLowerCase() }"
+                type="button"
+                :style="{ background: color }"
+                :disabled="!canConfigWrite"
+                :aria-label="`使用点缀色 ${color}`"
+                @click="setAccent(color)"
+              ></button>
+            </div>
+          </div>
+
           <div class="slider-row">
             <Icon name="cloud" :size="15" />
             <div class="slider-copy">
@@ -1114,6 +1189,31 @@ onUnmounted(() => {
             :disabled="!canConfigWrite"
             @input="onAtmosphereInput"
           />
+
+          <div v-if="fogLevel > 0" class="swatch-row">
+            <span class="swatch-label">雾色</span>
+            <div class="swatches">
+              <button
+                v-for="color in FOG_COLORS"
+                :key="color"
+                class="swatch"
+                :class="{ active: fogColor.toLowerCase() === color.toLowerCase() }"
+                type="button"
+                :style="{ background: color }"
+                :disabled="!canConfigWrite"
+                :aria-label="`使用雾色 ${color}`"
+                @click="setFogColor(color)"
+              ></button>
+              <input
+                type="color"
+                class="swatch-picker"
+                v-model="fogColor"
+                :disabled="!canConfigWrite"
+                aria-label="自定义雾色"
+                @input="onAtmosphereInput"
+              />
+            </div>
+          </div>
 
           <div class="toggle-row">
             <div class="slider-row">
@@ -1166,6 +1266,50 @@ onUnmounted(() => {
               <span></span>
             </label>
           </div>
+        </section>
+
+        <section v-show="configTab === 'advanced'" class="side-block">
+          <h2>
+            <Icon name="sun" :size="15" />
+            辉光微调
+          </h2>
+          <div class="slider-row">
+            <div class="slider-copy">
+              <span>
+                辉光范围
+                <span class="help-tip" title="光晕从照片边缘向外扩散的距离">ⓘ</span>
+              </span>
+              <strong>{{ bloomRadius }}%</strong>
+            </div>
+          </div>
+          <input
+            v-model.number="bloomRadius"
+            class="range"
+            type="range"
+            min="0"
+            max="100"
+            :disabled="!canConfigWrite || !bloomOn"
+            @input="onAtmosphereInput"
+          />
+
+          <div class="slider-row">
+            <div class="slider-copy">
+              <span>
+                辉光阈值
+                <span class="help-tip" title="亮度超过该比例的区域才会发光，越低整体越亮">ⓘ</span>
+              </span>
+              <strong>{{ bloomThreshold }}%</strong>
+            </div>
+          </div>
+          <input
+            v-model.number="bloomThreshold"
+            class="range"
+            type="range"
+            min="5"
+            max="100"
+            :disabled="!canConfigWrite || !bloomOn"
+            @input="onAtmosphereInput"
+          />
         </section>
 
         <section v-show="configTab === 'advanced'" class="side-block">
@@ -1374,23 +1518,6 @@ onUnmounted(() => {
   gap: 8px;
   font-weight: 750;
   color: #111827;
-}
-
-.fold-mark svg {
-  width: 28px;
-  height: 28px;
-}
-
-.nav-title h1 {
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.nav-title p {
-  margin-top: 1px;
-  font-size: 12px;
-  color: #9ca3af;
 }
 
 .nav-actions {
@@ -1670,18 +1797,89 @@ onUnmounted(() => {
 
 .swatches {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
 .swatch {
   width: 22px;
   height: 22px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
+  cursor: pointer;
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
 .swatch.active {
   box-shadow: 0 0 0 2px #fff, 0 0 0 4px #00b88f;
+}
+
+.swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.swatch-picker {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.swatch-picker:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.swatch-label {
+  flex-shrink: 0;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.color-pair {
+  display: flex;
+  gap: 12px;
+}
+
+.color-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #eef0f2;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.color-field input[type='color'] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+.color-field span {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .slider-row {
@@ -1772,6 +1970,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .history-row {
@@ -1797,13 +1998,6 @@ onUnmounted(() => {
 .history-row small {
   color: #9ca3af;
   font-size: 11px;
-}
-
-.history-more {
-  margin-top: 8px;
-  color: #00b88f;
-  font-size: 12px;
-  font-weight: 650;
 }
 
 .preview-pane {

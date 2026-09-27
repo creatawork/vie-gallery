@@ -87,7 +87,7 @@ function handleSubmit() {
   position: absolute;
   width: 440px;
   height: 440px;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.18) 0%, transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent, #10b981) 18%, transparent) 0%, transparent 70%);
   filter: blur(50px);
   pointer-events: none;
 }
@@ -110,13 +110,13 @@ function handleSubmit() {
   width: 54px;
   height: 54px;
   border-radius: 16px;
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #34d399;
+  background: color-mix(in srgb, var(--accent, #10b981) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #10b981) 30%, transparent);
+  color: var(--accent-strong, #34d399);
   display: grid;
   place-items: center;
   margin: 0 auto 20px;
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
 }
 
 .prompt-header h2 {
@@ -170,9 +170,9 @@ function handleSubmit() {
 }
 
 .password-input:focus {
-  border-color: #10b981;
+  border-color: var(--accent, #10b981);
   background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
 }
 
 .toggle-eye {
@@ -197,7 +197,7 @@ function handleSubmit() {
   justify-content: center;
   gap: 8px;
   padding: 12px 20px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(135deg, var(--accent, #10b981) 0%, #059669 100%);
   color: #ffffff;
   border: none;
   border-radius: 10px;
@@ -205,11 +205,11 @@ function handleSubmit() {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent, #10b981) 30%, transparent);
 }
 
 .unlock-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  background: linear-gradient(135deg, var(--accent-strong, #34d399) 0%, var(--accent, #10b981) 100%);
   transform: translateY(-1px);
 }
 

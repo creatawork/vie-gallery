@@ -128,20 +128,27 @@ export class LayoutPlugin implements ViewerPlugin {
     }
 
     // 2. 常态物理呼吸与空间漂浮微动 (Subtle Space Oscillation)
+    // 配置关闭照片悬浮（effects.photoFloat === false）时平滑归位静止
     if (this.restPoses.size > 0 && this.context?.photos) {
+      const floatEnabled = this.context.config.effects?.photoFloat !== false
       const time = this.clock
       this.context.photos.forEach((photo, idx) => {
         const pose = this.restPoses.get(idx)
         // 仅在未处于形变动画中的照片上叠加微动
         if (pose && !this.morphs.some(m => m.index === idx)) {
-          const swayY = Math.sin(time * 1.3 + pose.seed) * 3.2
-          const swayX = Math.cos(time * 0.9 + pose.seed) * 1.8
-          const tiltZ = Math.sin(time * 1.1 + pose.seed) * 0.015
+          if (floatEnabled) {
+            const swayY = Math.sin(time * 1.3 + pose.seed) * 3.2
+            const swayX = Math.cos(time * 0.9 + pose.seed) * 1.8
+            const tiltZ = Math.sin(time * 1.1 + pose.seed) * 0.015
 
-          photo.position.x = pose.basePos.x + swayX
-          photo.position.y = pose.basePos.y + swayY
-          photo.position.z = pose.basePos.z
-          photo.rotation.z = pose.baseRot.z + tiltZ
+            photo.position.x = pose.basePos.x + swayX
+            photo.position.y = pose.basePos.y + swayY
+            photo.position.z = pose.basePos.z
+            photo.rotation.z = pose.baseRot.z + tiltZ
+          } else {
+            photo.position.lerp(pose.basePos, 0.08)
+            photo.rotation.z += (pose.baseRot.z - photo.rotation.z) * 0.08
+          }
         }
       })
     }
