@@ -152,13 +152,6 @@ export class ViewerEngine {
     // 照片淡入淡出动画（默认启用）
     pluginsToInstall.push('PhotoFade')
 
-    // 背景插件
-    if (config.background.type === 'sky') {
-      pluginsToInstall.push('SkyDome')
-    } else if (config.background.type === 'gradient') {
-      pluginsToInstall.push('GradientBackground')
-    }
-
     // 粒子插件
     if (config.particles?.enabled && config.particles.types && config.particles.types.length > 0) {
       pluginsToInstall.push('Particles')
@@ -200,16 +193,7 @@ export class ViewerEngine {
     // 更新插件上下文配置对象
     this.pluginManager.setContext(this.createContext())
 
-    // 1. 处理背景类型切换 (sky vs gradient vs none)
-    if (newConfig.background?.type && newConfig.background.type !== prevConfig.background.type) {
-      if (prevConfig.background.type === 'sky') this.pluginManager.uninstall('SkyDome')
-      if (prevConfig.background.type === 'gradient') this.pluginManager.uninstall('GradientBackground')
-
-      if (newConfig.background.type === 'sky') await this.pluginManager.install('SkyDome')
-      if (newConfig.background.type === 'gradient') await this.pluginManager.install('GradientBackground')
-    }
-
-    // 2. 处理粒子系统开启/关闭或类型变化
+    // 1. 处理粒子系统开启/关闭或类型变化
     if (newConfig.particles !== undefined) {
       const prevEnabled = prevConfig.particles?.enabled
       const nextEnabled = newConfig.particles?.enabled
@@ -226,7 +210,7 @@ export class ViewerEngine {
       // 注意：粒子类型变化由 ParticlesPlugin 自己的 handleConfigChange 处理
     }
 
-    // 3. 处理 Bloom 后处理开启/关闭
+    // 2. 处理 Bloom 后处理开启/关闭
     if (newConfig.effects?.bloom !== undefined) {
       const prevBloom = prevConfig.effects?.bloom?.enabled
       const nextBloom = newConfig.effects?.bloom?.enabled
@@ -241,7 +225,7 @@ export class ViewerEngine {
       }
     }
 
-    // 4. 处理 Fog 雾效开启/关闭
+    // 3. 处理 Fog 雾效开启/关闭
     if (newConfig.effects?.fog !== undefined) {
       const prevFog = prevConfig.effects?.fog?.enabled
       const nextFog = newConfig.effects?.fog?.enabled
@@ -253,7 +237,7 @@ export class ViewerEngine {
       }
     }
 
-    // 5. 广播配置更新事件给所有已装配的插件
+    // 4. 广播配置更新事件给所有已装配的插件
     this.eventBus.emit('config:change', merged)
     this.eventBus.emit('config:update', merged)
   }

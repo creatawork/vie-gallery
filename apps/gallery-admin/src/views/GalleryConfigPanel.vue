@@ -36,19 +36,6 @@ const ATMOSPHERE_PRESETS = [
   { name: 'romantic', label: '心动浪漫', hint: '玫瑰粉雾' }
 ] as const
 
-const BG_TYPES = [
-  { id: 'sky', label: '3D 天空盒' },
-  { id: 'gradient', label: '渐变背景' },
-  { id: 'none', label: '纯色背景' }
-] as const
-
-const SKY_THEMES = [
-  { id: 'forest', label: '森林' },
-  { id: 'ocean', label: '海洋' },
-  { id: 'starry', label: '星空' },
-  { id: 'sunset', label: '日落' }
-] as const
-
 const PARTICLE_TYPES = [
   { id: 'stars', label: '星尘' },
   { id: 'sakura', label: '樱花' },
@@ -57,8 +44,6 @@ const PARTICLE_TYPES = [
 ] as const
 
 const FOG_COLORS = ['#e8f0ea', '#163124', '#0c4a6e', '#7c2d12', '#0f172a', '#4a0e2e']
-
-const ACCENTS = ['#9FE8C8', '#D4C4F0', '#A8D4F0', '#F5C9A8', '#F5E6A8']
 
 interface ConfigVersionItem {
   id: string
@@ -88,7 +73,6 @@ const savedDraftJson = ref('')
 const publishedConfigJson = ref<string | null>(null)
 const previewKey = ref(0)
 
-const accent = ref(ACCENTS[0])
 const lightLevel = ref(72)
 const fogLevel = ref(35)
 const fogColor = ref('#e8f0ea')
@@ -161,17 +145,6 @@ function getCleanConfig() {
     layout: {
       mode: config.layout?.mode || 'sphere'
     },
-    background: {
-      type: config.background?.type || 'sky',
-      gradient: config.background.gradient ? {
-        colors: [...(config.background.gradient.colors || ['#0f172a', '#1e293b'])],
-        direction: config.background.gradient.direction || 'vertical'
-      } : { colors: ['#0f172a', '#1e293b'], direction: 'vertical' },
-      sky: config.background?.sky ? {
-        theme: config.background.sky.theme || 'starry',
-        timeOfDay: config.background.sky.timeOfDay || 'night'
-      } : { theme: 'starry', timeOfDay: 'night' }
-    },
     particles: {
       enabled: !!config.particles?.enabled,
       types: Array.isArray(config.particles?.types) ? [...config.particles.types] : ['stars'],
@@ -200,18 +173,11 @@ function getCleanConfig() {
     audio: {
       bgm: { enabled: !!config.audio?.bgm?.enabled },
       sfx: { enabled: config.audio?.sfx?.enabled ?? true }
-    },
-    theme: {
-      engine: config.theme?.engine || 'custom',
-      accent: accent.value
     }
   }
 }
 
 function ensureConfigDefaults() {
-  if (!config.background) config.background = { type: 'sky' } as any
-  if (!config.background.sky) config.background.sky = { theme: 'starry', timeOfDay: 'night' }
-  if (!config.background.gradient) config.background.gradient = { colors: ['#0f172a', '#1e293b'], direction: 'vertical' }
   if (!config.particles) config.particles = { enabled: true, types: ['stars'], density: 1.0 }
   if (!Array.isArray(config.particles.types)) config.particles.types = ['stars']
   if (!config.effects) config.effects = {} as any
@@ -247,9 +213,6 @@ function syncAtmosphereFromConfig() {
   fogLevel.value = Math.round(((config.effects.fog.density || 0) / 0.0015) * 100)
   fogColor.value = config.effects.fog.color || '#e8f0ea'
   audioOn.value = !!config.audio.bgm.enabled
-  if (config.theme?.accent && ACCENTS.includes(config.theme.accent)) {
-    accent.value = config.theme.accent
-  }
 }
 
 function applyAtmosphereToConfig() {
@@ -261,10 +224,6 @@ function applyAtmosphereToConfig() {
   config.effects.fog.density = (fogLevel.value / 100) * 0.0015
   config.effects.fog.color = fogColor.value
   config.audio.bgm.enabled = audioOn.value
-  if (config.theme) {
-    config.theme.engine = 'custom'
-    config.theme.accent = accent.value
-  }
 }
 
 function sendLiveMessage(payload: Record<string, unknown>) {
@@ -328,11 +287,6 @@ const config = reactive({
   presetName: 'custom' as string | null,
   visitorAllowDownload: false,
   layout: { mode: 'sphere' },
-  background: {
-    type: 'sky',
-    gradient: { colors: ['#f8fafc', '#e2e8f0'], direction: 'vertical' },
-    sky: { theme: 'starry', timeOfDay: 'day' }
-  },
   particles: { enabled: true, types: ['stars'] as string[], density: 1.0 },
   effects: {
     bloom: { enabled: true, strength: 1.3, radius: 0.5, threshold: 0.18 },
@@ -341,8 +295,7 @@ const config = reactive({
   },
   interaction: { clickRipple: true },
   camera: { autoRotate: false },
-  audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-  theme: { engine: 'custom', accent: ACCENTS[0] }
+  audio: { bgm: { enabled: true }, sfx: { enabled: true } }
 })
 
 const hasDraftChanges = computed(() => savedDraftJson.value !== JSON.stringify(getCleanConfig()))
@@ -486,30 +439,9 @@ function setLayout(mode: string) {
   scheduleAutoSave()
 }
 
-function setAccent(color: string) {
-  if (!canConfigWrite.value) return
-  accent.value = color
-  config.presetName = 'custom'
-  scheduleAutoSave()
-}
-
 function onAtmosphereInput() {
   config.presetName = 'custom'
   applyAtmosphereToConfig()
-  scheduleAutoSave()
-}
-
-function setBackgroundType(type: 'sky' | 'gradient' | 'none') {
-  if (!canConfigWrite.value) return
-  config.background.type = type
-  config.presetName = 'custom'
-  scheduleAutoSave()
-}
-
-function setSkyTheme(theme: 'forest' | 'ocean' | 'starry' | 'sunset') {
-  if (!canConfigWrite.value) return
-  config.background.sky.theme = theme
-  config.presetName = 'custom'
   scheduleAutoSave()
 }
 
@@ -545,11 +477,6 @@ function applyPreset(name: string) {
     minimal: {
       presetName: 'minimal',
       layout: { mode: 'sphere' },
-      background: {
-        type: 'gradient',
-        gradient: { colors: ['#f8fafc', '#e2e8f0'], direction: 'vertical' },
-        sky: { theme: 'starry', timeOfDay: 'day' }
-      },
       particles: { enabled: false, types: [], density: 1 },
       effects: {
         bloom: { enabled: false, strength: 0.4, radius: 0.4, threshold: 0.3 },
@@ -563,11 +490,6 @@ function applyPreset(name: string) {
     'forest-dream': {
       presetName: 'forest-dream',
       layout: { mode: 'helix' },
-      background: {
-        type: 'sky',
-        gradient: { colors: ['#0f172a', '#163124'], direction: 'vertical' },
-        sky: { theme: 'forest', timeOfDay: 'sunset' }
-      },
       particles: { enabled: true, types: ['sakura', 'stars'], density: 1 },
       effects: {
         bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
@@ -581,11 +503,6 @@ function applyPreset(name: string) {
     'starry-night': {
       presetName: 'starry-night',
       layout: { mode: 'sphere' },
-      background: {
-        type: 'sky',
-        gradient: { colors: ['#0f172a', '#1e293b'], direction: 'vertical' },
-        sky: { theme: 'starry', timeOfDay: 'night' }
-      },
       particles: { enabled: true, types: ['stars'], density: 1.2 },
       effects: {
         bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
@@ -599,11 +516,6 @@ function applyPreset(name: string) {
     'ocean-breeze': {
       presetName: 'ocean-breeze',
       layout: { mode: 'spiral' },
-      background: {
-        type: 'sky',
-        gradient: { colors: ['#0c4a6e', '#0ea5e9'], direction: 'vertical' },
-        sky: { theme: 'ocean', timeOfDay: 'day' }
-      },
       particles: { enabled: false, types: [], density: 1 },
       effects: {
         bloom: { enabled: false, strength: 0.4, radius: 0.4, threshold: 0.25 },
@@ -617,11 +529,6 @@ function applyPreset(name: string) {
     'sunset-glow': {
       presetName: 'sunset-glow',
       layout: { mode: 'grid' },
-      background: {
-        type: 'sky',
-        gradient: { colors: ['#7c2d12', '#fdba74'], direction: 'vertical' },
-        sky: { theme: 'sunset', timeOfDay: 'sunset' }
-      },
       particles: { enabled: true, types: ['sakura'], density: 0.8 },
       effects: {
         bloom: { enabled: true, strength: 0.85, radius: 0.6, threshold: 0.2 },
@@ -635,11 +542,6 @@ function applyPreset(name: string) {
     romantic: {
       presetName: 'romantic',
       layout: { mode: 'spiral' },
-      background: {
-        type: 'gradient',
-        gradient: { colors: ['#4a0e2e', '#831843'], direction: 'radial' },
-        sky: { theme: 'sunset', timeOfDay: 'night' }
-      },
       particles: { enabled: true, types: ['hearts'], density: 1 },
       effects: {
         bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
@@ -870,7 +772,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="config-page" :class="{ 'is-full': isFullscreen }" :style="{ '--accent': accent, '--light': lightLevel / 100, '--fog': fogLevel / 100 }">
+  <div class="config-page" :class="{ 'is-full': isFullscreen }" :style="{ '--light': lightLevel / 100, '--fog': fogLevel / 100 }">
     <div class="config-scene" aria-hidden="true"></div>
 
     <header class="config-nav">
@@ -1049,68 +951,6 @@ onUnmounted(() => {
             氛围
           </h2>
 
-          <label class="field-label">空间背景</label>
-          <div class="bg-mode-grid">
-            <button
-              v-for="item in BG_TYPES"
-              :key="item.id"
-              class="mode-card"
-              :class="{ active: config.background.type === item.id }"
-              type="button"
-              :disabled="!canConfigWrite"
-              @click="setBackgroundType(item.id)"
-            >
-              <strong>{{ item.label }}</strong>
-              <small>{{ item.id === 'sky' ? '全景天穹' : item.id === 'gradient' ? '双色渐变' : '深邃暗场' }}</small>
-            </button>
-          </div>
-
-          <template v-if="config.background.type === 'sky'">
-            <label class="field-label">天空盒主题</label>
-            <div class="chip-row">
-              <button
-                v-for="item in SKY_THEMES"
-                :key="item.id"
-                class="chip"
-                :class="{ active: config.background.sky.theme === item.id }"
-                type="button"
-                :disabled="!canConfigWrite"
-                @click="setSkyTheme(item.id)"
-              >
-                {{ item.label }}
-              </button>
-            </div>
-
-            <div class="custom-skybox-hint">
-              <Icon name="upload" :size="14" />
-              <span>自定义全景图上传功能即将推出</span>
-            </div>
-          </template>
-
-          <template v-else-if="config.background.type === 'gradient'">
-            <label class="field-label">渐变颜色</label>
-            <div class="color-pair">
-              <label class="color-field">
-                <input
-                  type="color"
-                  v-model="config.background.gradient.colors[0]"
-                  :disabled="!canConfigWrite"
-                  @input="onAtmosphereInput"
-                />
-                <span>起色</span>
-              </label>
-              <label class="color-field">
-                <input
-                  type="color"
-                  v-model="config.background.gradient.colors[1]"
-                  :disabled="!canConfigWrite"
-                  @input="onAtmosphereInput"
-                />
-                <span>止色</span>
-              </label>
-            </div>
-          </template>
-
           <div class="slider-row">
             <Icon name="sun" :size="15" />
             <div class="slider-copy">
@@ -1151,23 +991,6 @@ onUnmounted(() => {
               <input v-model="audioOn" type="checkbox" :disabled="!canConfigWrite" @change="onAtmosphereInput" />
               <span></span>
             </label>
-          </div>
-
-          <div class="swatch-row">
-            <span class="swatch-label">点缀色</span>
-            <div class="swatches">
-              <button
-                v-for="color in ACCENTS"
-                :key="color"
-                class="swatch"
-                :class="{ active: accent.toLowerCase() === color.toLowerCase() }"
-                type="button"
-                :style="{ background: color }"
-                :disabled="!canConfigWrite"
-                :aria-label="`使用点缀色 ${color}`"
-                @click="setAccent(color)"
-              ></button>
-            </div>
           </div>
 
           <div class="slider-row">
@@ -1451,7 +1274,6 @@ onUnmounted(() => {
   position: relative;
   min-height: 100dvh;
   color: #111827;
-  --accent: #9fe8c8;
   --light: 0.72;
   --fog: 0.35;
 }
@@ -1849,39 +1671,6 @@ onUnmounted(() => {
   font-weight: 650;
 }
 
-.color-pair {
-  display: flex;
-  gap: 12px;
-}
-
-.color-field {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid #eef0f2;
-  background: #f8fafc;
-  cursor: pointer;
-}
-
-.color-field input[type='color'] {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  cursor: pointer;
-}
-
-.color-field span {
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 650;
-}
-
 .slider-row {
   display: flex;
   align-items: center;
@@ -2146,69 +1935,5 @@ onUnmounted(() => {
   opacity: 1;
   color: #10b981;
   border-color: #10b981;
-}
-
-.bg-mode-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.mode-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 8px;
-  border-radius: 12px;
-  border: 1px solid #eef0f2;
-  background: #f8fafc;
-  text-align: center;
-  transition: all 0.15s ease;
-}
-
-.mode-card:hover:not(:disabled) {
-  border-color: #d1d5db;
-}
-
-.mode-card.active {
-  background: #ecfdf5;
-  border-color: #00b88f;
-  box-shadow: 0 0 0 1px #00b88f;
-}
-
-.mode-card strong {
-  font-size: 12px;
-  font-weight: 650;
-  color: #111827;
-}
-
-.mode-card small {
-  font-size: 11px;
-  color: #9ca3af;
-}
-
-.mode-card:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.custom-skybox-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.custom-skybox-hint svg {
-  flex-shrink: 0;
 }
 </style>

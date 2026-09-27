@@ -29,23 +29,6 @@ export interface ViewerConfig {
     params?: Record<string, any>
   }
 
-  // 背景
-  background: {
-    type: 'sky' | 'gradient' | 'image' | 'none'
-    sky?: {
-      theme: 'forest' | 'ocean' | 'starry' | 'sunset'
-      timeOfDay?: 'auto' | 'dawn' | 'day' | 'sunset' | 'night'
-    }
-    gradient?: {
-      colors: string[]
-      direction: 'vertical' | 'horizontal' | 'radial'
-    }
-    image?: {
-      url: string
-      parallax?: boolean
-    }
-  }
-
   // 粒子系统
   particles: {
     enabled: boolean
@@ -108,18 +91,6 @@ export interface ViewerConfig {
     }
   }
 
-  // 主题
-  theme: {
-    engine: 'time-based' | 'seasonal' | 'custom'
-    timeBasedTheme?: {
-      times: Array<{
-        hour: number
-        colors: ThemeColors
-      }>
-    }
-    customColors?: ThemeColors
-  }
-
   // 光照系统
   lighting?: {
     /** 时间段模式：auto | sunrise | noon | sunset | night */
@@ -129,17 +100,6 @@ export interface ViewerConfig {
     /** 颜色适应过渡时间（秒） */
     transitionDuration?: number
   }
-}
-
-/**
- * 主题色彩
- */
-export interface ThemeColors {
-  primary: string
-  secondary: string
-  accent: string
-  background: string
-  fog: string
 }
 
 /**
@@ -221,7 +181,6 @@ export type ViewerEvent =
   | 'layout:change'
   | 'layout:apply'
   | 'layout:positions'
-  | 'theme:update'
   | 'config:update'
   | 'webgl:lost'
   | 'webgl:restored'

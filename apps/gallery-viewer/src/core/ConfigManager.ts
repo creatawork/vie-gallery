@@ -33,10 +33,6 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
   'minimal': {
     presetName: 'minimal',
     layout: { mode: 'sphere' },
-    background: {
-      type: 'gradient',
-      gradient: { colors: ['#f8fafc', '#e2e8f0'], direction: 'vertical' }
-    },
     particles: { enabled: false, types: [] },
     effects: { bloom: { enabled: false }, fog: { enabled: false } },
     interaction: { clickRipple: true }
@@ -44,10 +40,6 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
   'forest-dream': {
     presetName: 'forest-dream',
     layout: { mode: 'helix' },
-    background: {
-      type: 'sky',
-      sky: { theme: 'forest', timeOfDay: 'sunset' }
-    },
     particles: { enabled: true, types: ['sakura', 'stars'], density: 1.0 },
     effects: {
       bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
@@ -58,10 +50,6 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
   'starry-night': {
     presetName: 'starry-night',
     layout: { mode: 'sphere' },
-    background: {
-      type: 'sky',
-      sky: { theme: 'starry', timeOfDay: 'night' }
-    },
     particles: { enabled: true, types: ['stars'], density: 1.2 },
     effects: {
       bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
@@ -72,10 +60,6 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
   'ocean-breeze': {
     presetName: 'ocean-breeze',
     layout: { mode: 'spiral' },
-    background: {
-      type: 'sky',
-      sky: { theme: 'ocean', timeOfDay: 'day' }
-    },
     particles: { enabled: false, types: [] },
     effects: {
       bloom: { enabled: false },
@@ -86,10 +70,6 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
   'sunset-glow': {
     presetName: 'sunset-glow',
     layout: { mode: 'grid' },
-    background: {
-      type: 'sky',
-      sky: { theme: 'sunset', timeOfDay: 'sunset' }
-    },
     particles: { enabled: true, types: ['sakura'], density: 0.8 },
     effects: {
       bloom: { enabled: true, strength: 0.85, radius: 0.6, threshold: 0.2 },
@@ -100,10 +80,6 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
   'romantic': {
     presetName: 'romantic',
     layout: { mode: 'spiral' },
-    background: {
-      type: 'gradient',
-      gradient: { colors: ['#4a0e2e', '#831843'], direction: 'radial' }
-    },
     particles: { enabled: true, types: ['hearts'], density: 1.0 },
     effects: {
       bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
@@ -120,13 +96,6 @@ const DEFAULT_CONFIG: ViewerConfig = {
   quality: 'auto',
   layout: {
     mode: 'sphere'
-  },
-  background: {
-    type: 'sky',
-    sky: {
-      theme: 'starry',
-      timeOfDay: 'night'
-    }
   },
   particles: {
     enabled: true,
@@ -159,16 +128,6 @@ const DEFAULT_CONFIG: ViewerConfig = {
     },
     sfx: {
       enabled: true
-    }
-  },
-  theme: {
-    engine: 'custom',
-    customColors: {
-      primary: '#1E2227',
-      secondary: '#6B7077',
-      accent: '#10b981',
-      background: '#070a0d',
-      fog: '#070a0d'
     }
   }
 }
@@ -379,11 +338,6 @@ export class ConfigManager {
       if (types.length > 0) {
         baseConfig.particles = { enabled: true, types }
       }
-    }
-
-    const bg = params.get('bg')
-    if (bg && ['sky', 'gradient', 'image', 'none'].includes(bg)) {
-      baseConfig.background = { type: bg }
     }
 
     return Object.keys(baseConfig).length > 0 ? baseConfig : null

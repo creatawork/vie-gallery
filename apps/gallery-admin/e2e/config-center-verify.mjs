@@ -17,11 +17,6 @@ const DRAFT_CONFIG = {
   presetName: 'starry-night',
   visitorAllowDownload: false,
   layout: { mode: 'sphere' },
-  background: {
-    type: 'sky',
-    gradient: { colors: ['#0f172a', '#1e293b'], direction: 'vertical' },
-    sky: { theme: 'starry', timeOfDay: 'night' }
-  },
   particles: { enabled: true, types: ['stars'], density: 1 },
   effects: {
     bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
@@ -30,8 +25,7 @@ const DRAFT_CONFIG = {
   },
   camera: { autoRotate: false },
   interaction: { clickRipple: true },
-  audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-  theme: { engine: 'custom', accent: '#9FE8C8' }
+  audio: { bgm: { enabled: true }, sfx: { enabled: true } }
 }
 
 const draftJson = JSON.stringify(DRAFT_CONFIG)
@@ -147,11 +141,9 @@ async function main() {
   await page.waitForTimeout(300)
   await page.screenshot({ path: `${OUT}/02-atmosphere.png` })
 
-  // 背景类型切换：渐变背景 → 出现起止色选择
-  await page.click('.mode-card:has-text("渐变背景")')
-  await page.waitForTimeout(500)
-  const colorPairVisible = await page.locator('.color-pair input[type="color"]').count()
-  await page.screenshot({ path: `${OUT}/03-gradient.png` })
+  // 空间背景与点缀色配置已移除：对应控件不应出现
+  const backgroundCards = await page.locator('.mode-card').count()
+  const accentSwatches = await page.locator('.swatch[aria-label^="使用点缀色"]').count()
 
   // 雾化滑块 + 雾色色板
   const fogSlider = page.locator('.side-block:has(h2:text-is("氛围")) input.range').nth(1)
@@ -160,61 +152,58 @@ async function main() {
   const fogSwatches = await page.locator('.swatch-row:has(.swatch-label:text-is("雾色")) .swatch').count()
   await page.click('.swatch[aria-label="使用雾色 #0c4a6e"]')
   await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/04-fog.png` })
-
-  // 点缀色
-  await page.click('.swatch[aria-label="使用点缀色 #D4C4F0"]')
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: `${OUT}/05-accent.png` })
+  await page.screenshot({ path: `${OUT}/03-fog.png` })
 
   // 自动漫游开关 → 应写入 camera.autoRotate
   await page.click('.toggle-row:has-text("自动漫游") label.switch')
   await page.waitForTimeout(1500) // 等防抖保存落盘
-  await page.screenshot({ path: `${OUT}/06-autorotate.png` })
+  await page.screenshot({ path: `${OUT}/04-autorotate.png` })
 
   // 高级 tab：辉光微调 + 粒子
   await page.click('.side-tab:has-text("高级")')
   await page.waitForTimeout(300)
-  await page.screenshot({ path: `${OUT}/07-advanced.png` })
+  await page.screenshot({ path: `${OUT}/05-advanced.png` })
 
   // 版本 tab：当前线上版本标注
   await page.click('.side-tab:has-text("版本")')
   await page.waitForTimeout(300)
   const currentLabel = await page.locator('.history-row strong:has-text("当前线上版本")').count()
-  await page.screenshot({ path: `${OUT}/08-history.png` })
+  await page.screenshot({ path: `${OUT}/06-history.png` })
 
   // 发布链路
   await page.waitForTimeout(1200) // 等自动保存完成后按钮可用
   await page.click('.btn.solid:has-text("同步到访客端")')
   await page.waitForTimeout(400)
-  await page.screenshot({ path: `${OUT}/09-publish-confirm.png` })
+  await page.screenshot({ path: `${OUT}/07-publish-confirm.png` })
   await page.click('.modal-card button:has-text("确认同步")')
   await page.waitForTimeout(800)
-  await page.screenshot({ path: `${OUT}/10-published.png` })
+  await page.screenshot({ path: `${OUT}/08-published.png` })
 
   // 断言
   const lastSave = savedBodies.at(-1)?.configJson ? JSON.parse(savedBodies.at(-1).configJson) : null
   const checks = {
-    gradientColorPairShown: colorPairVisible === 2,
+    backgroundCards,
+    accentSwatches,
     fogSwatchesShown: fogSwatches >= 6,
     historyCurrentLabel: currentLabel >= 1,
     autosaveCount: savedBodies.length,
     publishCount: publishCalls.length,
-    savedBackgroundType: lastSave?.background?.type,
+    savedBackground: lastSave?.background,
+    savedTheme: lastSave?.theme,
     savedFogColor: lastSave?.effects?.fog?.color,
     savedFogEnabled: lastSave?.effects?.fog?.enabled,
-    savedAccent: lastSave?.theme?.accent,
     savedAutoRotate: lastSave?.camera?.autoRotate,
     savedPhotoFloat: lastSave?.effects?.photoFloat
   }
   const failed = []
-  if (!checks.gradientColorPairShown) failed.push('渐变色选择未出现')
+  if (backgroundCards !== 0) failed.push('空间背景配置卡片未移除')
+  if (accentSwatches !== 0) failed.push('点缀色色板未移除')
   if (!checks.fogSwatchesShown) failed.push('雾色色板未出现')
   if (!checks.historyCurrentLabel) failed.push('版本历史缺少“当前线上版本”标注')
-  if (checks.savedBackgroundType !== 'gradient') failed.push('背景类型未保存为 gradient')
+  if (checks.savedBackground !== undefined) failed.push('background 不应再写入配置')
+  if (checks.savedTheme !== undefined) failed.push('theme 不应再写入配置')
   if (checks.savedFogColor !== '#0c4a6e') failed.push('雾色未保存')
   if (!checks.savedFogEnabled) failed.push('雾效未随滑块启用')
-  if (checks.savedAccent !== '#D4C4F0') failed.push('点缀色未保存')
   if (checks.savedAutoRotate !== true) failed.push('自动漫游未持久化')
   if (checks.savedPhotoFloat !== true) failed.push('照片悬浮未持久化')
   if (checks.publishCount < 1) failed.push('发布请求未发出')

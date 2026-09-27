@@ -1,7 +1,8 @@
 /**
  * 访客端配置消费验证（API mock，无需后端）。
  * 前置：viewer dev server (5174) 已启动。
- * 验证：camera.autoRotate 初始生效（HUD 巡航按钮激活）、theme.accent 写入 CSS 变量。
+ * 验证：camera.autoRotate 初始生效（HUD 巡航按钮激活）、
+ *       background/theme.accent 已废弃（不再注入 --accent 等 CSS 变量）。
  */
 import { chromium } from '@playwright/test'
 
@@ -10,7 +11,6 @@ const SLUG = 'demo-gallery'
 const CONFIG = {
   presetName: 'custom',
   layout: { mode: 'sphere' },
-  background: { type: 'sky', sky: { theme: 'starry', timeOfDay: 'night' } },
   particles: { enabled: true, types: ['stars'], density: 1 },
   effects: {
     bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
@@ -19,8 +19,7 @@ const CONFIG = {
   },
   camera: { autoRotate: true },
   interaction: { clickRipple: true },
-  audio: { bgm: { enabled: false }, sfx: { enabled: true } },
-  theme: { engine: 'custom', accent: '#D4C4F0' }
+  audio: { bgm: { enabled: false }, sfx: { enabled: true } }
 }
 
 async function main() {
@@ -58,8 +57,8 @@ async function main() {
 
   const failed = []
   if (tourActive < 1) failed.push('camera.autoRotate 未生效（HUD 巡航按钮未激活）')
-  if (accentVar !== '#D4C4F0') failed.push(`theme.accent 未写入 --accent（实际: "${accentVar}"）`)
-  if (brandVar !== '#D4C4F0') failed.push(`theme.accent 未写入 --brand-emerald（实际: "${brandVar}"）`)
+  if (accentVar !== '') failed.push(`点缀色已废弃，但 --accent 仍被注入（实际: "${accentVar}"）`)
+  if (brandVar !== '') failed.push(`点缀色已废弃，但 --brand-emerald 仍被注入（实际: "${brandVar}"）`)
 
   console.log(JSON.stringify({ tourActive, accentVar, brandVar, failed }, null, 2))
   await browser.close()

@@ -154,9 +154,8 @@ async function handlePostMessage(event: MessageEvent) {
       await init3DEngine()
     }
     if (engine) engine.applyConfig(config)
-    // 相机行为与点缀色跟随配置中心实时更新
+    // 相机行为跟随配置中心实时更新
     applyAutoTour(config.camera?.autoRotate === true)
-    applyAccentTheme(config)
   }
 }
 
@@ -279,10 +278,9 @@ async function init3DEngine() {
     engine.start()
     notifyParentReady()
 
-    // 初始相机行为与点缀色跟随已发布配置
+    // 初始相机行为跟随已发布配置
     const initialConfig = engine.getConfigManager().getConfig() as Record<string, any>
     applyAutoTour(initialConfig?.camera?.autoRotate === true)
-    applyAccentTheme(initialConfig)
 
     // 监听 APM 探针
     engine.getEventBus().on('metrics:update', (metrics: EngineMetrics) => {
@@ -454,23 +452,6 @@ function applyAutoTour(enabled: boolean) {
 
 function toggleAutoTour() {
   applyAutoTour(!isAutoTour.value)
-}
-
-/**
- * 将配置的主题点缀色写入 CSS 变量，访客端 UI 与之联动
- */
-function applyAccentTheme(config: Record<string, any> | null | undefined) {
-  const accent = config?.theme?.accent
-  const root = document.documentElement
-  if (typeof accent === 'string' && accent) {
-    root.style.setProperty('--accent', accent)
-    root.style.setProperty('--accent-strong', accent)
-    root.style.setProperty('--brand-emerald', accent)
-  } else {
-    root.style.removeProperty('--accent')
-    root.style.removeProperty('--accent-strong')
-    root.style.removeProperty('--brand-emerald')
-  }
 }
 
 /**
