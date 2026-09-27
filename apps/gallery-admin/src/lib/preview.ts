@@ -7,10 +7,13 @@ export interface PreviewToken {
 
 export function viewerOrigin() {
   const { protocol, hostname, port } = window.location
+  // 仅开发端口下 viewer 固定运行在 5174；
+  // 其余场景（生产任意端口）viewer 与管理端同源同端口，
+  // 丢弃端口会导致 iframe 指向默认端口而握手失败。
   if (['5173', '5174', '5175'].includes(port)) {
     return `${protocol}//${hostname}:5174`
   }
-  return `${protocol}//${hostname}`
+  return window.location.origin
 }
 
 export function creatorPreviewUrl(slug: string, token: string, embed = false) {
