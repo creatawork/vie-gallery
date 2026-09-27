@@ -230,7 +230,7 @@ gallery_security_encryption_failures_total
 - 📖 阅读完整文档: [SECURITY-ENCRYPTION.md](./SECURITY-ENCRYPTION.md)
 - 🔐 配置 SSL: [SSL-SETUP-GUIDE.md](../infra/SSL-SETUP-GUIDE.md)
 - 🚀 生产部署: [DEPLOYMENT.md](./DEPLOYMENT.md)
-- 📊 监控配置: [MONITORING.md](./MONITORING.md)
+- 📊 监控配置: MONITORING.md（文档待编写）
 
 ## 技术支持
 

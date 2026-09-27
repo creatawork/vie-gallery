@@ -3,6 +3,12 @@ import { useToast } from '../composables/useToast'
 import Icon from './Icon.vue'
 
 const { toasts, dismiss } = useToast()
+
+function handleAction(toast: { id: string; action?: { handler: () => void } }) {
+  if (!toast.action) return
+  toast.action.handler()
+  dismiss(toast.id)
+}
 </script>
 
 <template>
@@ -24,6 +30,12 @@ const { toasts, dismiss } = useToast()
         <div class="toast-body">
           <h4 v-if="toast.title" class="toast-title">{{ toast.title }}</h4>
           <p class="toast-message">{{ toast.message }}</p>
+          <button
+            v-if="toast.action"
+            class="toast-action"
+            type="button"
+            @click.stop="handleAction(toast)"
+          >{{ toast.action.label }}</button>
         </div>
         <button class="toast-close" aria-label="关闭" @click.stop="dismiss(toast.id)">
           <Icon name="x" :size="14" />
@@ -193,6 +205,25 @@ const { toasts, dismiss } = useToast()
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
+}
+
+.toast-action {
+  margin-top: 6px;
+  align-self: flex-start;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toast-action:hover {
+  background: rgba(16, 185, 129, 0.22);
+  transform: translateY(-1px);
 }
 
 .toast-close:hover {

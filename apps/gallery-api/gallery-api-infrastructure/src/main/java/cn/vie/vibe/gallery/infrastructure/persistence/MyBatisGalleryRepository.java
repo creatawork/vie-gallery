@@ -97,6 +97,11 @@ public class MyBatisGalleryRepository implements GalleryRepository {
         }
     }
 
+    @Override
+    public int softDelete(UUID tenantId, UUID galleryId) {
+        return mapper.softDelete(tenantId.toString(), galleryId.toString());
+    }
+
     private static Gallery toDomain(java.util.Map<String, Object> row) {
         Instant createdAt = instant(row, "createdAt");
         Instant updatedAt = instant(row, "updatedAt");

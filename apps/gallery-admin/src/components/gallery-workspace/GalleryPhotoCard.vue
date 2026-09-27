@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import type { WorkspacePhoto } from '../../composables/useGalleryWorkspace'
+import { formatBytes } from '../../lib/format'
 import Icon from '../Icon.vue'
 
 const props = defineProps<{
@@ -21,17 +22,41 @@ const emit = defineEmits<{
 }>()
 
 const menuOpen = ref(false)
-
-function formatBytes(bytes?: number) {
-  if (!bytes) return ''
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+const menuRoot = ref<HTMLElement | null>(null)
 
 function toggleMenu(event: Event) {
   event.stopPropagation()
   menuOpen.value = !menuOpen.value
 }
+
+// 菜单展开期间监听外点与 Esc，解决菜单不关闭的问题。
+function handleDocumentClick(event: MouseEvent) {
+  if (!menuOpen.value) return
+  if (menuRoot.value && event.target instanceof Node && menuRoot.value.contains(event.target)) return
+  menuOpen.value = false
+}
+
+function handleDocumentKeydown(event: KeyboardEvent) {
+  if (menuOpen.value && event.key === 'Escape') {
+    menuOpen.value = false
+    event.stopPropagation()
+  }
+}
+
+watch(menuOpen, open => {
+  if (open) {
+    document.addEventListener('click', handleDocumentClick, true)
+    document.addEventListener('keydown', handleDocumentKeydown, true)
+  } else {
+    document.removeEventListener('click', handleDocumentClick, true)
+    document.removeEventListener('keydown', handleDocumentKeydown, true)
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick, true)
+  document.removeEventListener('keydown', handleDocumentKeydown, true)
+})
 
 function handleSelectClick(event: Event) {
   event.stopPropagation()
@@ -93,7 +118,7 @@ function handleSelectClick(event: Event) {
         <span v-if="formatBytes(photo.byteSize)">{{ formatBytes(photo.byteSize) }}</span>
         <span v-else-if="photo.width && photo.height">{{ photo.width }}×{{ photo.height }}</span>
         <span v-else>—</span>
-        <div class="meta-actions" @click.stop>
+        <div ref="menuRoot" class="meta-actions" @click.stop>
           <button class="ghost-btn" type="button" aria-label="更多操作" @click="toggleMenu">
             <Icon name="more" :size="16" />
           </button>

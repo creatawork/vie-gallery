@@ -5,6 +5,7 @@ import cn.vie.vibe.gallery.domain.GalleryVisibility;
 import cn.vie.vibe.gallery.domain.TenantContext;
 import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.GalleryStatus;
+import cn.vie.vibe.gallery.domain.Photo;
 import cn.vie.vibe.gallery.application.PhotoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -20,23 +21,33 @@ public class GalleryFacade {
     private final PhotoRepository photos;
     private final WorkspaceAuthorizationPolicy authorization;
     private final PasswordHasher passwordHasher;
+    private final StorageObjectRepository objects;
+    private final TenantQuotaRepository quotas;
 
     public GalleryFacade(GalleryRepository galleries, TenantContextResolver tenantContext) {
-        this(galleries, tenantContext, null, new WorkspaceAuthorizationPolicy(tenantContext), null);
+        this(galleries, tenantContext, null, new WorkspaceAuthorizationPolicy(tenantContext), null, null, null);
     }
 
     public GalleryFacade(GalleryRepository galleries, TenantContextResolver tenantContext, PhotoRepository photos) {
-        this(galleries, tenantContext, photos, new WorkspaceAuthorizationPolicy(tenantContext), null);
+        this(galleries, tenantContext, photos, new WorkspaceAuthorizationPolicy(tenantContext), null, null, null);
+    }
+
+    public GalleryFacade(GalleryRepository galleries, TenantContextResolver tenantContext, PhotoRepository photos,
+                         WorkspaceAuthorizationPolicy authorization, PasswordHasher passwordHasher) {
+        this(galleries, tenantContext, photos, authorization, passwordHasher, null, null);
     }
 
     @Autowired
     public GalleryFacade(GalleryRepository galleries, TenantContextResolver tenantContext, PhotoRepository photos,
-                         WorkspaceAuthorizationPolicy authorization, PasswordHasher passwordHasher) {
+                         WorkspaceAuthorizationPolicy authorization, PasswordHasher passwordHasher,
+                         StorageObjectRepository objects, TenantQuotaRepository quotas) {
         this.galleries = galleries;
         this.tenantContext = tenantContext;
         this.photos = photos;
         this.authorization = authorization;
         this.passwordHasher = passwordHasher;
+        this.objects = objects;
+        this.quotas = quotas;
     }
 
     public List<Gallery> list() {
@@ -152,5 +163,50 @@ public class GalleryFacade {
                 gallery.status(), gallery.publishedAt());
         galleries.update(updated);
         return updated;
+    }
+
+    @Transactional
+    public Gallery rename(java.util.UUID galleryId, String name) {
+        TenantContext context = authorization.requireOwner();
+        Gallery gallery = galleries.findById(context.tenantId(), galleryId)
+                .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+        String normalized = name == null ? "" : name.trim();
+        if (normalized.isEmpty() || normalized.length() > 160) {
+            throw new DomainException("VALIDATION_FAILED", "Gallery name must contain 1-160 characters");
+        }
+        Gallery updated = new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), normalized,
+                gallery.visibility(), gallery.passwordHash(), gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
+                gallery.status(), gallery.publishedAt());
+        galleries.update(updated);
+        return updated;
+    }
+
+    /**
+     * 软删除展厅及其全部照片并释放配额。已发布的展厅必须先撤回发布。
+     */
+    @Transactional
+    public void delete(java.util.UUID galleryId) {
+        TenantContext context = authorization.requireOwner();
+        Gallery gallery = galleries.findById(context.tenantId(), galleryId)
+                .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+        if (gallery.status() == GalleryStatus.PUBLISHED) {
+            throw new DomainException("GALLERY_STATE_CONFLICT", "Unpublish the gallery before deleting it");
+        }
+        if (photos != null) {
+            for (Photo photo : photos.findByGallery(context.tenantId(), galleryId)) {
+                photos.softDelete(context.tenantId(), photo.id());
+                if (objects != null) {
+                    objects.findById(context.tenantId(), photo.storageObjectId()).ifPresent(object -> {
+                        if (quotas != null) {
+                            quotas.releaseOnce(context.tenantId(), "PHOTO", photo.id(), object.byteSize(), 1);
+                        }
+                        objects.softDelete(context.tenantId(), photo.storageObjectId());
+                    });
+                }
+            }
+        }
+        if (galleries.softDelete(context.tenantId(), galleryId) == 0) {
+            throw new DomainException("GALLERY_NOT_FOUND", "Gallery not found");
+        }
     }
 }

@@ -192,5 +192,6 @@ class GalleryViewerConfigVersioningTest {
         @Override public Gallery save(Gallery value) { return value; }
         @Override public void update(Gallery value) { }
         @Override public void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId) { }
+        @Override public int softDelete(UUID tenantId, UUID galleryId) { return 0; }
     }
 }

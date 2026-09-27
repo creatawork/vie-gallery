@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
+import { formatBytes } from '../lib/format'
 
 interface PhotoItem {
   id: string
   title?: string
   thumbnailUrl?: string
+  originalUrl?: string
   byteSize?: number
   width?: number
   height?: number
@@ -99,13 +101,6 @@ function handleKeyDown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', handleKeyDown))
 onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
-function formatBytes(bytes?: number) {
-  if (!bytes) return '未知大小'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
-}
-
 function statusLabel(status?: string) {
   if (status === 'PROCESSING') return '处理中'
   if (status === 'FAILED') return '失败'
@@ -158,6 +153,18 @@ function statusLabel(status?: string) {
             <Icon name="check" :size="14" />
             <span>当前封面</span>
           </span>
+
+          <a
+            v-if="photos[currentIndex].originalUrl"
+            class="action-btn"
+            title="在新标签页查看原始文件"
+            :href="photos[currentIndex].originalUrl"
+            target="_blank"
+            rel="noopener"
+          >
+            <Icon name="maximize" :size="15" />
+            <span>查看原图</span>
+          </a>
 
           <button
             v-if="canWrite"

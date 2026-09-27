@@ -20,6 +20,24 @@ export interface UpdatePhotoRequest {
   cover?: boolean
 }
 
+export interface UpdateGalleryRequest {
+  visibility?: GalleryVisibility
+  name?: string
+}
+
+export interface ReorderPhotosRequest {
+  orderedPhotoIds: string[]
+}
+
+export interface BatchDeletePhotosRequest {
+  photoIds: string[]
+}
+
+export interface BatchDeletePhotosResponse {
+  requested: number
+  deleted: number
+}
+
 export type MembershipRole = 'OWNER' | 'EDITOR' | 'VIEWER'
 
 export type Capability =

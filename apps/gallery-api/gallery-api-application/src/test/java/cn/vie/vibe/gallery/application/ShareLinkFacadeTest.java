@@ -380,6 +380,10 @@ class ShareLinkFacadeTest {
 
         public void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId) {
         }
+
+        public int softDelete(UUID tenantId, UUID galleryId) {
+            return 0;
+        }
     }
 
     private static final class ShareLinkStore implements ShareLinkRepository {

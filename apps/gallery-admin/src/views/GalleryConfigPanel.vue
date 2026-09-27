@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
+import type { Gallery } from '@vie/gallery-contracts'
 import { useToast } from '../composables/useToast'
 import { useSliderEnhanceBatch } from '../composables/useSliderEnhance'
 import Icon from '../components/Icon.vue'
+import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useAuth } from '../composables/useAuth'
 import { creatorPreviewUrl, issuePreviewToken, openCreatorPreview } from '../lib/preview'
@@ -58,10 +60,20 @@ const FOG_COLORS = ['#e8f0ea', '#163124', '#0c4a6e', '#7c2d12', '#0f172a', '#4a0
 
 const ACCENTS = ['#9FE8C8', '#D4C4F0', '#A8D4F0', '#F5C9A8', '#F5E6A8']
 
+interface ConfigVersionItem {
+  id: string
+  configJson?: string
+  presetName?: string | null
+  versionNumber?: number
+  title?: string
+  createdAt?: string
+  createdByUserId?: string | null
+}
+
 
 const loading = ref(true)
 const saving = ref(false)
-const galleryInfo = ref<any>(null)
+const galleryInfo = ref<Gallery | null>(null)
 const showResetConfirm = ref(false)
 const resetting = ref(false)
 const showPublishConfirm = ref(false)
@@ -69,7 +81,7 @@ const showRollbackConfirm = ref(false)
 const publishing = ref(false)
 const rollingBack = ref(false)
 const rollbackVersionId = ref<string | null>(null)
-const versions = ref<any[]>([])
+const versions = ref<ConfigVersionItem[]>([])
 const publishedVersionId = ref<string | null>(null)
 const lastPublishedAt = ref<string | null>(null)
 const savedDraftJson = ref('')
@@ -399,7 +411,7 @@ async function loadGalleryAndConfig() {
       galleryInfo.value = null
       return
     }
-    galleryInfo.value = await gallRes.json()
+    galleryInfo.value = await gallRes.json() as Gallery
     previewIssueError.value = ''
     try {
       previewToken.value = (await issuePreviewToken(galleryId)).token
@@ -668,9 +680,9 @@ async function save(options?: { silent?: boolean }) {
     lastSaveFailed.value = false
     refreshLivePreview()
     if (!options?.silent) toast.success('草稿已保存。')
-  } catch (err: any) {
+  } catch (err) {
     lastSaveFailed.value = true
-    if (!options?.silent) toast.error(err.message || '保存失败，请检查网络或登录状态')
+    if (!options?.silent) toast.error(err instanceof Error ? err.message : '保存失败，请检查网络或登录状态')
   } finally {
     saving.value = false
   }
@@ -695,8 +707,8 @@ async function publishDraft() {
     await loadVersions()
     showPublishConfirm.value = false
     toast.success('配置已同步到访客端。')
-  } catch (err: any) {
-    toast.error(err.message || '发布失败，请稍后重试')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : '发布失败，请稍后重试')
   } finally {
     publishing.value = false
   }
@@ -753,8 +765,8 @@ async function rollbackDraft() {
     rollbackVersionId.value = null
     refreshLivePreview()
     toast.success('已恢复为草稿。同步到访客端后才会生效。')
-  } catch (err: any) {
-    toast.error(err.message || '回滚失败，请稍后重试')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : '回滚失败，请稍后重试')
   } finally {
     rollingBack.value = false
   }
@@ -801,18 +813,43 @@ watch(showPreviewFrame, (shouldEmbed) => {
   else clearHandshakeTimer()
 })
 
+// 离开配置页时先补存草稿（自动保存有 800ms 防抖窗口，直接离开会丢改动）；
+// 补存失败时由用户确认是否放弃。
+onBeforeRouteLeave(async () => {
+  if (!canConfigWrite.value) return true
+  if (!hasDraftChanges.value && !lastSaveFailed.value) return true
+  if (saveTimer) {
+    window.clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  try {
+    await save({ silent: true })
+    return true
+  } catch {
+    return window.confirm('展厅配置尚未保存成功，离开将丢失未保存的更改。确定离开？')
+  }
+})
+
+function handleConfigBeforeUnload(event: BeforeUnloadEvent) {
+  if (!hasDraftChanges.value && !lastSaveFailed.value) return
+  event.preventDefault()
+  event.returnValue = '展厅配置尚未保存，确定离开？'
+}
+
 onMounted(() => {
   loadGalleryAndConfig()
   window.addEventListener('message', onPreviewReady)
-  
+
   // 初始化滑块增强效果
   useSliderEnhanceBatch('.range')
+  window.addEventListener('beforeunload', handleConfigBeforeUnload)
 })
 
 onUnmounted(() => {
   if (saveTimer) window.clearTimeout(saveTimer)
   clearHandshakeTimer()
   window.removeEventListener('message', onPreviewReady)
+  window.removeEventListener('beforeunload', handleConfigBeforeUnload)
 })
 </script>
 
@@ -822,13 +859,7 @@ onUnmounted(() => {
 
     <header class="config-nav">
       <RouterLink to="/" class="brand">
-        <span class="fold-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none">
-            <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
-            <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
-            <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
-          </svg>
-        </span>
+        <BrandMark :size="28" />
         <span>VIE Gallery</span>
       </RouterLink>
 
@@ -1580,7 +1611,7 @@ onUnmounted(() => {
 
 .preset-mini small {
   color: #9ca3af;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .chip-row {
@@ -1960,7 +1991,7 @@ onUnmounted(() => {
 }
 
 .mode-card small {
-  font-size: 10px;
+  font-size: 11px;
   color: #9ca3af;
 }
 

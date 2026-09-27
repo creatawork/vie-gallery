@@ -64,23 +64,23 @@ button:not(.no-enhance):active::before {
    Button Variants - 按钮变体
    ========================================================================== */
 
-/* Primary Button - 主按钮 */
+/* Primary Button - 主按钮（绿色加深保证白字对比度 ≥ 4.5:1） */
 .btn-primary,
 .btn.solid {
-  background: linear-gradient(135deg, #00c89f 0%, #00b88f 50%, #00a87f 100%);
-  box-shadow: 0 4px 12px rgba(0, 184, 143, 0.25);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 4px 12px rgba(4, 120, 87, 0.28);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-primary:hover:not(:disabled),
 .btn.solid:hover:not(:disabled) {
-  box-shadow: 0 6px 20px rgba(0, 184, 143, 0.35);
+  box-shadow: 0 6px 20px rgba(4, 120, 87, 0.36);
   transform: translateY(-2px);
 }
 
 .btn-primary:active:not(:disabled),
 .btn.solid:active:not(:disabled) {
-  box-shadow: 0 2px 8px rgba(0, 184, 143, 0.2);
+  box-shadow: 0 2px 8px rgba(4, 120, 87, 0.22);
 }
 
 /* Secondary/Ghost Button - 次要按钮 */

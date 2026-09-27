@@ -159,6 +159,35 @@ class GalleryFacadeTest {
         assertEquals(GalleryVisibility.PASSWORD, updatedBackToPassword.visibility());
     }
 
+    @Test
+    void renameUpdatesNameAndNormalizesWhitespace() {
+        UUID tenantId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        GalleryFacade facade = new GalleryFacade(repository,
+                () -> new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+        Gallery created = facade.create("Wedding", "wedding", GalleryVisibility.PRIVATE);
+
+        Gallery renamed = facade.rename(created.id(), "  婚礼精选  ");
+
+        assertEquals("婚礼精选", renamed.name());
+        assertEquals(created.slug(), renamed.slug());
+    }
+
+    @Test
+    void renameRejectsBlankAndOversizedNames() {
+        UUID tenantId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        GalleryFacade facade = new GalleryFacade(repository,
+                () -> new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER));
+        Gallery created = facade.create("Wedding", "wedding", GalleryVisibility.PRIVATE);
+
+        assertEquals("VALIDATION_FAILED", assertThrows(DomainException.class,
+                () -> facade.rename(created.id(), "   ")).code());
+        assertEquals("VALIDATION_FAILED", assertThrows(DomainException.class,
+                () -> facade.rename(created.id(), "x".repeat(161))).code());
+        assertEquals("Wedding", facade.get(created.id()).name());
+    }
+
     private static final class InMemoryPhotoRepository implements PhotoRepository {
         int ready;
         InMemoryPhotoRepository(int ready) { this.ready = ready; }
@@ -202,6 +231,12 @@ class GalleryFacadeTest {
                 values.remove(g);
                 values.add(new Gallery(g.id(), g.tenantId(), g.slug(), g.name(), g.visibility(), g.passwordHash(), coverPhotoId, g.deleted(), g.createdAt()));
             });
+        }
+        public int softDelete(UUID tenantId, UUID galleryId) {
+            List<Gallery> removed = values.stream()
+                    .filter(g -> g.tenantId().equals(tenantId) && g.id().equals(galleryId)).toList();
+            values.removeAll(removed);
+            return removed.size();
         }
     }
 }

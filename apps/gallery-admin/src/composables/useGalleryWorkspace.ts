@@ -1,6 +1,7 @@
 import { computed, onUnmounted, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import type { Gallery } from '@vie/gallery-contracts'
-import { apiFetch } from '../api'
+import { apiFetch, uploadFileWithProgress } from '../api'
+import { StatusError, responseError } from '../lib/apiError'
 
 export interface WorkspacePhoto {
   id: string
@@ -14,6 +15,7 @@ export interface WorkspacePhoto {
   width?: number
   height?: number
   thumbnailUrl?: string
+  originalUrl?: string
 }
 
 export type WorkspaceErrorKind = 'unauthorized' | 'forbidden' | 'not-found' | 'network' | 'unknown'
@@ -24,12 +26,24 @@ export interface WorkspaceError {
   status?: number
 }
 
+export interface UploadFileResult {
+  file: File
+  ok: boolean
+  photoId?: string
+  taskId?: string
+  errorCode?: string
+  message?: string
+}
+
 export interface UploadSummary {
   succeeded: number
   failed: number
   timedOut: number
   rejected: number
+  results: UploadFileResult[]
 }
+
+const UPLOAD_CONCURRENCY = 3
 
 interface UploadItem {
   filename?: string | null
@@ -38,35 +52,6 @@ interface UploadItem {
   taskId?: string | null
   status?: string
   error?: { code?: string | null; message?: string | null } | null
-}
-
-class StatusError extends Error {
-  status?: number
-  constructor(message: string, status?: number) {
-    super(message)
-    this.status = status
-  }
-}
-
-function errorMessageFor(status: number, fallback: string) {
-  if (status === 401) return '登录状态已过期，请重新登录。'
-  if (status === 403) return '您没有权限操作此展厅。'
-  if (status === 404) return '展厅不存在或已被删除。'
-  if (status === 409) return '操作冲突，请刷新后重试。'
-  if (status === 413) return '上传文件超出大小限制。'
-  if (status >= 500) return '服务暂时不可用，请稍后重试。'
-  return fallback
-}
-
-async function responseError(response: Response, fallback: string): Promise<StatusError> {
-  let message = errorMessageFor(response.status, fallback)
-  try {
-    const body = await response.json() as { message?: string; code?: string }
-    if (response.status < 500 && body.message) message = body.message
-  } catch {
-    // The status-based message is enough when the response is not JSON.
-  }
-  return new StatusError(message, response.status)
 }
 
 function classifyError(error: unknown, fallback: string): WorkspaceError {
@@ -160,36 +145,83 @@ export function useGalleryWorkspace(
     options: { onQueued?: () => void | Promise<void>; batchId?: string } = {}
   ): Promise<UploadSummary> {
     const galleryIdValue = id.value
-    if (!galleryIdValue || !files.length) return { succeeded: 0, failed: 0, timedOut: 0, rejected: 0 }
+    if (!galleryIdValue || !files.length) {
+      return { succeeded: 0, failed: 0, timedOut: 0, rejected: 0, results: [] }
+    }
 
     const version = ++uploadVersion
+    const list = Array.from(files)
+    const batchId = options.batchId ?? crypto.randomUUID()
+    const totalBytes = list.reduce((sum, file) => sum + file.size, 0) || 1
+    const uploadedBytes = new Array<number>(list.length).fill(0)
+    const results: UploadFileResult[] = []
+
     uploading.value = true
-    uploadProgress.value = 20
-    uploadStatusText.value = `正在上传 ${files.length} 张照片…`
-    try {
-      const form = new FormData()
-      Array.from(files).forEach(file => form.append('files', file))
-      const batchId = options.batchId ?? crypto.randomUUID()
-      const idempotencyKey = crypto.randomUUID()
-      const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos`, {
-        method: 'POST',
-        headers: {
-          'X-Client-Batch-Id': batchId,
-          'Idempotency-Key': idempotencyKey
-        },
-        body: form
-      })
-      if (!response.ok) throw await responseError(response, '照片上传失败，请重试。')
+    uploadProgress.value = 0
+    uploadStatusText.value = `正在上传 0/${list.length} 张…`
 
-      const result = await response.json() as { items?: UploadItem[] }
-      const items = Array.isArray(result.items) ? result.items : []
-      const acceptedItems = items.filter(item => item.accepted !== false && typeof item.taskId === 'string' && item.taskId)
-      const rejected = Math.max(0, files.length - acceptedItems.length)
+    const reportProgress = () => {
+      if (version !== uploadVersion) return
+      const done = uploadedBytes.reduce((sum, value) => sum + value, 0)
+      uploadProgress.value = Math.min(99, Math.round((done / totalBytes) * 100))
+      uploadStatusText.value = `正在上传 ${results.length}/${list.length} 张…`
+    }
+
+    // 逐文件上传：单个请求只带一张图，避免大批量塞进一个请求触发超时，
+    // 也让进度条反映真实字节数、单张失败不影响其余文件。
+    let cursor = 0
+    async function worker() {
+      while (cursor < list.length && version === uploadVersion) {
+        const index = cursor++
+        const file = list[index]
+        const form = new FormData()
+        form.append('files', file)
+        try {
+          const response = await uploadFileWithProgress(`/api/galleries/${galleryIdValue}/photos`, form, {
+            headers: {
+              'X-Client-Batch-Id': batchId,
+              'Idempotency-Key': crypto.randomUUID()
+            },
+            onProgress: loaded => {
+              uploadedBytes[index] = loaded
+              reportProgress()
+            }
+          })
+          if (!response.ok) throw await responseError(response, '照片上传失败，请重试。')
+          const payload = await response.json() as { items?: UploadItem[] }
+          const item = (payload.items ?? [])[0]
+          if (item && item.accepted === false) {
+            results.push({
+              file,
+              ok: false,
+              errorCode: item.error?.code || 'REJECTED',
+              message: item.error?.message || '文件未被接受'
+            })
+          } else {
+            results.push({ file, ok: true, photoId: item?.photoId ?? undefined, taskId: item?.taskId ?? undefined })
+            uploadedBytes[index] = file.size
+          }
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : '照片上传失败，请重试。'
+          results.push({ file, ok: false, errorCode: message.includes('超时') ? 'TIMEOUT' : 'NETWORK', message })
+        }
+        uploadedBytes[index] = Math.max(uploadedBytes[index], file.size)
+        reportProgress()
+      }
+    }
+
+    const workerCount = Math.min(UPLOAD_CONCURRENCY, list.length)
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
+
+    const succeededResults = results.filter(result => result.ok)
+    const failedResults = results.filter(result => !result.ok)
+    if (version === uploadVersion) {
       uploadProgress.value = 100
-      uploadStatusText.value = acceptedItems.length ? '已加入处理队列' : '无有效图片'
+      uploadStatusText.value = failedResults.length === 0 ? '已加入处理队列' : `${failedResults.length} 张上传失败`
+    }
 
+    try {
       await options.onQueued?.()
-      return { succeeded: acceptedItems.length, failed: 0, timedOut: 0, rejected }
     } finally {
       if (version === uploadVersion) {
         await new Promise(resolve => setTimeout(resolve, 300))
@@ -197,6 +229,14 @@ export function useGalleryWorkspace(
         uploadProgress.value = 0
         uploadStatusText.value = ''
       }
+    }
+
+    return {
+      succeeded: succeededResults.length,
+      failed: failedResults.length,
+      timedOut: failedResults.filter(result => result.errorCode === 'TIMEOUT').length,
+      rejected: failedResults.filter(result => result.errorCode !== 'TIMEOUT' && result.errorCode !== 'NETWORK').length,
+      results
     }
   }
 
@@ -223,19 +263,32 @@ export function useGalleryWorkspace(
     await reload()
   }
 
+  /** 仅从本地列表移除（供"可撤销删除"的乐观更新使用），不影响服务端。 */
+  function removePhotoLocally(photoId: string) {
+    photos.value = photos.value.filter(photo => photo.id !== photoId)
+  }
+
+  function restorePhotoLocally(photo: WorkspacePhoto, index: number) {
+    const next = [...photos.value]
+    next.splice(Math.min(Math.max(0, index), next.length), 0, photo)
+    photos.value = next
+  }
+
   async function deletePhotos(photoIds: string[]): Promise<{ succeeded: number; failed: number }> {
     if (!photoIds.length) return { succeeded: 0, failed: 0 }
-    const results = await Promise.allSettled(
-      photoIds.map(id => apiFetch(`/api/photos/${id}`, { method: 'DELETE' }))
-    )
-    let succeeded = 0
-    let failed = 0
-    results.forEach(res => {
-      if (res.status === 'fulfilled' && res.value.ok) succeeded++
-      else failed++
+    const galleryIdValue = id.value
+    if (!galleryIdValue) throw new Error('展厅未找到')
+    const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos/batch-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photoIds })
     })
+    if (!response.ok) throw await responseError(response, '批量删除照片失败，请重试。')
+    const data = await response.json() as { requested?: number; deleted?: number }
+    const deleted = Number(data.deleted ?? 0)
+    const requested = Number(data.requested ?? photoIds.length)
     await reload()
-    return { succeeded, failed }
+    return { succeeded: deleted, failed: Math.max(0, requested - deleted) }
   }
 
   async function updatePhotoTitle(photoId: string, title: string) {
@@ -248,49 +301,39 @@ export function useGalleryWorkspace(
     await reload()
   }
 
-  async function movePhoto(photoId: string, direction: 'up' | 'down') {
+  async function reorderPhotos(orderedPhotoIds: string[]) {
+    if (!orderedPhotoIds.length) return
     const previous = photos.value
-    const currentList = [...previous]
+    const byId = new Map(previous.map(photo => [photo.id, photo] as const))
+    const reordered = orderedPhotoIds
+      .map(photoId => byId.get(photoId))
+      .filter((photo): photo is WorkspacePhoto => !!photo)
+    const rest = previous.filter(photo => !orderedPhotoIds.includes(photo.id))
+    photos.value = [...reordered, ...rest].map((photo, index) => ({ ...photo, sortOrder: index }))
+    try {
+      const response = await apiFetch(`/api/galleries/${id.value}/photos/order`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedPhotoIds })
+      })
+      if (!response.ok) throw await responseError(response, '调整照片排序失败，请重试。')
+    } catch (cause) {
+      photos.value = previous
+      throw cause
+    }
+  }
+
+  async function movePhoto(photoId: string, direction: 'up' | 'down') {
+    const currentList = [...photos.value]
     const index = currentList.findIndex(p => p.id === photoId)
     if (index === -1) return
     const targetIndex = direction === 'up' ? index - 1 : index + 1
     if (targetIndex < 0 || targetIndex >= currentList.length) return
 
-    const [moved] = currentList.splice(index, 1)
-    currentList.splice(targetIndex, 0, moved)
-
-    // Only persist the two swapped positions to avoid N-way partial writes.
-    const a = currentList[index]
-    const b = currentList[targetIndex]
-    const updates = [
-      { id: a.id, sortOrder: index },
-      { id: b.id, sortOrder: targetIndex }
-    ]
-    photos.value = currentList.map((p, idx) => ({ ...p, sortOrder: idx }))
-
-    try {
-      const results = await Promise.all(
-        updates.map(u =>
-          apiFetch(`/api/photos/${u.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sortOrder: u.sortOrder })
-          })
-        )
-      )
-      const failed = results.find(response => !response.ok)
-      if (failed) {
-        throw await responseError(failed, '调整照片排序失败，请重试。')
-      }
-      await reload()
-    } catch (cause) {
-      // One of the two PATCHes may have succeeded; reload to match persisted order.
-      photos.value = previous
-      await reload().catch(() => {
-        // Keep optimistic rollback if reload also fails.
-      })
-      throw cause
-    }
+    const orderedIds = currentList.map(p => p.id)
+    const [moved] = orderedIds.splice(index, 1)
+    orderedIds.splice(targetIndex, 0, moved)
+    await reorderPhotos(orderedIds)
   }
 
   async function setPublished(publish: boolean) {
@@ -339,7 +382,10 @@ export function useGalleryWorkspace(
     setCover,
     deletePhoto,
     deletePhotos,
+    removePhotoLocally,
+    restorePhotoLocally,
     updatePhotoTitle,
-    movePhoto
+    movePhoto,
+    reorderPhotos
   }
 }

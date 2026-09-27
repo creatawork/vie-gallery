@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, nextTick } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import Sortable from 'sortablejs'
 import type { WorkspacePhoto } from '../../composables/useGalleryWorkspace'
 import { useCardTiltBatch } from '../../composables/useCardTilt'
+import { usePhotoCuration } from '../../composables/usePhotoCuration'
 import GalleryPhotoCard from './GalleryPhotoCard.vue'
 import Icon from '../Icon.vue'
 
@@ -16,13 +18,28 @@ const emit = defineEmits<{
   (event: 'delete', photo: WorkspacePhoto): void
   (event: 'batch-delete', photoIds: string[]): void
   (event: 'move-photo', payload: { id: string; direction: 'up' | 'down' }): void
+  (event: 'reorder', payload: { fromIndex: number; toIndex: number }): void
   (event: 'retry-failed'): void
 }>()
 
-// Category Filter State
-const activeFilter = ref<'ALL' | 'READY' | 'PROCESSING' | 'FAILED'>('ALL')
-const selectedPhotoIds = ref<Set<string>>(new Set())
 const gridRef = ref<HTMLElement | null>(null)
+
+// 状态筛选、多选与批量操作由共享 composable 提供（与列表视图一致）。
+const {
+  activeFilter,
+  selectedPhotoIds,
+  filteredPhotos,
+  readyCount,
+  processingCount,
+  failedCount,
+  sortingEnabled,
+  allFilteredSelected,
+  toggleSelect,
+  selectAll,
+  clearSelection
+} = usePhotoCuration({
+  photos: () => props.photos
+})
 
 // Enable 3D tilt effect for photo cards
 const { refresh: refreshTilt } = useCardTiltBatch(gridRef, '.photo-card', {
@@ -31,50 +48,38 @@ const { refresh: refreshTilt } = useCardTiltBatch(gridRef, '.photo-card', {
   glare: true
 })
 
-const readyCount = computed(() => props.photos.filter(p => p.status === 'READY').length)
-const processingCount = computed(() => props.photos.filter(p => p.status === 'PROCESSING').length)
-const failedCount = computed(() => props.photos.filter(p => p.status === 'FAILED').length)
-
-const filteredPhotos = computed(() => {
-  if (activeFilter.value === 'ALL') return props.photos
-  return props.photos.filter(p => p.status === activeFilter.value)
-})
-
-const sortingEnabled = computed(() => activeFilter.value === 'ALL')
-
-// Reassign Set so Vue tracks selection size after prune/clear
-watch(() => props.photos, (currentPhotos) => {
-  const currentIdSet = new Set(currentPhotos.map(p => p.id))
-  const next = new Set([...selectedPhotoIds.value].filter(id => currentIdSet.has(id)))
-  if (next.size !== selectedPhotoIds.value.size) {
-    selectedPhotoIds.value = next
-  }
-}, { deep: true })
-
 // Refresh 3D tilt effect when photos change
 watch(() => props.photos, async () => {
   await nextTick()
   refreshTilt()
 }, { flush: 'post' })
 
-function toggleSelect(id: string) {
-  const next = new Set(selectedPhotoIds.value)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  selectedPhotoIds.value = next
-}
+// 拖拽排序：仅在"全部"视图且可写时启用。
+let sortableInstance: Sortable | null = null
 
-function selectAll() {
-  if (selectedPhotoIds.value.size === filteredPhotos.value.length && filteredPhotos.value.length > 0) {
-    selectedPhotoIds.value = new Set()
-  } else {
-    selectedPhotoIds.value = new Set(filteredPhotos.value.map(p => p.id))
-  }
-}
+watch([gridRef, () => props.canWrite, sortingEnabled], async ([element, canWriteValue, sortable]) => {
+  await nextTick()
+  sortableInstance?.destroy()
+  sortableInstance = null
+  if (!element || !canWriteValue || !sortable) return
+  sortableInstance = new Sortable(element, {
+    draggable: '.photo-card',
+    filter: 'button, input, a',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    onEnd: event => {
+      const { oldIndex, newIndex } = event
+      if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
+      emit('reorder', { fromIndex: oldIndex, toIndex: newIndex })
+    }
+  })
+}, { immediate: true, flush: 'post' })
 
-function clearSelection() {
-  selectedPhotoIds.value = new Set()
-}
+onUnmounted(() => {
+  sortableInstance?.destroy()
+  sortableInstance = null
+})
 
 function handleBatchDelete() {
   if (selectedPhotoIds.value.size === 0) return
@@ -160,8 +165,8 @@ defineExpose({ clearSelection })
           <span>重试失败项</span>
         </button>
         <button class="btn btn-ghost btn-sm select-all-btn" type="button" @click="selectAll">
-          <Icon :name="selectedPhotoIds.size === filteredPhotos.length && filteredPhotos.length > 0 ? 'check' : 'grid'" :size="14" />
-          <span>{{ selectedPhotoIds.size === filteredPhotos.length && filteredPhotos.length > 0 ? '取消全选' : '全选当前' }}</span>
+          <Icon :name="allFilteredSelected ? 'check' : 'grid'" :size="14" />
+          <span>{{ allFilteredSelected ? '取消全选' : '全选当前' }}</span>
         </button>
       </div>
     </div>
@@ -357,6 +362,16 @@ defineExpose({ clearSelection })
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
+}
+
+/* 拖拽排序反馈 */
+.photo-card.sortable-ghost {
+  opacity: 0.35;
+}
+
+.photo-card.sortable-chosen {
+  cursor: grabbing;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
 }
 
 @media (max-width: 1200px) {

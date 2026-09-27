@@ -6,6 +6,7 @@ import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import Icon from '../components/Icon.vue'
+import BrandMark from '../components/BrandMark.vue'
 import { openCreatorPreview } from '../lib/preview'
 import { useModalFocus } from '../composables/useModalFocus'
 
@@ -325,6 +326,102 @@ async function handleCreateGallery() {
     creating.value = false
   }
 }
+
+// ---- 重命名空间 ----
+const showRenameModal = ref(false)
+const renameForm = ref({ id: '', name: '' })
+const renaming = ref(false)
+const renameError = ref('')
+const { root: renameModalRoot } = useModalFocus(showRenameModal, {
+  onEscape: () => { if (!renaming.value) showRenameModal.value = false },
+  disabled: renaming
+})
+
+function openRenameModal(gallery: Gallery) {
+  renameForm.value = { id: gallery.id, name: gallery.name }
+  renameError.value = ''
+  showRenameModal.value = true
+}
+
+async function handleRenameGallery() {
+  const name = renameForm.value.name.trim()
+  if (!name) {
+    renameError.value = '请填写空间名称。'
+    return
+  }
+  renaming.value = true
+  renameError.value = ''
+  try {
+    const response = await apiFetch(`/api/galleries/${renameForm.value.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string }
+      renameError.value = body.message || '重命名失败，请稍后重试。'
+      return
+    }
+    const updated = await response.json() as Gallery
+    const index = galleries.value.findIndex(g => g.id === updated.id)
+    if (index !== -1) galleries.value[index] = updated
+    showRenameModal.value = false
+    toast.success('空间已重命名。')
+  } catch (error) {
+    renameError.value = error instanceof Error ? error.message : '网络请求失败，请稍后重试。'
+  } finally {
+    renaming.value = false
+  }
+}
+
+// ---- 删除空间（软删除，需要输入名称确认） ----
+const showDeleteModal = ref(false)
+const galleryToDelete = ref<Gallery | null>(null)
+const deleteConfirmName = ref('')
+const deletingGallery = ref(false)
+const deleteError = ref('')
+const { root: deleteModalRoot } = useModalFocus(showDeleteModal, {
+  onEscape: () => { if (!deletingGallery.value) showDeleteModal.value = false },
+  disabled: deletingGallery
+})
+
+const deleteConfirmReady = computed(() =>
+  !!galleryToDelete.value && deleteConfirmName.value.trim() === galleryToDelete.value.name
+)
+
+function openDeleteModal(gallery: Gallery) {
+  galleryToDelete.value = gallery
+  deleteConfirmName.value = ''
+  deleteError.value = ''
+  showDeleteModal.value = true
+}
+
+async function handleDeleteGallery() {
+  const target = galleryToDelete.value
+  if (!target || !deleteConfirmReady.value || deletingGallery.value) return
+  deletingGallery.value = true
+  deleteError.value = ''
+  try {
+    const response = await apiFetch(`/api/galleries/${target.id}`, { method: 'DELETE' })
+    if (response.status === 409) {
+      deleteError.value = '该展厅仍在发布状态，请先撤回发布，再删除空间。'
+      return
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string }
+      deleteError.value = body.message || '删除空间失败，请稍后重试。'
+      return
+    }
+    galleries.value = galleries.value.filter(g => g.id !== target.id)
+    showDeleteModal.value = false
+    galleryToDelete.value = null
+    toast.success(`空间“${target.name}”已删除。`)
+  } catch (error) {
+    deleteError.value = error instanceof Error ? error.message : '网络请求失败，请稍后重试。'
+  } finally {
+    deletingGallery.value = false
+  }
+}
 </script>
 
 <template>
@@ -421,13 +518,7 @@ async function handleCreateGallery() {
 
     <header class="space-nav">
       <RouterLink to="/" class="space-brand">
-        <span class="fold-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none">
-            <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
-            <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
-            <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
-          </svg>
-        </span>
+        <BrandMark :size="28" />
         <span class="space-brand-name">VIE Gallery</span>
       </RouterLink>
 
@@ -610,6 +701,10 @@ async function handleCreateGallery() {
                   <button type="button" @click="navigateToWorkspace(gallery.id)">进入工作区</button>
                   <button type="button" @click="navigateToConfig(gallery.id)">展厅配置</button>
                   <button type="button" @click="openViewer(gallery)">预览展厅</button>
+                  <template v-if="isOwner">
+                    <button type="button" @click="openRenameModal(gallery)">重命名</button>
+                    <button type="button" class="card-menu-danger" @click="openDeleteModal(gallery)">删除空间…</button>
+                  </template>
                 </div>
               </div>
             </div>
@@ -750,6 +845,124 @@ async function handleCreateGallery() {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showRenameModal" class="modal-backdrop" @click.self="!renaming && (showRenameModal = false)">
+        <div
+          ref="renameModalRoot"
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rename-title"
+          tabindex="-1"
+        >
+          <div class="modal-header-row">
+            <div class="modal-title-box">
+              <div class="modal-icon-bubble">
+                <Icon name="edit" :size="20" />
+              </div>
+              <div>
+                <h2 id="rename-title">重命名空间</h2>
+                <p>修改空间显示名称，访客链接保持不变</p>
+              </div>
+            </div>
+            <button class="modal-close" type="button" aria-label="关闭" :disabled="renaming" @click="showRenameModal = false">
+              <Icon name="x" :size="18" />
+            </button>
+          </div>
+
+          <div v-if="renameError" class="form-error">
+            <Icon name="alert-circle" :size="16" />
+            <span>{{ renameError }}</span>
+          </div>
+
+          <form @submit.prevent="handleRenameGallery">
+            <div class="form-group">
+              <label class="form-label" for="input-rename-name">空间名称</label>
+              <input
+                id="input-rename-name"
+                v-model="renameForm.name"
+                placeholder="例如：晨雾森林"
+                class="form-input"
+                maxlength="160"
+                required
+              />
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn-secondary" :disabled="renaming" @click="showRenameModal = false">取消</button>
+              <button type="submit" class="btn btn-primary" :disabled="renaming">
+                <Icon v-if="renaming" name="refresh" :size="16" class="spin" />
+                <span>{{ renaming ? '保存中…' : '保存' }}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showDeleteModal && galleryToDelete" class="modal-backdrop" @click.self="!deletingGallery && (showDeleteModal = false)">
+        <div
+          ref="deleteModalRoot"
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-title"
+          tabindex="-1"
+        >
+          <div class="modal-header-row">
+            <div class="modal-title-box">
+              <div class="modal-icon-bubble is-danger">
+                <Icon name="trash" :size="20" />
+              </div>
+              <div>
+                <h2 id="delete-title">删除空间</h2>
+                <p>删除后空间及其照片将无法恢复</p>
+              </div>
+            </div>
+            <button class="modal-close" type="button" aria-label="关闭" :disabled="deletingGallery" @click="showDeleteModal = false">
+              <Icon name="x" :size="18" />
+            </button>
+          </div>
+
+          <div v-if="deleteError" class="form-error">
+            <Icon name="alert-circle" :size="16" />
+            <span>{{ deleteError }}</span>
+          </div>
+
+          <div class="form-group">
+            <p class="delete-warning">
+              即将删除空间 <strong>「{{ galleryToDelete.name }}」</strong>
+              <template v-if="(galleryToDelete.photoCount ?? 0) > 0">
+                ，其中包含 {{ galleryToDelete.photoCount }} 张照片
+              </template>
+              。此操作不可撤销。为避免误删，请输入空间名称以确认。
+            </p>
+            <label class="form-label" for="input-delete-confirm">空间名称</label>
+            <input
+              id="input-delete-confirm"
+              v-model="deleteConfirmName"
+              class="form-input"
+              :placeholder="galleryToDelete.name"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" :disabled="deletingGallery" @click="showDeleteModal = false">取消</button>
+            <button
+              type="button"
+              class="btn btn-danger-solid"
+              :disabled="!deleteConfirmReady || deletingGallery"
+              @click="handleDeleteGallery"
+            >
+              <Icon v-if="deletingGallery" name="refresh" :size="16" class="spin" />
+              <span>{{ deletingGallery ? '删除中…' : '确认删除' }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </Transition>
@@ -1404,7 +1617,7 @@ async function handleCreateGallery() {
   left: 12px;
   padding: 3px 9px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.04em;
 }
@@ -1430,7 +1643,7 @@ async function handleCreateGallery() {
   right: 12px;
   padding: 3px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   background: #fef3c7;
   color: #b45309;
@@ -1441,7 +1654,7 @@ async function handleCreateGallery() {
   display: inline-block;
   padding: 2px 7px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   background: #fef3c7;
   color: #b45309;
@@ -1478,7 +1691,7 @@ async function handleCreateGallery() {
 .metric-badge {
   padding: 1px 6px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -1581,6 +1794,59 @@ async function handleCreateGallery() {
 .card-menu button:hover {
   background: #ecfdf5;
   color: #047857;
+}
+
+.card-menu button.card-menu-danger {
+  color: #dc2626;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-radius: 8px 8px 0 0;
+}
+
+.card-menu button.card-menu-danger:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.modal-icon-bubble.is-danger {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.delete-warning {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #7f1d1d;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.btn-danger-solid {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 650;
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.btn-danger-solid:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .create-card {

@@ -52,4 +52,16 @@ public class InMemoryGalleryRepository implements GalleryRepository {
             values.add(new Gallery(g.id(), g.tenantId(), g.slug(), g.name(), g.visibility(), g.passwordHash(), coverPhotoId, g.deleted(), g.createdAt(), g.status(), g.publishedAt()));
         });
     }
+
+    @Override public int softDelete(UUID tenantId, UUID galleryId) {
+        List<Gallery> matches = values.stream()
+                .filter(item -> item.tenantId().equals(tenantId) && item.id().equals(galleryId) && !item.deleted())
+                .toList();
+        for (Gallery g : matches) {
+            values.remove(g);
+            values.add(new Gallery(g.id(), g.tenantId(), g.slug(), g.name(), g.visibility(), g.passwordHash(),
+                    g.coverPhotoId(), true, g.createdAt(), g.status(), g.publishedAt(), g.updatedAt()));
+        }
+        return matches.size();
+    }
 }

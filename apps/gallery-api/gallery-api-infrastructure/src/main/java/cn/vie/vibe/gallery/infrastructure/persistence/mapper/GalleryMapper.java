@@ -54,4 +54,8 @@ public interface GalleryMapper {
 
     @Update("UPDATE gallery SET cover_photo_id = NULL, updated_at = #{updatedAt} WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
     int clearCover(@Param("tenantId") String tenantId, @Param("id") String id, @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Update("UPDATE gallery SET deleted_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6) " +
+            "WHERE tenant_id = UUID_TO_BIN(#{tenantId}) AND id = UUID_TO_BIN(#{id}) AND deleted_at IS NULL")
+    int softDelete(@Param("tenantId") String tenantId, @Param("id") String id);
 }

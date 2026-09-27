@@ -196,10 +196,19 @@ public class GalleryController {
     public GalleryResponse update(@PathVariable UUID galleryId, @Valid @RequestBody UpdateGalleryRequest request) {
         UUID tenant = tenantContext.requireContext().tenantId();
         Gallery current = facade.get(galleryId);
+        if (request.name() != null) {
+            current = facade.rename(galleryId, request.name());
+        }
         if (request.visibility() != null) {
             current = facade.updateVisibility(galleryId, request.visibility());
         }
         return toResponse(current, tenant);
+    }
+
+    @DeleteMapping("/{galleryId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable UUID galleryId) {
+        facade.delete(galleryId);
     }
 
     @PostMapping
@@ -209,7 +218,7 @@ public class GalleryController {
         return toResponse(facade.create(request.name().trim(), request.slug().trim(), request.visibility()), tenant);
     }
 
-    public record UpdateGalleryRequest(GalleryVisibility visibility) {
+    public record UpdateGalleryRequest(GalleryVisibility visibility, @Size(max = 160) String name) {
     }
 
     public record CreateGalleryRequest(@NotBlank @Size(max = 160) String name,

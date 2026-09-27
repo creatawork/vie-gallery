@@ -448,8 +448,8 @@ scrape_configs:
 
 - 📖 阅读安全文档: [SECURITY-ENCRYPTION.md](./SECURITY-ENCRYPTION.md)
 - 🔐 配置 SSL: [SSL-SETUP-GUIDE.md](../infra/SSL-SETUP-GUIDE.md)
-- 📊 配置监控: [MONITORING.md](./MONITORING.md)
-- 🔄 设置 CI/CD: [CI-CD-SETUP.md](./CI-CD-SETUP.md)
+- 📊 配置监控: MONITORING.md（文档待编写）
+- 🔄 设置 CI/CD: CI-CD-SETUP.md（文档待编写）
 
 ## 技术支持
 

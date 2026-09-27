@@ -94,24 +94,50 @@ public class PhotoController {
     public List<PhotoResponse> list(@PathVariable UUID galleryId) {
         UUID tenant = context.requireContext().tenantId();
         String userId = tenant.toString();
-        
+
         return facade.list(galleryId).stream().map(photo -> {
             var object = objects.findById(tenant, photo.storageObjectId()).orElse(null);
-            
+
             // 生成带签名的安全URL
             String secureUrl = null;
-            if (object != null && object.thumbnailKey() != null && object.status() == StorageObjectStatus.READY) {
-                String rawUrl = storage.createReadUrl(object.thumbnailKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
-                secureUrl = signedUrlService.signPhotoUrl(rawUrl, userId);
+            String secureOriginalUrl = null;
+            if (object != null && object.status() == StorageObjectStatus.READY) {
+                if (object.thumbnailKey() != null) {
+                    String rawUrl = storage.createReadUrl(object.thumbnailKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
+                    secureUrl = signedUrlService.signPhotoUrl(rawUrl, userId);
+                }
+                String rawOriginalUrl = storage.createReadUrl(object.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
+                secureOriginalUrl = signedUrlService.signPhotoUrl(rawOriginalUrl, userId);
             }
-            
-            return PhotoResponse.from(photo, object, secureUrl);
+
+            return PhotoResponse.from(photo, object, secureUrl, secureOriginalUrl);
         }).toList();
+    }
+
+    @PutMapping("/galleries/{galleryId}/photos/order")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reorder(@PathVariable UUID galleryId, @RequestBody ReorderRequest request) {
+        facade.reorder(galleryId, parseIds(request.orderedPhotoIds(), "orderedPhotoIds"));
+    }
+
+    @PostMapping("/galleries/{galleryId}/photos/batch-delete")
+    public BatchDeleteResponse batchDelete(@PathVariable UUID galleryId, @RequestBody BatchDeleteRequest request) {
+        var result = facade.deleteAll(galleryId, parseIds(request.photoIds(), "photoIds"));
+        return new BatchDeleteResponse(result.requested(), result.deleted());
+    }
+
+    private static List<UUID> parseIds(List<String> values, String field) {
+        if (values == null) throw new DomainException("VALIDATION_FAILED", field + " is required");
+        try {
+            return values.stream().map(value -> UUID.fromString(value.trim())).toList();
+        } catch (IllegalArgumentException exception) {
+            throw new DomainException("VALIDATION_FAILED", field + " contains an invalid id");
+        }
     }
 
     @PatchMapping("/photos/{photoId}")
     public PhotoResponse update(@PathVariable UUID photoId, @RequestBody UpdateRequest request) {
-        return PhotoResponse.from(facade.update(photoId, request.title(), request.sortOrder(), request.cover()), null, null);
+        return PhotoResponse.from(facade.update(photoId, request.title(), request.sortOrder(), request.cover()), null, null, null);
     }
 
     @DeleteMapping("/photos/{photoId}")
@@ -119,6 +145,9 @@ public class PhotoController {
     public void delete(@PathVariable UUID photoId) { facade.delete(photoId); }
 
     public record UploadResponse(String batchId, List<UploadItem> items) {}
+    public record ReorderRequest(List<String> orderedPhotoIds) {}
+    public record BatchDeleteRequest(List<String> photoIds) {}
+    public record BatchDeleteResponse(int requested, int deleted) {}
     public record UploadItem(String filename, boolean accepted, UUID photoId, UUID taskId, TaskStatus status, UploadError error) {
         static UploadItem accepted(String filename, PhotoFacade.UploadResult result) {
             return new UploadItem(filename, true, result.photoId(), result.taskId(), result.taskStatus(), null);
@@ -130,31 +159,33 @@ public class PhotoController {
     public record UploadError(String code, String message) {}
     public record UpdateRequest(String title, Integer sortOrder, Boolean cover) {}
     public record PhotoResponse(
-            String id, 
-            String galleryId, 
-            String title, 
-            int sortOrder, 
-            boolean cover, 
+            String id,
+            String galleryId,
+            String title,
+            int sortOrder,
+            boolean cover,
             PhotoStatus status,
-            Instant createdAt, 
-            long byteSize, 
-            Integer width, 
-            Integer height, 
-            @SensitiveData(type = SensitiveData.SensitiveType.PHOTO_URL) String thumbnailUrl) {
-        
-        static PhotoResponse from(Photo photo, StorageObject object, String signedUrl) {
+            Instant createdAt,
+            long byteSize,
+            Integer width,
+            Integer height,
+            @SensitiveData(type = SensitiveData.SensitiveType.PHOTO_URL) String thumbnailUrl,
+            @SensitiveData(type = SensitiveData.SensitiveType.PHOTO_URL) String originalUrl) {
+
+        static PhotoResponse from(Photo photo, StorageObject object, String signedUrl, String signedOriginalUrl) {
             return new PhotoResponse(
-                    photo.id().toString(), 
-                    photo.galleryId().toString(), 
-                    photo.title(), 
-                    photo.sortOrder(), 
+                    photo.id().toString(),
+                    photo.galleryId().toString(),
+                    photo.title(),
+                    photo.sortOrder(),
                     photo.cover(),
-                    photo.status(), 
-                    photo.createdAt(), 
-                    object == null ? 0 : object.byteSize(), 
+                    photo.status(),
+                    photo.createdAt(),
+                    object == null ? 0 : object.byteSize(),
                     object == null ? null : object.width(),
-                    object == null ? null : object.height(), 
-                    signedUrl);
+                    object == null ? null : object.height(),
+                    signedUrl,
+                    signedOriginalUrl);
         }
     }
 }

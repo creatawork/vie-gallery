@@ -14,4 +14,5 @@ public interface GalleryRepository {
     Gallery save(Gallery gallery);
     void update(Gallery gallery);
     void updateCoverPhoto(UUID tenantId, UUID galleryId, UUID coverPhotoId);
+    int softDelete(UUID tenantId, UUID galleryId);
 }

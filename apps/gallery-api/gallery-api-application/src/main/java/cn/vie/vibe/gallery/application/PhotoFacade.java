@@ -143,14 +143,51 @@ public class PhotoFacade {
     @Transactional public void delete(UUID photoId){
         UUID t=authorization.requireEditor().tenantId();
         Photo p=photos.findById(t,photoId).orElseThrow(()->new DomainException("PHOTO_NOT_FOUND","Photo not found"));
-        if(photos.softDelete(t,photoId)==0)throw new DomainException("PHOTO_NOT_FOUND","Photo not found");
+        deleteInternal(t, p);
+    }
+    private void deleteInternal(UUID t, Photo p){
+        if(photos.softDelete(t,p.id())==0)throw new DomainException("PHOTO_NOT_FOUND","Photo not found");
         galleries.findById(t, p.galleryId()).ifPresent(g -> {
-            if (photoId.equals(g.coverPhotoId())) {
+            if (p.id().equals(g.coverPhotoId())) {
                 galleries.updateCoverPhoto(t, p.galleryId(), null);
             }
         });
-        objects.findById(t,p.storageObjectId()).ifPresent(o -> quotas.releaseOnce(t, "PHOTO", p.id(), o.byteSize(), 1)); 
+        objects.findById(t,p.storageObjectId()).ifPresent(o -> quotas.releaseOnce(t, "PHOTO", p.id(), o.byteSize(), 1));
         objects.softDelete(t,p.storageObjectId());
+    }
+    /** 批量软删除同属一个展厅的照片并释放配额；不属于该展厅的照片会被跳过。 */
+    @Transactional public BatchDeleteResult deleteAll(UUID galleryId, List<UUID> photoIds){
+        UUID t=authorization.requireEditor().tenantId();
+        galleries.findById(t, galleryId).orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+        if (photoIds == null || photoIds.isEmpty()) throw new DomainException("VALIDATION_FAILED", "photoIds is required");
+        List<UUID> requested = photoIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (requested.isEmpty() || requested.size() > 500) throw new DomainException("VALIDATION_FAILED", "photoIds must contain 1-500 ids");
+        int deleted = 0;
+        for (UUID photoId : requested) {
+            Optional<Photo> found = photos.findById(t, photoId);
+            if (found.isEmpty() || !galleryId.equals(found.get().galleryId())) continue;
+            deleteInternal(t, found.get());
+            deleted++;
+        }
+        return new BatchDeleteResult(requested.size(), deleted);
+    }
+    /** 按传入顺序重排展厅内照片的 sort_order；列表外的照片保持原顺序。 */
+    @Transactional public ReorderResult reorder(UUID galleryId, List<UUID> orderedPhotoIds){
+        UUID t=authorization.requireEditor().tenantId();
+        galleries.findById(t, galleryId).orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
+        if (orderedPhotoIds == null || orderedPhotoIds.isEmpty()) throw new DomainException("VALIDATION_FAILED", "orderedPhotoIds is required");
+        List<UUID> ordered = orderedPhotoIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ordered.isEmpty() || ordered.size() > 1000) throw new DomainException("VALIDATION_FAILED", "orderedPhotoIds must contain 1-1000 ids");
+        Set<UUID> existing = new HashSet<>();
+        for (Photo photo : photos.findByGallery(t, galleryId)) existing.add(photo.id());
+        for (UUID photoId : ordered) {
+            if (!existing.contains(photoId)) throw new DomainException("PHOTO_NOT_FOUND", "Photo " + photoId + " does not belong to this gallery");
+        }
+        int order = 0;
+        for (UUID photoId : ordered) {
+            photos.updateMetadata(t, photoId, null, order++, null);
+        }
+        return new ReorderResult(ordered.size());
     }
     @Transactional public Photo update(UUID photoId,String title,Integer sortOrder,Boolean cover){
         UUID t=authorization.requireEditor().tenantId();
@@ -171,4 +208,6 @@ public class PhotoFacade {
         return photos.findById(t,photoId).orElseThrow();
     }
     public record UploadResult(UUID photoId, UUID taskId, PhotoStatus status, TaskStatus taskStatus) {}
+    public record ReorderResult(int updated) {}
+    public record BatchDeleteResult(int requested, int deleted) {}
 }

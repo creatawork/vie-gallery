@@ -158,6 +158,18 @@ withDefaults(defineProps<Props>(), {
       <polyline points="12 5 19 12 12 19" />
     </g>
 
+    <!-- Arrow Up -->
+    <g v-else-if="name === 'arrow-up'">
+      <line x1="12" y1="19" x2="12" y2="5" />
+      <polyline points="5 12 12 5 19 12" />
+    </g>
+
+    <!-- Arrow Down -->
+    <g v-else-if="name === 'arrow-down'">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <polyline points="19 12 12 19 5 12" />
+    </g>
+
     <!-- Lock -->
     <g v-else-if="name === 'lock'">
       <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ShareLinkStatus } from '@vie/gallery-contracts'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
@@ -9,13 +9,14 @@ import { useUploadTasks, type UploadTask } from '../composables/useUploadTasks'
 import { usePublishCenter } from '../composables/usePublishCenter'
 import { apiFetch } from '../api'
 import { openCreatorPreview } from '../lib/preview'
-import { useModalFocus } from '../composables/useModalFocus'
 import Icon from '../components/Icon.vue'
+import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import LightboxModal from '../components/LightboxModal.vue'
 import GalleryUploadDropzone from '../components/gallery-workspace/GalleryUploadDropzone.vue'
 import GalleryPhotoGrid from '../components/gallery-workspace/GalleryPhotoGrid.vue'
 import GalleryPhotoCard from '../components/gallery-workspace/GalleryPhotoCard.vue'
+import GalleryPhotoList from '../components/gallery-workspace/GalleryPhotoList.vue'
 import UploadTaskCenter from '../components/gallery-workspace/UploadTaskCenter.vue'
 import PublishCenterPanel from '../components/gallery-workspace/PublishCenterPanel.vue'
 import ShareDeliveryPanel from '../components/gallery-workspace/ShareDeliveryPanel.vue'
@@ -44,14 +45,17 @@ const publishCenter = usePublishCenter(
 
 const photoViewMode = ref<'grid' | 'list'>('grid')
 const photoGridRef = ref<{ clearSelection: () => void } | null>(null)
+const photoListRef = ref<{ clearSelection: () => void } | null>(null)
+const dropzoneRef = ref<{ chooseFiles: () => void } | null>(null)
+const failedUploadFiles = ref<File[]>([])
 const userMenuOpen = ref(false)
 const showLightbox = ref(false)
 const lightboxIndex = ref(0)
 const photoToDelete = ref<Pick<WorkspacePhoto, 'id'> | null>(null)
-const deletingPhoto = ref(false)
 const batchPhotoIdsToDelete = ref<string[]>([])
 const showBatchDeleteModal = ref(false)
 const deletingBatch = ref(false)
+const showShortcutsModal = ref(false)
 const showUnpublishModal = ref(false)
 const showShareModal = ref(false)
 const visitorAllowDownload = ref(false)
@@ -95,31 +99,64 @@ watch(() => workspace.error.value, (err) => {
   }
 })
 
+// 切换视图时清空多选，避免把网格的选中状态带进列表。
+watch(photoViewMode, () => {
+  photoGridRef.value?.clearSelection()
+  photoListRef.value?.clearSelection()
+})
+
+// 上传进行中关闭/刷新页面时给出浏览器级提醒。
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!workspace.uploading.value) return
+  event.preventDefault()
+  event.returnValue = '照片正在上传，离开将中断上传。'
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('keydown', handleWorkspaceKeydown)
+})
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('keydown', handleWorkspaceKeydown)
+})
+
+// ---- 键盘快捷键（输入框聚焦或弹窗打开时跳过） ----
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable
+}
+
+function handleWorkspaceKeydown(event: KeyboardEvent) {
+  if (isTypingTarget(event.target) || showShareModal.value || showBatchDeleteModal.value || showUnpublishModal.value) return
+  if (event.metaKey || event.ctrlKey || event.altKey) return
+
+  if (event.key === 'Escape') {
+    showShortcutsModal.value = false
+    return
+  }
+  if (showLightbox.value || photoToDelete.value) return
+
+  const key = event.key.toLowerCase()
+  if (key === 'u' && canPhotoWrite.value) {
+    event.preventDefault()
+    dropzoneRef.value?.chooseFiles()
+  } else if (key === 'g') {
+    photoViewMode.value = 'grid'
+  } else if (key === 'l') {
+    photoViewMode.value = 'list'
+  } else if (key === '?') {
+    event.preventDefault()
+    showShortcutsModal.value = !showShortcutsModal.value
+  }
+}
+
 function goToOverview() {
   router.push({ name: 'overview' })
 }
 
 function goToConfig() {
   router.push({ name: 'gallery-config', params: { id: galleryId.value } })
-}
-
-function viewerUrl(slug: string) {
-  return `${window.location.protocol}//${window.location.hostname}:5174/g/${slug}`
-}
-
-function normalizeViewerShareUrl(value: string) {
-  const isLocalDevelopment = ['5173', '5174'].includes(window.location.port) &&
-    ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
-  if (!isLocalDevelopment) return value
-  try {
-    const url = new URL(value, window.location.origin)
-    url.protocol = window.location.protocol
-    url.hostname = window.location.hostname
-    url.port = '5174'
-    return url.toString()
-  } catch {
-    return value
-  }
 }
 
 async function openViewer() {
@@ -188,9 +225,16 @@ async function handleUpload(files: FileList | File[]) {
       onQueued: () => taskCenter.load(true)
     })
     await taskCenter.load(true)
-    if (summary.rejected > 0) {
-      toast.warning(`已加入队列 ${summary.succeeded} 张，${summary.rejected} 张文件未通过格式校验。`)
-    } else {
+    const failedFiles = summary.results.filter(result => !result.ok)
+    if (failedFiles.length) {
+      failedUploadFiles.value = failedFiles.map(result => result.file)
+      toast.actionable({
+        type: 'warning',
+        message: `已加入队列 ${summary.succeeded} 张，${failedFiles.length} 张上传失败（${failedFiles[0]?.message || '网络异常'}）。`,
+        duration: 10000,
+        action: { label: '重试失败项', handler: () => void handleRetryFailedUploads() }
+      })
+    } else if (summary.succeeded > 0) {
       toast.success(`已加入队列 ${summary.succeeded} 张照片，正在后台处理。`)
     }
   } catch (error) {
@@ -198,6 +242,17 @@ async function handleUpload(files: FileList | File[]) {
     await taskCenter.load(true)
     toast.error(error instanceof Error ? error.message : '照片上传失败，请重试。')
   }
+}
+
+async function handleRetryFailedUploads() {
+  if (!canPhotoWrite.value || !failedUploadFiles.value.length) return
+  const retrying = failedUploadFiles.value
+  failedUploadFiles.value = []
+  await handleUpload(retrying)
+}
+
+function handleInvalidSelection(detail: { message: string; count: number }) {
+  toast.warning(`${detail.message}。`)
 }
 
 async function handleRetryTask(task: UploadTask) {
@@ -282,6 +337,26 @@ async function handleMovePhoto(payload: { id: string; direction: 'up' | 'down' }
   }
 }
 
+function handleListOpen(photo: WorkspacePhoto) {
+  const index = workspace.photos.value.findIndex(item => item.id === photo.id)
+  if (index !== -1) openLightbox(index)
+}
+
+async function handleReorder(payload: { fromIndex: number; toIndex: number }) {
+  if (!canPhotoWrite.value) return
+  const ids = workspace.photos.value.map(photo => photo.id)
+  const { fromIndex, toIndex } = payload
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= ids.length || toIndex >= ids.length) return
+  const [moved] = ids.splice(fromIndex, 1)
+  if (moved === undefined) return
+  ids.splice(toIndex, 0, moved)
+  try {
+    await workspace.reorderPhotos(ids)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '调整照片排序失败。')
+  }
+}
+
 async function handleRetryFailedGrid() {
   if (!canPhotoWrite.value) return
   // Find failed tasks or retryable tasks in taskCenter
@@ -307,19 +382,65 @@ async function handleRetryFailedGrid() {
   }
 }
 
+interface PendingPhotoDeletion {
+  photo: WorkspacePhoto
+  index: number
+  timer: number
+}
+
+let pendingPhotoDeletion: PendingPhotoDeletion | null = null
+
+function flushPendingPhotoDeletion() {
+  const pending = pendingPhotoDeletion
+  if (!pending) return
+  window.clearTimeout(pending.timer)
+  pendingPhotoDeletion = null
+  workspace.deletePhoto(pending.photo.id).catch(() => {
+    toast.error('删除照片失败，请刷新后重试。')
+    workspace.reload()
+  })
+}
+
+function undoPhotoDeletion() {
+  const pending = pendingPhotoDeletion
+  if (!pending) return
+  window.clearTimeout(pending.timer)
+  pendingPhotoDeletion = null
+  workspace.restorePhotoLocally(pending.photo, pending.index)
+  toast.success('已撤销删除。')
+}
+
 async function confirmDeletePhoto() {
-  if (!photoToDelete.value) return
-  deletingPhoto.value = true
-  try {
-    await workspace.deletePhoto(photoToDelete.value.id)
-    showLightbox.value = false
-    toast.success('照片已删除。')
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : '删除照片失败。')
-  } finally {
-    deletingPhoto.value = false
+  const target = photoToDelete.value
+  if (!target) return
+  const index = workspace.photos.value.findIndex(photo => photo.id === target.id)
+  const photo = index === -1 ? undefined : workspace.photos.value[index]
+  if (!photo) {
     photoToDelete.value = null
+    return
   }
+  photoToDelete.value = null
+  showLightbox.value = false
+
+  // 已有等待中的删除先立即执行，避免多次确认互相覆盖。
+  flushPendingPhotoDeletion()
+
+  // 乐观移除 + 8 秒撤销窗口，超时才真正调用删除接口（防误删安全网）。
+  workspace.removePhotoLocally(target.id)
+  const timer = window.setTimeout(() => {
+    pendingPhotoDeletion = null
+    workspace.deletePhoto(target.id).catch(() => {
+      toast.error('删除照片失败，请刷新后重试。')
+      workspace.reload()
+    })
+  }, 8000)
+  pendingPhotoDeletion = { photo, index, timer }
+  toast.actionable({
+    type: 'info',
+    message: `已删除「${photo.title || '未命名照片'}」，8 秒内可撤销。`,
+    duration: 8000,
+    action: { label: '撤销', handler: undoPhotoDeletion }
+  })
 }
 
 async function loadGalleryConfig() {
@@ -380,13 +501,7 @@ async function openShareModal() {
     <template v-else>
       <header class="hall-nav">
         <RouterLink to="/" class="brand">
-          <span class="fold-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" fill="none">
-              <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
-              <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
-              <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
-            </svg>
-          </span>
+          <BrandMark :size="28" />
           <span>VIE Gallery</span>
         </RouterLink>
 
@@ -505,11 +620,14 @@ async function openShareModal() {
               <h2>照片管理 ({{ workspace.photos.value.length }})</h2>
               <div class="photo-tools">
                 <div class="view-toggle">
-                  <button class="view-btn" :class="{ active: photoViewMode === 'grid' }" type="button" aria-label="网格视图" @click="photoViewMode = 'grid'">
+                  <button class="view-btn" :class="{ active: photoViewMode === 'grid' }" type="button" aria-label="网格视图" title="网格视图（G）" @click="photoViewMode = 'grid'">
                     <Icon name="grid" :size="14" />
                   </button>
-                  <button class="view-btn" :class="{ active: photoViewMode === 'list' }" type="button" aria-label="列表视图" @click="photoViewMode = 'list'">
+                  <button class="view-btn" :class="{ active: photoViewMode === 'list' }" type="button" aria-label="列表视图" title="列表视图（L）" @click="photoViewMode = 'list'">
                     <Icon name="list" :size="14" />
+                  </button>
+                  <button class="view-btn" type="button" aria-label="键盘快捷键" title="键盘快捷键（?）" @click="showShortcutsModal = true">
+                    <span class="shortcut-mark">?</span>
                   </button>
                 </div>
               </div>
@@ -530,11 +648,12 @@ async function openShareModal() {
                 <template #dropzone>
                   <GalleryUploadDropzone
                     v-if="canPhotoWrite"
+                    ref="dropzoneRef"
                     :uploading="workspace.uploading.value"
                     :progress="workspace.uploadProgress.value"
                     :status-text="workspace.uploadStatusText.value"
                     @files="handleUpload"
-                    @invalid="toast.warning($event)"
+                    @invalid="handleInvalidSelection"
                   />
                 </template>
               </GalleryPhotoGrid>
@@ -542,24 +661,28 @@ async function openShareModal() {
             <div v-else class="photo-list">
               <GalleryUploadDropzone
                 v-if="canPhotoWrite"
+                ref="dropzoneRef"
                 class="list-dropzone"
                 :uploading="workspace.uploading.value"
                 :progress="workspace.uploadProgress.value"
                 :status-text="workspace.uploadStatusText.value"
                 @files="handleUpload"
-                @invalid="toast.warning($event)"
+                @invalid="handleInvalidSelection"
+              />
+              <GalleryPhotoList
+                ref="photoListRef"
+                :photos="workspace.photos.value"
+                :can-write="canPhotoWrite"
+                @open="handleListOpen"
+                @set-cover="handleSetCover"
+                @delete="promptDeletePhoto"
+                @batch-delete="promptBatchDelete"
+                @move-photo="handleMovePhoto"
+                @reorder="handleReorder"
+                @update-title="handleUpdatePhotoTitle"
+                @retry-failed="handleRetryFailedGrid"
               />
               <p v-if="!workspace.photos.value.length && !canPhotoWrite" class="list-empty">还没有照片。</p>
-              <button
-                v-for="(photo, index) in workspace.photos.value"
-                :key="photo.id"
-                class="list-row"
-                type="button"
-                @click="openLightbox(index)"
-              >
-                <img v-if="photo.thumbnailUrl" :src="photo.thumbnailUrl" class="list-thumb" />
-                <span>{{ photo.title || '未命名照片' }}</span>
-              </button>
             </div>
           </section>
 
@@ -628,7 +751,6 @@ async function openShareModal() {
       message="删除后该照片将从展厅中移除，此操作不可撤销。"
       confirm-text="确认删除"
       danger
-      :loading="deletingPhoto"
       @confirm="confirmDeletePhoto"
       @cancel="photoToDelete = null"
     />
@@ -657,6 +779,28 @@ async function openShareModal() {
       @move-up="handleMovePhoto({ id: $event.id, direction: 'up' })"
       @move-down="handleMovePhoto({ id: $event.id, direction: 'down' })"
     />
+
+    <Transition name="modal-fade">
+      <div v-if="showShortcutsModal" class="shortcuts-backdrop" @click.self="showShortcutsModal = false">
+        <div class="shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+          <div class="shortcuts-head">
+            <h2 id="shortcuts-title">键盘快捷键</h2>
+            <button class="shortcuts-close" type="button" aria-label="关闭" @click="showShortcutsModal = false">
+              <Icon name="x" :size="16" />
+            </button>
+          </div>
+          <ul class="shortcut-list">
+            <li><kbd>U</kbd><span>打开文件选择上传照片</span></li>
+            <li><kbd>Ctrl</kbd> + <kbd>V</kbd><span>粘贴剪贴板图片直接上传</span></li>
+            <li><kbd>G</kbd><span>切换到网格视图</span></li>
+            <li><kbd>L</kbd><span>切换到列表视图</span></li>
+            <li><kbd>←</kbd> <kbd>→</kbd><span>灯箱中切换上一张 / 下一张</span></li>
+            <li><kbd>Esc</kbd><span>关闭菜单 / 灯箱 / 弹窗</span></li>
+            <li><kbd>?</kbd><span>显示本帮助</span></li>
+          </ul>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -919,7 +1063,7 @@ async function openShareModal() {
   display: grid;
   place-items: center;
   background: #e5e7eb;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1124,11 +1268,6 @@ async function openShareModal() {
   gap: 10px;
 }
 
-.sort-btn {
-  font-size: 13px;
-  color: #6b7280;
-}
-
 .view-toggle {
   display: flex;
   padding: 3px;
@@ -1150,11 +1289,95 @@ async function openShareModal() {
   color: #fff;
 }
 
-.photo-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+.shortcut-mark {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
 }
+
+.shortcuts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.shortcuts-modal {
+  width: min(380px, calc(100% - 32px));
+  padding: 22px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.2);
+}
+
+.shortcuts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.shortcuts-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+.shortcuts-close {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+}
+
+.shortcuts-close:hover {
+  background: #f3f4f6;
+  color: #0f172a;
+}
+
+.shortcut-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shortcut-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.shortcut-list kbd {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  border-bottom-width: 2px;
+  background: #f8fafc;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  color: #0f172a;
+  text-align: center;
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active { transition: opacity 0.2s ease; }
+.modal-fade-enter-from,
+.modal-fade-leave-to { opacity: 0; }
 
 .photo-list {
   display: flex;
@@ -1171,23 +1394,6 @@ async function openShareModal() {
   padding: 16px;
   color: #6b7280;
   font-size: 13px;
-}
-
-.list-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px;
-  background: #f8fafc;
-  border-radius: 10px;
-  text-align: left;
-}
-
-.list-thumb {
-  width: 56px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 8px;
 }
 
 .hall-footer {
@@ -1213,50 +1419,7 @@ async function openShareModal() {
   margin-top: 16px;
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  background: rgba(15, 23, 42, 0.35);
-}
-
-.modal-card {
-  width: min(480px, calc(100% - 32px));
-  padding: 22px;
-  background: #fff;
-  border-radius: 18px;
-}
-
-.modal-header-row,
-.share-row,
-.generated {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.generated input,
-.share-row select {
-  flex: 1;
-  padding: 8px 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-}
-
-.modal-fade-enter-active,
-.modal-fade-leave-active { transition: opacity 0.2s ease; }
-.modal-fade-enter-from,
-.modal-fade-leave-to { opacity: 0; }
-
 @media (max-width: 1100px) {
-  .hall-split,
-  .photo-grid {
-    grid-template-columns: 1fr 1fr;
-  }
   .hall-split {
     grid-template-columns: 1fr;
   }

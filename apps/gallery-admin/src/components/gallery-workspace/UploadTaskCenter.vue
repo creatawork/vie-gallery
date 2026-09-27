@@ -505,7 +505,7 @@ async function copyRequestId(id: string) {
 
 .req-id {
   font-family: monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: #94a3b8;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -513,7 +513,7 @@ async function copyRequestId(id: string) {
 }
 
 .copy-req-btn {
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 5px;
   border-radius: 4px;
   border: 1px solid #cbd5e1;
@@ -523,7 +523,7 @@ async function copyRequestId(id: string) {
 }
 
 .ready-tag {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   color: #00b88f;
   background: #ecfdf5;
@@ -533,7 +533,7 @@ async function copyRequestId(id: string) {
 }
 
 .cancelling-tag {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   color: #f59e0b;
   background: #fef3c7;

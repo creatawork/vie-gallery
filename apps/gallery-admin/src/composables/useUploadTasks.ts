@@ -7,6 +7,7 @@ import type {
   UploadTaskSummary
 } from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
+import { responseError } from '../lib/apiError'
 
 export type { UploadTask, UploadTaskError, UploadTaskPage, UploadTaskStatus, UploadTaskSummary }
 
@@ -63,19 +64,6 @@ function normalizeTask(value: unknown): UploadTask {
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
     finishedAt: typeof raw.finishedAt === 'string' ? raw.finishedAt : null
   }
-}
-
-async function responseError(response: Response, fallback: string): Promise<Error> {
-  let message = fallback
-  try {
-    const body = await response.json() as { message?: string }
-    if (body.message) message = body.message
-  } catch {
-    // Keep the friendly fallback for non-JSON responses.
-  }
-  const error = new Error(message)
-  Object.assign(error, { status: response.status })
-  return error
 }
 
 export function useUploadTasks(

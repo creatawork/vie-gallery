@@ -458,6 +458,10 @@ class PublicAccessFacadeTest {
                         gallery.visibility(), gallery.passwordHash(), coverPhotoId, gallery.deleted(), gallery.createdAt()));
             }
         }
+
+        public int softDelete(UUID tenantId, UUID galleryId) {
+            return values.remove(galleryId) == null ? 0 : 1;
+        }
     }
 
     private static final class ShareLinkStore implements ShareLinkRepository {

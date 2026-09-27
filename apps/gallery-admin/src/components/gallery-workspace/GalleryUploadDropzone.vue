@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import Icon from '../Icon.vue'
 
-defineProps<{
+const props = defineProps<{
   uploading: boolean
   progress?: number
   statusText?: string
@@ -10,8 +10,13 @@ defineProps<{
 
 const emit = defineEmits<{
   (event: 'files', files: FileList | File[]): void
-  (event: 'invalid', message: string): void
+  (event: 'invalid', detail: { message: string; count: number }): void
 }>()
+
+interface InvalidEntry {
+  name: string
+  reason: string
+}
 
 const isDragOver = ref(false)
 const input = ref<HTMLInputElement | null>(null)
@@ -20,44 +25,62 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024
 const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 function chooseFiles() {
-  input.value?.click()
+  if (!props.uploading) input.value?.click()
 }
 
-function validateFiles(files: FileList | File[]): File[] {
-  const selected = Array.from(files)
-  if (selected.length > MAX_FILES) {
-    emit('invalid', `单次最多选择 ${MAX_FILES} 张照片。`)
-    return []
+defineExpose({ chooseFiles })
+
+// 逐文件校验：坏文件单独报告，不再整批拒绝。
+function partitionFiles(files: FileList | File[]): { valid: File[]; invalid: InvalidEntry[] } {
+  const valid: File[] = []
+  const invalid: InvalidEntry[] = []
+  for (const file of Array.from(files)) {
+    if (!ACCEPTED_TYPES.has(file.type)) {
+      invalid.push({ name: file.name, reason: `${file.name} 不是支持的 JPG、PNG 或 WebP 图片` })
+    } else if (file.size > MAX_FILE_SIZE) {
+      invalid.push({ name: file.name, reason: `${file.name} 超过 50MB 大小限制` })
+    } else {
+      valid.push(file)
+    }
   }
-  const invalidType = selected.find(file => !ACCEPTED_TYPES.has(file.type))
-  if (invalidType) {
-    emit('invalid', `${invalidType.name} 不是支持的 JPG、PNG 或 WebP 图片。`)
-    return []
-  }
-  const oversized = selected.find(file => file.size > MAX_FILE_SIZE)
-  if (oversized) {
-    emit('invalid', `${oversized.name} 超过 50MB 大小限制。`)
-    return []
-  }
-  return selected
+  return { valid, invalid }
+}
+
+function emitSelection(files: FileList | File[]) {
+  const { valid, invalid } = partitionFiles(files)
+  const ignored = Math.max(0, valid.length - MAX_FILES)
+  const accepted = valid.slice(0, MAX_FILES)
+
+  const parts: string[] = []
+  const firstInvalid = invalid[0]
+  if (invalid.length === 1 && firstInvalid) parts.push(firstInvalid.reason)
+  else if (invalid.length > 1 && firstInvalid) parts.push(`${invalid.length} 张文件不符合要求（如 ${firstInvalid.name}）`)
+  if (ignored > 0) parts.push(`超出单次 ${MAX_FILES} 张上限，已忽略 ${ignored} 张`)
+  const message = parts.join('；')
+
+  if (message) emit('invalid', { message, count: invalid.length + ignored })
+  if (accepted.length) emit('files', accepted)
 }
 
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement
-  if (target.files?.length) {
-    const files = validateFiles(target.files)
-    if (files.length) emit('files', files)
-  }
+  if (target.files?.length) emitSelection(target.files)
   target.value = ''
 }
 
 function handleDrop(event: DragEvent) {
   isDragOver.value = false
-  if (event.dataTransfer?.files?.length) {
-    const files = validateFiles(event.dataTransfer.files)
-    if (files.length) emit('files', files)
-  }
+  if (event.dataTransfer?.files?.length) emitSelection(event.dataTransfer.files)
 }
+
+function handlePaste(event: ClipboardEvent) {
+  if (props.uploading) return
+  const files = event.clipboardData?.files
+  if (files?.length) emitSelection(files)
+}
+
+onMounted(() => document.addEventListener('paste', handlePaste))
+onUnmounted(() => document.removeEventListener('paste', handlePaste))
 </script>
 
 <template>
@@ -78,15 +101,18 @@ function handleDrop(event: DragEvent) {
       <span class="upload-icon">
         <Icon name="upload" :size="28" />
       </span>
-      <strong>拖拽上传照片</strong>
-      <small>JPG / PNG / WebP</small>
-      <small>单张不超过 50MB</small>
+      <strong>拖拽 / 点击 / Ctrl+V 粘贴上传</strong>
+      <small>JPG / PNG / WebP，单张不超过 50MB</small>
     </template>
     <div v-else class="upload-progress" role="status" @click.stop>
       <span class="upload-icon spinning-icon">
         <Icon name="refresh" :size="24" />
       </span>
       <strong>{{ statusText || '已加入队列，正在上传…' }}</strong>
+      <div v-if="typeof progress === 'number' && progress > 0" class="progress-track" aria-hidden="true">
+        <div class="progress-bar" :style="{ width: `${Math.min(100, Math.max(2, progress))}%` }"></div>
+      </div>
+      <small v-if="typeof progress === 'number' && progress > 0">{{ progress }}%</small>
       <small>处理进度请查看右侧任务中心</small>
     </div>
     <input ref="input" type="file" multiple accept="image/jpeg,image/png,image/webp" hidden @change="handleInput" />
@@ -269,6 +295,21 @@ function handleDrop(event: DragEvent) {
   gap: 8px;
   color: #047857;
   animation: upload-progress-fade-in 0.3s ease;
+}
+
+.progress-track {
+  width: min(220px, 70%);
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(0, 184, 143, 0.15);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #34d399, #00b88f);
+  transition: width 0.25s ease;
 }
 
 @keyframes upload-progress-fade-in {
