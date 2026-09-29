@@ -150,6 +150,7 @@
 
 /* 区块标题：居中 + 眉题 */
 .tpl-darkroom .sec-head {
+  align-items: center;
   text-align: center;
   justify-content: center;
   flex-direction: column;

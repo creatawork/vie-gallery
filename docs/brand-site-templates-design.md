@@ -435,3 +435,22 @@ brand_site_config_version  版本表：对齐 gallery_viewer_config_version 结�
 | TD4 | 品牌站渲染端倾向独立 app 而非扩展 viewer | SEO 是品牌站获客前提；viewer 无路由且职责单一 |
 | TD5 | 主色派生 + `primaryRole` 分级 | 防止用户主色破坏模板性格，保住专业感底线 |
 | TD6 | 3D 仅在 T4 hero 与项目页入口出现 | 性能预算优先；3D 差异化集中在招牌场景 |
+
+## 附录 B：工程落地记录（2026-09-29）
+
+本文档 §5 全部 5 套模板已按 M2–M4 范围完成工程化并通过线上验收（v1 模板层）：
+
+| 工作项 | 落地 |
+|---|---|
+| 契约 | `packages/gallery-contracts`：`BrandSiteContent/Config/Response`、`SiteTemplate` 接口、5 套模板定义与 demo 内容（渲染端/admin 单一数据源）、主色派生（`brandTokens.ts`，WCAG AA）、`BS_*` 预览消息常量 |
+| 站点渲染端 | `apps/gallery-site`（新应用，部署于 `/site/`）：6 个共享区块组件 × 5 套模板皮肤（`.tpl-{id}` 作用域）；feature/mosaic/index 三种项目卡变体；T4 hero 实时 iframe 嵌入 Viewer + 移动端/省流/低内存/reduced-motion 自动降级静帧；转化区块（微信复制/站内表单/`site_*` 埋点 sendBeacon 接缝）；TRIAL footer 标识与 EXPIRED 暂停页；meta/OG 输出（TRIAL/EXPIRED 输出 noindex）；CSS+JS gzip ≈ 46KB（预算 120KB） |
+| 后端 | Flyway `V16__brand_site.sql`（brand_site / brand_site_config_version / brand_site_inquiry）；`BrandSiteFacade` 草稿-发布-回滚对齐 `GalleryViewerConfigFacade` 范式；管理端点 `/api/brand-site*`；公开端点 `/api/public/sites/**`（公开读 + 询盘 + 埋点接缝）；Logo 上传（≤256KB）；子域名保留字黑名单校验 |
+| Admin 工作区 | `/app/site`：模板画廊（缩略图 + pairing + 切换影响提示弹窗）→ 内容编辑（hero/项目引用相册/关于/联系/SEO，图片从相册选取）→ 品牌定制（名称/Logo 上传/主色取色器 + 派生色板 + 低对比黄色提示）→ 发布中心（子域名/状态/发布/版本回滚）；右侧 iframe 实时预览（`BS_PREVIEW_READY`/`BS_CONFIG_UPDATE`/`BS_TEMPLATE_CHANGE`/`BS_CONTENT_CHANGE`） |
+| 部署 | 工作流新增 Site UI 构建与 rsync；Nginx 新增 `/site/` 静态路径 |
+
+**与本文档的差异/待办**：
+
+- 泛子域名 serving（PRD §11.7）未上线：过渡期以 `?site={subdomain}` 查询参数定位站点，Nginx 路径为 `/site/`；基建就绪后切泛子域名 host 解析（渲染端 `resolveHostSubdomain` 已预留）。
+- `POST /api/public/sites/{sub}/events` 目前只回 204，事件聚合随 WP-13 track-event 通道接入；询盘已落库（`brand_site_inquiry`），后台查看列表待后续工作区。
+- 性能预算验收：模板自身 CSS+JS ≈ 46KB gzip 达标；LCP ≥85 的 Lighthouse 回归与思源字体子集化按需加载列入后续回归清单。
+- 高保真原型已入库 `design/brand-site-templates/`（入口 `index.html`；`shots/` 双断点截图体积原因未入库，缩略图已随 `apps/gallery-admin/public/site-templates/` 发布）。

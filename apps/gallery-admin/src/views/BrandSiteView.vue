@@ -415,6 +415,12 @@ onMounted(() => {
   void brandSite.load().then(() => {
     void loadGalleries()
   })
+  // 兜底：首次进入偶发请求未竟（如登录后即刻跳转的会话竞争），12s 后未见数据则重试一次
+  window.setTimeout(() => {
+    if (!brandSite.site.value && !brandSite.loadError.value) {
+      void brandSite.load()
+    }
+  }, 12000)
   startHandshakeTimer()
   window.addEventListener('message', onPreviewMessage)
 })
