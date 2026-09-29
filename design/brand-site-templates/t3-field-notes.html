@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>山野手记 · 田野笔记模板 T3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F7F4EE; --card:#FFFFFF; --text:#2B2A26; --muted:#8B877C; --line:#DDD8CC;
+  --moss:#3E5C4B; --on-primary:#F7F4EE;
+  --font-display:'Noto Serif SC','Songti SC','SimSun',serif;
+  --font-body:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+  --font-mono:ui-monospace,'Cascadia Mono','Courier New',monospace;
+  --maxw:1200px; --radius:2px; --space-section:110px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--text);font-family:var(--font-body);
+  font-size:15.5px;line-height:1.9;-webkit-font-smoothing:antialiased}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 40px}
+body .wrap{padding-left:40px;padding-right:40px}
+:focus-visible{outline:2px solid var(--moss);outline-offset:3px}
+/* paper grain */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .04 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
+main,header,footer{position:relative;z-index:1}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:20;background:rgba(247,244,238,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.nav-in{max-width:var(--maxw);margin:0 auto;padding:18px 40px;display:flex;justify-content:space-between;align-items:baseline}
+.brand{font-family:var(--font-display);font-weight:900;font-size:19px;letter-spacing:.14em}
+.brand span{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.3em;margin-left:12px}
+.nav-links{display:flex;gap:28px;font-size:13.5px;color:var(--muted);letter-spacing:.16em}
+.nav-links a:hover{color:var(--moss)}
+
+/* chapter hero — asymmetric */
+.hero{padding:96px 0 0}
+.hero-grid{display:grid;grid-template-columns:1fr 84px 1.35fr;gap:0 32px;align-items:end}
+.hero-copy{padding-bottom:36px}
+.chapter{font-family:var(--font-mono);font-size:12px;letter-spacing:.4em;color:var(--moss);margin-bottom:22px}
+.hero h1{font-family:var(--font-display);font-weight:900;font-size:clamp(40px,5.6vw,66px);line-height:1.18;letter-spacing:.04em}
+.hero h1 .dot{color:var(--moss)}
+.hero p{margin-top:22px;color:#57534A;max-width:380px;font-weight:300}
+.vertical{writing-mode:vertical-rl;font-family:var(--font-display);font-weight:500;
+  font-size:15px;letter-spacing:.5em;color:var(--muted);height:260px;justify-self:center;padding-top:8px;
+  border-left:1px solid var(--line);padding-left:14px}
+.hero-media{overflow:hidden;border-radius:var(--radius)}
+.hero-media img{width:100%;height:min(62vh,560px);object-fit:cover;transition:transform .8s ease}
+.hero-media:hover img{transform:scale(1.02)}
+.hero-note{max-width:var(--maxw);margin:14px auto 0;padding:0 40px;font-family:var(--font-mono);
+  font-size:11.5px;color:var(--muted);letter-spacing:.06em}
+
+/* catalog — staggered */
+.catalog{padding:var(--space-section) 0 0}
+.catalog-head{display:flex;align-items:baseline;gap:18px;margin-bottom:64px}
+.catalog-head h2{font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:.2em}
+.catalog-head::after{content:"";flex:1;border-top:1px dashed var(--line)}
+.entries{display:grid;grid-template-columns:repeat(12,1fr);row-gap:96px}
+.entry{grid-column:span 7}
+.entry:nth-child(odd){grid-column:1 / span 7}
+.entry:nth-child(even){grid-column:6 / span 7;transform:translateY(-32px)}
+.entry .ph{overflow:hidden;border-radius:var(--radius);box-shadow:0 14px 40px rgba(43,42,38,.12)}
+.entry img{width:100%;aspect-ratio:3/2;object-fit:cover;transition:transform .7s ease}
+.entry:hover img{transform:scale(1.025)}
+.entry .meta{display:flex;gap:16px;align-items:baseline;margin-top:18px}
+.entry .no{font-family:var(--font-mono);font-size:13px;color:var(--moss);letter-spacing:.1em}
+.entry h3{font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:.08em;flex:1;min-width:0}
+.entry .yr{font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.entry p.desc{margin-top:6px;color:#57534A;font-size:14px;font-weight:300;max-width:480px}
+
+/* about */
+.about{padding:var(--space-section) 0 0}
+.about-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  max-width:680px;margin:0 auto;padding:56px 60px;box-shadow:0 14px 40px rgba(43,42,38,.08)}
+.about-card .kicker{font-family:var(--font-mono);font-size:12px;letter-spacing:.34em;color:var(--muted)}
+.about-card h2{font-family:var(--font-display);font-weight:700;font-size:24px;margin-top:12px;letter-spacing:.1em}
+.about-card .u{position:relative;display:inline-block}
+.about-card .u svg{position:absolute;left:0;bottom:-8px;width:100%;height:10px}
+.about-card p{margin-top:20px;color:#4A463E;font-weight:300}
+.about-card .facts{margin-top:26px;font-family:var(--font-mono);font-size:12.5px;color:var(--muted);
+  display:flex;gap:26px;flex-wrap:wrap}
+
+/* contact — note style */
+.contact{padding:var(--space-section) 0}
+.note{max-width:620px;margin:0 auto;background:#FBF9F3;border:1px solid var(--line);border-radius:var(--radius);
+  padding:48px 52px;transform:rotate(-.6deg);box-shadow:0 18px 44px rgba(43,42,38,.1)}
+.note h2{font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:.1em}
+.note .sub{margin-top:10px;color:#57534A;font-weight:300;font-size:14.5px}
+.note .line{display:flex;align-items:center;gap:14px;margin-top:26px;flex-wrap:wrap}
+.note .wx{font-family:var(--font-mono);font-size:16px;letter-spacing:.06em;
+  border-bottom:1.5px dashed var(--moss);padding-bottom:3px}
+.btn{display:inline-flex;align-items:center;cursor:pointer;border:none;font-family:inherit;
+  font-size:13px;letter-spacing:.16em;border-radius:var(--radius);transition:all .2s}
+.btn-copy{background:none;color:var(--moss);padding:9px 18px;border:1px solid var(--moss)}
+.btn-copy:hover{background:var(--moss);color:var(--on-primary)}
+.btn-primary{background:var(--moss);color:var(--on-primary);padding:14px 34px}
+.btn-primary:hover{background:#324C3E}
+.note .supply{margin-top:22px;font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.form{margin-top:28px;display:grid;gap:18px}
+.form label{font-size:12px;letter-spacing:.2em;color:var(--muted);display:block;margin-bottom:6px;font-family:var(--font-mono)}
+.form input,.form textarea{width:100%;background:transparent;border:none;border-bottom:1px solid var(--line);
+  padding:9px 2px;font-family:inherit;font-size:15px;color:var(--text);resize:vertical}
+.form input:focus,.form textarea:focus{outline:none;border-bottom-color:var(--moss)}
+.form .actions{display:flex;justify-content:flex-end}
+.toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%) translateY(16px);opacity:0;
+  background:#2B2A26;color:#F7F4EE;font-size:14px;padding:11px 22px;border-radius:var(--radius);transition:all .3s;pointer-events:none;z-index:50}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* footer */
+footer{border-top:1px dashed var(--line);padding:28px 0 36px;font-family:var(--font-mono);
+  font-size:11.5px;color:var(--muted);letter-spacing:.1em;display:flex;justify-content:space-between}
+
+/* reveal */
+.reveal:not(.in){opacity:0;transform:translateY(18px);transition:opacity .8s ease,transform .8s ease}
+.reveal.in{opacity:1;transition:opacity .8s ease,transform .8s ease}
+.entry.reveal.in:nth-child(even){transform:translateY(-32px)}
+@media (prefers-reduced-motion:reduce){
+  .reveal:not(.in){opacity:1;transform:none;transition:none}
+  .entry.reveal.in:nth-child(even),.entry.reveal:nth-child(even){transform:translateY(-32px)}
+  html{scroll-behavior:auto}}
+
+@media (max-width:900px){
+  body .wrap{padding-left:22px;padding-right:22px}
+  .nav-in{padding:16px 22px}
+  .hero-note{padding:0 22px}
+  :root{--space-section:80px}
+  .hero-grid{grid-template-columns:1fr}
+  .vertical{writing-mode:horizontal-tb;height:auto;border-left:none;border-top:1px solid var(--line);
+    padding:10px 0 0;letter-spacing:.4em;justify-self:start;margin-top:18px}
+  .hero-media{margin-top:8px}
+  .entries{row-gap:64px}
+  .entry,.entry:nth-child(even){grid-column:1 / -1;transform:none}
+  .entry.reveal:nth-child(even),.entry.reveal.in:nth-child(even){transform:none}
+  .about-card{padding:36px 26px}
+  .note{padding:34px 24px}
+  footer{flex-direction:column;gap:6px}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top">山野手记<span>FIELD NOTES</span></a>
+    <div class="nav-links"><a href="#catalog">篇目</a><a href="#about">作者</a><a href="#contact">来信</a></div>
+  </div>
+</nav>
+
+<header class="hero wrap" id="top">
+  <div class="hero-grid">
+    <div class="hero-copy">
+      <p class="chapter">第一章 · CHAPTER 01</p>
+      <h1>滇西行<span class="dot"> · </span>十日</h1>
+      <p>从六库到丙中洛，跟着运橘子的货车走了十天。峡谷把江水夹在中间，也把日子夹在中间。</p>
+    </div>
+    <div class="vertical">山水有相逢</div>
+    <figure class="hero-media">
+      <img src="assets/p_1015.jpg" alt="峡谷与蜿蜒的江河">
+    </figure>
+  </div>
+</header>
+<p class="hero-note">N 25°51′ E 98°51′ · 怒江傈僳族自治州 · 2024.10 — 全文 42 图，进入篇目阅读</p>
+
+<main>
+  <section class="catalog wrap" id="catalog">
+    <div class="catalog-head"><h2>篇目目录</h2></div>
+    <div class="entries">
+      <a class="entry reveal" href="#catalog">
+        <div class="ph"><img src="assets/p_1016.jpg" alt="赭红色的峡谷地貌"></div>
+        <div class="meta"><span class="no">02</span><h3>怒江峡谷记</h3><span class="yr">2024 · 秋</span></div>
+        <p class="desc">峡谷两岸的溜索、教堂与橘子林。单向 240 公里，开了两天。</p>
+      </a>
+      <a class="entry reveal" href="#catalog">
+        <div class="ph"><img src="assets/p_844.jpg" alt="雨林中的竹林"></div>
+        <div class="meta"><span class="no">03</span><h3>雨季的勐仑</h3><span class="yr">2023 · 夏</span></div>
+        <p class="desc">热带植物园的雨下了整周。蘑菇一夜之间长满腐木，司机说这叫菌子的月份。</p>
+      </a>
+      <a class="entry reveal" href="#catalog">
+        <div class="ph"><img src="assets/p_1024.jpg" alt="展翅猛禽特写"></div>
+        <div class="meta"><span class="no">04</span><h3>高黎贡的鸟</h3><span class="yr">2024 · 冬</span></div>
+        <p class="desc">在护鸟塘蹲守七天，拍了 31 种鸟。最远的一张，快门 1/2500 秒。</p>
+      </a>
+      <a class="entry reveal" href="#catalog">
+        <div class="ph"><img src="assets/p_1036.jpg" alt="绿色山谷间的瀑布"></div>
+        <div class="meta"><span class="no">05</span><h3>雾起丙中洛</h3><span class="yr">2024 · 秋</span></div>
+        <p class="desc">清晨六点半，雾从江面爬上山腰再退回江里，前后只有十一分钟。</p>
+      </a>
+    </div>
+  </section>
+
+  <section class="about reveal" id="about">
+    <div class="wrap">
+      <div class="about-card">
+        <p class="kicker">关于作者 · ABOUT</p>
+        <h2>拍了十二年西南，<span class="u">笔记本换到第 31 本<svg viewBox="0 0 200 10" preserveAspectRatio="none"><path d="M2 6 C 40 2, 80 9, 120 5 S 190 4, 198 6" fill="none" stroke="#3E5C4B" stroke-width="2.2" stroke-linecap="round"/></svg></span>。</h2>
+        <p>山里的故事不着急，我也不着急。长期给地理与人文类刊物供图，也带小队摄影徒步——四到六人，只去我住过的村子。</p>
+        <div class="facts"><span>云南 · 川西 · 黔东南</span><span>纪实 / 风光 / 长期项目</span><span>第 31 本笔记本 · 使用中</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="contact reveal" id="contact">
+    <div class="wrap">
+      <div class="note">
+        <h2>写信给我</h2>
+        <p class="sub">约稿、带路、或者只是聊聊某座山，都欢迎。</p>
+        <div class="line">
+          <span class="wx">微信：shanzhu2026</span>
+          <button class="btn btn-copy" data-copy="shanzhu2026">复制</button>
+        </div>
+        <p class="supply">长期合作：地理 / 人文 / 户外类刊物与品牌</p>
+        <form class="form" id="contactForm">
+          <div><label for="fname">署名</label><input id="fname" required placeholder="称呼 / 刊物名"></div>
+          <div><label for="fmsg">想说的话</label><textarea id="fmsg" rows="3" required placeholder="想约的选题，或想去的山"></textarea></div>
+          <div class="actions"><button class="btn btn-primary" type="submit">寄出</button></div>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <span>© 2026 山野手记 FIELD NOTES</span>
+  <span>云南 · 长期项目进行中</span>
+</footer>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const toast=document.getElementById('toast');let t;
+function showToast(m){toast.textContent=m;toast.classList.add('show');clearTimeout(t);t=setTimeout(()=>toast.classList.remove('show'),2400)}
+document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
+  (navigator.clipboard?navigator.clipboard.writeText(b.dataset.copy):Promise.reject())
+  .then(()=>showToast('微信号已复制')).catch(()=>showToast('复制失败，请手动复制：'+b.dataset.copy))
+}));
+document.getElementById('contactForm').addEventListener('submit',e=>{
+  e.preventDefault();showToast('信已寄出（原型演示，不会真的发送）');e.target.reset()
+});
+const io=new IntersectionObserver(es=>es.forEach(x=>{if(x.isIntersecting){x.target.classList.add('in');io.unobserve(x.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

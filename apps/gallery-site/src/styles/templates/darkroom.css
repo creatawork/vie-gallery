@@ -1,0 +1,392 @@
+/* ============================================================
+   T2 暗房 Darkroom（婚礼/人像/夜景）— 近黑影调 + 胶片质感
+   深底上主色只走点缀描边/文字通道（§6.3），胶片框是签名元素
+   ============================================================ */
+
+.tpl-darkroom .nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bs-color-nav-bg, rgba(14, 14, 18, 0.82));
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--bs-color-line, #26262e);
+}
+
+.tpl-darkroom .nav-in {
+  max-width: var(--bs-maxw, 1120px);
+  margin: 0 auto;
+  padding: 18px 36px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.tpl-darkroom .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tpl-darkroom .brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--bs-color-primary-soft, rgba(200, 169, 106, 0.4));
+  color: var(--bs-color-primary, #c8a96a);
+  font-size: 12px;
+  font-family: var(--bs-font-display, serif);
+}
+
+.tpl-darkroom .brand-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.tpl-darkroom .brand-name {
+  font-family: var(--bs-font-display, serif);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.3em;
+}
+
+.tpl-darkroom .nav-links {
+  display: flex;
+  gap: 30px;
+  font-size: 13.5px;
+  color: var(--bs-color-text-muted, #9b9ba4);
+  letter-spacing: 0.14em;
+}
+
+.tpl-darkroom .nav-links a:hover {
+  color: var(--bs-color-text, #ededf0);
+}
+
+/* hero：全出血图 + 缓慢 Ken Burns + 渐晕 */
+.tpl-darkroom .hero {
+  position: relative;
+  height: min(88vh, 760px);
+  overflow: hidden;
+}
+
+.tpl-darkroom .hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: tpl-darkroom-kenburns 22s ease-in-out infinite alternate;
+}
+
+@keyframes tpl-darkroom-kenburns {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.05);
+  }
+}
+
+.tpl-darkroom .hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 45%, rgba(8, 8, 11, 0.82) 100%),
+    linear-gradient(180deg, rgba(14, 14, 18, 0.5), transparent 26%, rgba(10, 10, 14, 0.55) 55%, rgba(14, 14, 18, 0.96) 84%);
+}
+
+.tpl-darkroom .hero.no-cover {
+  height: auto;
+  padding: 140px 24px 120px;
+}
+
+.tpl-darkroom .hero.no-cover::after {
+  display: none;
+}
+
+.tpl-darkroom .hero-copy {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 2;
+  text-align: center;
+  padding: 0 24px 84px;
+}
+
+.tpl-darkroom .hero.no-cover .hero-copy {
+  position: static;
+  padding: 0;
+}
+
+.tpl-darkroom .hero h1 {
+  font-family: var(--bs-font-display, serif);
+  font-weight: 900;
+  font-size: clamp(38px, 6.4vw, 72px);
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  line-height: 1.2;
+}
+
+.tpl-darkroom .hero p {
+  margin-top: 18px;
+  color: var(--bs-color-text-muted, #9b9ba4);
+  font-size: 15px;
+  letter-spacing: 0.32em;
+  text-indent: 0.32em;
+  font-weight: 300;
+}
+
+.tpl-darkroom .hero .rule {
+  width: 56px;
+  height: 1px;
+  background: var(--bs-color-primary, #c8a96a);
+  margin: 26px auto 0;
+}
+
+.tpl-darkroom .hero-cta {
+  margin-top: 30px;
+}
+
+/* 区块标题：居中 + 眉题 */
+.tpl-darkroom .sec-head {
+  text-align: center;
+  justify-content: center;
+  flex-direction: column;
+  margin-bottom: 56px;
+}
+
+.tpl-darkroom .sec-head::after {
+  display: none;
+}
+
+.tpl-darkroom .sec-head .eyebrow {
+  width: auto;
+  margin-bottom: 14px;
+  font-size: 12px;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+}
+
+.tpl-darkroom .sec-head h2 {
+  font-family: var(--bs-font-display, serif);
+  font-weight: 700;
+  font-size: clamp(24px, 3.2vw, 34px);
+  letter-spacing: 0.14em;
+}
+
+/* 胶片框卡片（签名） */
+.tpl-darkroom .mosaic {
+  grid-template-columns: 1fr 1fr;
+  gap: 56px 44px;
+}
+
+.tpl-darkroom .mosaic .card {
+  position: relative;
+  background: var(--bs-color-surface, #16161c);
+  padding: 10px;
+  border-radius: var(--bs-radius, 2px);
+  border: 1px solid var(--bs-color-line, #26262e);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.tpl-darkroom .mosaic .card:hover {
+  border-color: var(--bs-color-primary-soft, rgba(200, 169, 106, 0.45));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* 齿孔 */
+.tpl-darkroom .mosaic .card::before,
+.tpl-darkroom .mosaic .card::after {
+  content: '';
+  display: block;
+  height: 10px;
+  margin: 2px 2px 8px;
+  background-image: radial-gradient(circle at 8px 5px, var(--bs-color-bg, #0e0e12) 2.6px, transparent 3px);
+  background-size: 26px 10px;
+  background-repeat: repeat-x;
+}
+
+.tpl-darkroom .mosaic .card::after {
+  margin: 8px 2px 2px;
+}
+
+.tpl-darkroom .mosaic .card .ph {
+  overflow: hidden;
+  aspect-ratio: 3 / 2;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tpl-darkroom .mosaic .card h3 {
+  font-family: var(--bs-font-display, serif);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.1em;
+  margin-top: 20px;
+  padding: 0 4px;
+}
+
+.tpl-darkroom .mosaic .card p {
+  font-size: 13px;
+  color: var(--bs-color-text-muted, #9b9ba4);
+  letter-spacing: 0.14em;
+  margin-top: 4px;
+  padding: 0 4px 6px;
+}
+
+.tpl-darkroom .card .yr {
+  color: var(--bs-color-primary, #c8a96a);
+}
+
+/* feature 兜底 */
+.tpl-darkroom .feature-list .work-media {
+  border: 1px solid var(--bs-color-line, #26262e);
+  padding: 10px;
+  background: var(--bs-color-surface, #16161c);
+}
+
+.tpl-darkroom .feature-list .work-media img {
+  aspect-ratio: 16 / 9;
+}
+
+/* about：居中手写体点缀 */
+.tpl-darkroom .about {
+  padding: var(--bs-space-section, 120px) 0;
+}
+
+.tpl-darkroom .about-text {
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.tpl-darkroom .about-text .about-lead {
+  font-family: var(--bs-font-hand, 'Kaiti SC', 'KaiTi', serif);
+  font-size: clamp(22px, 3vw, 30px);
+  color: var(--bs-color-primary, #c8a96a);
+  letter-spacing: 0.1em;
+  line-height: 1.6;
+}
+
+.tpl-darkroom .about-text p + p {
+  margin-top: 14px;
+  color: #c9c9cf;
+  font-weight: 300;
+  text-align: left;
+}
+
+.tpl-darkroom .about-text .about-lead + p {
+  margin-top: 28px;
+}
+
+.tpl-darkroom .u-doodle,
+.tpl-darkroom .kicker {
+  display: none;
+}
+
+.tpl-darkroom .about-sec {
+  padding-top: 0;
+}
+
+/* contact：居中仪式感 */
+.tpl-darkroom .contact {
+  padding-top: var(--bs-space-section, 120px);
+  text-align: center;
+  border-top: 1px solid var(--bs-color-line, #26262e);
+}
+
+.tpl-darkroom .contact .lead {
+  font-family: var(--bs-font-hand, 'Kaiti SC', 'KaiTi', serif);
+  font-size: 26px;
+  color: var(--bs-color-primary, #c8a96a);
+  letter-spacing: 0.12em;
+}
+
+.tpl-darkroom .wechat-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin: 34px 0 10px;
+  flex-wrap: wrap;
+}
+
+.tpl-darkroom .wechat-id {
+  font-size: 17px;
+  letter-spacing: 0.14em;
+  border-bottom: 1px solid #3a3a44;
+  padding-bottom: 4px;
+}
+
+.tpl-darkroom .btn-copy {
+  color: var(--bs-color-primary, #c8a96a);
+  padding: 10px 22px;
+  border: 1px solid var(--bs-color-primary-soft, rgba(200, 169, 106, 0.4));
+}
+
+.tpl-darkroom .btn-copy:hover {
+  border-color: var(--bs-color-primary, #c8a96a);
+  background: none;
+}
+
+.tpl-darkroom .btn-primary {
+  padding: 15px 42px;
+  font-size: 13.5px;
+  letter-spacing: 0.2em;
+}
+
+.tpl-darkroom .form {
+  max-width: 520px;
+  margin: 44px auto 0;
+  text-align: left;
+  gap: 22px;
+}
+
+.tpl-darkroom .form label {
+  font-size: 12px;
+  letter-spacing: 0.24em;
+}
+
+.tpl-darkroom .form .actions {
+  text-align: center;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.tpl-darkroom .toast {
+  background: var(--bs-color-primary, #c8a96a);
+  color: #14120c;
+}
+
+.tpl-darkroom footer {
+  margin-top: 0;
+  padding: 30px 0 38px;
+  font-size: 12px;
+  color: #6e6e76;
+  letter-spacing: 0.14em;
+}
+
+.tpl-darkroom .contact-sec {
+  padding-top: 0;
+}
+
+.tpl-darkroom .contact {
+  padding-top: var(--bs-space-section, 120px);
+}
+
+@media (max-width: 760px) {
+  .tpl-darkroom .nav-in {
+    padding: 16px 20px;
+  }
+  .tpl-darkroom .brand-name {
+    letter-spacing: 0.2em;
+  }
+  .tpl-darkroom .mosaic {
+    grid-template-columns: 1fr;
+    gap: 44px;
+  }
+  .tpl-darkroom .hero {
+    height: 72vh;
+  }
+}

@@ -514,6 +514,10 @@ async function openShareModal() {
             <Icon name="gallery" :size="15" />
             <span>展厅工作区</span>
           </span>
+          <RouterLink to="/site" class="hall-tab">
+            <Icon name="globe" :size="15" />
+            <span>品牌站</span>
+          </RouterLink>
           <RouterLink v-if="isOwner" to="/members" class="hall-tab">
             <Icon name="users" :size="15" />
             <span>成员管理</span>

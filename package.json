@@ -1,7 +1,7 @@
 {
   "name": "vie-gallery",
   "private": true,
-  "workspaces": ["apps/gallery-admin", "apps/gallery-viewer", "packages/*"],
+  "workspaces": ["apps/gallery-admin", "apps/gallery-viewer", "apps/gallery-site", "packages/*"],
   "scripts": {
     "dev:admin": "npm --workspace apps/gallery-admin run dev",
     "dev:viewer": "npm --workspace apps/gallery-viewer run dev",

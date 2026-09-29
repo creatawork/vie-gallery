@@ -1,0 +1,236 @@
+/* ============================================================
+   T0 素笺 Plain Page（默认款）— 白底大图，零审美门槛
+   ============================================================ */
+
+.tpl-plain .nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bs-color-nav-bg, rgba(255, 255, 255, 0.92));
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--bs-color-line, #ececea);
+}
+
+.tpl-plain .nav-in {
+  max-width: var(--bs-maxw, 1080px);
+  margin: 0 auto;
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tpl-plain .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+}
+
+.tpl-plain .brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bs-color-primary-soft, #f0f7f6);
+  color: var(--bs-color-primary, #1f6e68);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tpl-plain .brand-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.tpl-plain .nav-links {
+  display: flex;
+  gap: 28px;
+  font-size: 14px;
+  color: var(--bs-color-text-muted, #8a8a86);
+}
+
+.tpl-plain .nav-links a {
+  transition: color 0.2s;
+}
+
+.tpl-plain .nav-links a:hover {
+  color: var(--bs-color-text, #1a1a1a);
+}
+
+/* hero：16:9 封面 + 底部叠加标题 */
+.tpl-plain .hero {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 32px 0;
+}
+
+.tpl-plain .hero-media-frame,
+.tpl-plain .hero {
+  position: relative;
+}
+
+.tpl-plain .hero-img {
+  width: 100%;
+  border-radius: var(--bs-radius, 8px);
+  overflow: hidden;
+  aspect-ratio: 16 / 8.5;
+  object-fit: cover;
+}
+
+.tpl-plain .hero {
+  position: relative;
+}
+
+.tpl-plain .hero .hero-img {
+  display: block;
+}
+
+.tpl-plain .hero-copy {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 72px 44px 40px;
+  background: linear-gradient(180deg, transparent, rgba(10, 20, 19, 0.55));
+  border-radius: 0 0 var(--bs-radius, 8px) var(--bs-radius, 8px);
+  pointer-events: none;
+}
+
+.tpl-plain .hero-copy .btn,
+.tpl-plain .hero-copy a {
+  pointer-events: auto;
+}
+
+.tpl-plain .hero h1 {
+  color: #fff;
+  font-family: var(--bs-font-display, sans-serif);
+  font-weight: 700;
+  font-size: clamp(28px, 4.2vw, 46px);
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+}
+
+.tpl-plain .hero p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  font-weight: 300;
+  margin-top: 8px;
+}
+
+.tpl-plain .hero-cta {
+  margin-top: 18px;
+}
+
+.tpl-plain .hero.no-cover {
+  padding: 96px 32px 24px;
+  text-align: center;
+}
+
+.tpl-plain .hero.no-cover .hero-copy {
+  position: static;
+  background: none;
+  padding: 0;
+}
+
+.tpl-plain .hero.no-cover h1 {
+  color: var(--bs-color-text, #1a1a1a);
+}
+
+.tpl-plain .hero.no-cover p {
+  color: var(--bs-color-text-muted, #8a8a86);
+}
+
+/* about：紧凑横排 */
+.tpl-plain .about {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 56px;
+  align-items: start;
+}
+
+.tpl-plain .about-portrait .ph {
+  border-radius: var(--bs-radius, 8px);
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+  background: var(--bs-color-surface, #f2f2f0);
+}
+
+.tpl-plain .about-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tpl-plain .about-text {
+  max-width: 520px;
+}
+
+.tpl-plain .about-text p {
+  font-size: 16.5px;
+  font-weight: 300;
+  color: #3b3b38;
+}
+
+.tpl-plain .about-text p + p {
+  margin-top: 14px;
+}
+
+.tpl-plain .u-doodle {
+  display: none;
+}
+
+/* contact：单行直达 */
+.tpl-plain .contact {
+  max-width: 560px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.tpl-plain .contact .lead {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.tpl-plain .wechat-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 28px 0 14px;
+}
+
+.tpl-plain .wechat-id {
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  border-bottom: 1px dashed #c9c9c4;
+  padding-bottom: 2px;
+}
+
+.tpl-plain .contact .hint {
+  font-size: 13px;
+  color: var(--bs-color-text-muted, #8a8a86);
+}
+
+@media (max-width: 720px) {
+  .tpl-plain .nav-in,
+  .tpl-plain .hero {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .tpl-plain .hero-copy {
+    padding: 40px 24px 28px;
+  }
+  .tpl-plain .about {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .tpl-plain .about-portrait .ph {
+    max-width: 300px;
+  }
+}

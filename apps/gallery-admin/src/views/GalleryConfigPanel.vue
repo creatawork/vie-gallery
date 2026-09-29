@@ -825,6 +825,10 @@ onUnmounted(() => {
           <Icon name="gallery" :size="15" />
           <span>展厅工作区</span>
         </button>
+        <RouterLink to="/site" class="config-tab">
+          <Icon name="globe" :size="15" />
+          <span>品牌站</span>
+        </RouterLink>
         <span class="config-tab is-active">
           <Icon name="settings" :size="15" />
           <span>展厅配置</span>
