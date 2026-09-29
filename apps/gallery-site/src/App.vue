@@ -118,7 +118,11 @@ void boot()
 
 function resolvePhoto(photoId?: string): string | null {
   if (!photoId) return null
-  if (demo.value) return `/demo/${photoId}.jpg`
+  if (demo.value) {
+    // 运行期拼接的 URL 不会经过 Vite base 重写，需显式带上部署前缀（/site/）
+    const base = (import.meta.env.BASE_URL ?? '/').replace(/\/?$/, '/')
+    return `${base}demo/${photoId}.jpg`
+  }
   return resolved.value?.photos?.[photoId] ?? null
 }
 
