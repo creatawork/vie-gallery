@@ -49,6 +49,8 @@ export class ViewerEngine {
   private animationId: number | null = null
   private isRunning = false
   private isContextLost = false
+  // dispose 后必须拦截仍在途的异步初始化/插件安装，否则会在销毁后的画布上继续装配
+  private disposed = false
 
   // 智能能耗与帧率控制 (Adaptive FPS / Power Throttler)
   private lastRenderTime = 0
@@ -57,6 +59,7 @@ export class ViewerEngine {
   private isIdle = false
   private activeTransitionsCount = 0
   private introFlightPlayed = false
+  private introFlightRaf: number | null = null
 
   // 性能 APM 探针
   private frameCount = 0
@@ -67,6 +70,9 @@ export class ViewerEngine {
 
   // DOM
   private canvas: HTMLCanvasElement
+
+  // 插件共享上下文（对象身份保持稳定，插件长期持有也不会读到过期照片/配置）
+  private pluginContext: ViewerContext | null = null
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -106,15 +112,18 @@ export class ViewerEngine {
    * @param slug 相册标识（可选），如果提供则从服务端加载配置
    */
   async init(slug?: string): Promise<void> {
+    if (this.disposed) return
     this.eventBus.emit('init')
 
     // 1. 设置插件注册表
     const { pluginRegistry } = await import('../plugins')
+    if (this.disposed) return
     this.pluginManager.setRegistry(pluginRegistry)
 
     // 2. 如果提供了 slug，从服务端加载配置
     if (slug) {
       await this.configManager.loadFromServer(slug)
+      if (this.disposed) return
     }
 
     // 3. URL 参数覆盖（优先级最高）
@@ -141,6 +150,7 @@ export class ViewerEngine {
    * 根据配置自动安装插件
    */
   private async installPluginsFromConfig(): Promise<void> {
+    if (this.disposed) return
     const config = this.configManager.getConfig()
     const pluginsToInstall: string[] = []
 
@@ -271,13 +281,22 @@ export class ViewerEngine {
   /**
    * 注册用户交互监听（触发即时唤醒至满帧）
    */
+  private readonly handleUserActivity = (): void => {
+    this.wakeUp()
+  }
+
   private attachUserActivityListeners(): void {
-    const wake = () => this.wakeUp()
-    this.canvas.addEventListener('pointerdown', wake, { passive: true })
-    this.canvas.addEventListener('pointermove', wake, { passive: true })
-    this.canvas.addEventListener('wheel', wake, { passive: true })
-    this.canvas.addEventListener('touchstart', wake, { passive: true })
-    this.canvas.addEventListener('touchmove', wake, { passive: true })
+    const events: Array<keyof HTMLElementEventMap> = ['pointerdown', 'pointermove', 'wheel', 'touchstart', 'touchmove']
+    events.forEach(event => {
+      this.canvas.addEventListener(event, this.handleUserActivity as EventListener, { passive: true })
+    })
+  }
+
+  private detachUserActivityListeners(): void {
+    const events: Array<keyof HTMLElementEventMap> = ['pointerdown', 'pointermove', 'wheel', 'touchstart', 'touchmove']
+    events.forEach(event => {
+      this.canvas.removeEventListener(event, this.handleUserActivity as EventListener)
+    })
   }
 
   /**
@@ -345,11 +364,12 @@ export class ViewerEngine {
 
   /**
    * 设置照片数据（自动应用视锥体剔除优化）
+   * 追加照片时 App 会整表重建 Mesh，因此这里负责回收被替换照片的几何与纹理
    */
   setPhotos(photos: PhotoMesh[]): void {
-    // 移除旧照片
     this.photos.forEach(photo => {
       this.scene.remove(photo)
+      this.disposePhotoResources(photo)
     })
 
     this.photos = photos
@@ -363,8 +383,23 @@ export class ViewerEngine {
       this.scene.add(photo)
     })
 
+    // 同步插件共享上下文，Layout 等插件监听 photos:loaded 后立即拿到新列表
+    if (this.pluginContext) {
+      this.pluginContext.photos = this.photos
+    }
+
     this.eventBus.emit('photos:loaded', photos)
     this.wakeUp(3000)
+  }
+
+  private disposePhotoResources(photo: PhotoMesh): void {
+    photo.geometry?.dispose()
+    const materials = Array.isArray(photo.material) ? photo.material : [photo.material]
+    materials.forEach(material => {
+      const map = (material as THREE.MeshStandardMaterial).map
+      if (map) map.dispose()
+      material.dispose()
+    })
   }
 
   /**
@@ -434,6 +469,8 @@ export class ViewerEngine {
     const startTime = performance.now()
 
     const step = (now: number) => {
+      if (this.disposed) return
+
       const t = Math.min(1, (now - startTime) / duration)
       const ease = 1 - Math.pow(1 - t, 4)
 
@@ -443,15 +480,39 @@ export class ViewerEngine {
       controls.update()
 
       if (t < 1) {
-        requestAnimationFrame(step)
+        this.introFlightRaf = requestAnimationFrame(step)
       } else {
         this.camera.position.copy(endPos)
         controls.update()
+        this.introFlightRaf = null
         this.notifyTransitionEnd()
       }
     }
 
-    requestAnimationFrame(step)
+    this.introFlightRaf = requestAnimationFrame(step)
+  }
+
+  private cancelIntroFlight(): void {
+    if (this.introFlightRaf !== null) {
+      cancelAnimationFrame(this.introFlightRaf)
+      this.introFlightRaf = null
+      // 运镜启动时占用了一个转场计数，取消时必须归还，否则引擎永远保持满帧
+      this.notifyTransitionEnd()
+    }
+  }
+
+  /**
+   * 视角复位：取消在途运镜并回到默认机位，不改动任何用户配置
+   */
+  resetView(): void {
+    if (this.disposed) return
+    this.cancelIntroFlight()
+    this.camera.position.set(0, 80, 1100)
+    if (this.controls) {
+      this.controls.target.set(0, 0, 0)
+      this.controls.update()
+    }
+    this.wakeUp(2000)
   }
 
   /**
@@ -507,7 +568,10 @@ export class ViewerEngine {
    * 销毁引擎与内存资源
    */
   dispose(): void {
+    // 先置位销毁标志，拦截在途的异步初始化与运镜帧
+    this.disposed = true
     this.stop()
+    this.cancelIntroFlight()
 
     if (this.idleTimer !== null) {
       window.clearTimeout(this.idleTimer)
@@ -517,6 +581,7 @@ export class ViewerEngine {
     // 移除监听
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored)
+    this.detachUserActivityListeners()
 
     // 销毁 OrbitControls
     if (this.controls) {
@@ -527,17 +592,12 @@ export class ViewerEngine {
     // 卸载所有插件
     this.pluginManager.dispose()
 
-    // 清理照片 Mesh
+    // 清理照片 Mesh 及其几何/材质/纹理
     this.photos.forEach(photo => {
-      if (photo.geometry) photo.geometry.dispose()
-      if (photo.material) {
-        if (Array.isArray(photo.material)) {
-          photo.material.forEach(m => m.dispose())
-        } else {
-          photo.material.dispose()
-        }
-      }
+      this.scene.remove(photo)
+      this.disposePhotoResources(photo)
     })
+    this.photos = []
 
     this.renderer.dispose()
 
@@ -609,7 +669,17 @@ export class ViewerEngine {
   }
 
   private createContext(): ViewerContext {
-    return {
+    // 上下文对象身份保持稳定：插件在 install 时保存的引用会在
+    // setPhotos / applyConfig 时被原地刷新（配合 PluginManager.setContext 的 Object.assign），
+    // 避免插件读到过期的照片列表或配置快照。
+    if (this.pluginContext) {
+      this.pluginContext.photos = this.photos
+      this.pluginContext.config = this.configManager.getConfig()
+      this.pluginContext.composer = this.composer
+      return this.pluginContext
+    }
+
+    this.pluginContext = {
       scene: this.scene,
       camera: this.camera,
       renderer: this.renderer,
@@ -644,6 +714,7 @@ export class ViewerEngine {
         return config.quality
       }
     }
+    return this.pluginContext
   }
 
   private animate = (): void => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
@@ -8,6 +8,7 @@ import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
 import ErrorState from './components/ErrorState.vue'
 import LightboxModal from './components/LightboxModal.vue'
+import PhotoWall from './components/PhotoWall.vue'
 import VisitorShareModal from './components/VisitorShareModal.vue'
 import Icon from './components/Icon.vue'
 
@@ -29,12 +30,31 @@ watch(
   { immediate: true }
 )
 
-// 视图模式: '3d' 空间漫游 vs '2d' 策展画廊
-const viewMode = ref<'3d' | '2d'>('3d')
+// 视图模式: '3d' 空间漫游 vs '2d' 策展画廊（记住访客上次的偏好）
+type ViewerViewMode = '3d' | '2d'
+const VIEW_MODE_STORAGE_KEY = 'vie:view-mode'
+const storedViewMode = (() => {
+  try {
+    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+  } catch {
+    return null
+  }
+})()
+const viewMode = ref<ViewerViewMode>(storedViewMode === '2d' ? '2d' : '3d')
+watch(viewMode, (mode) => {
+  try {
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode)
+  } catch {
+    // 隐私模式下写入会失败，忽略即可
+  }
+})
 const webglFallbackMessage = ref('')
 
 // WebGL Engine
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+// 响应式的引擎就绪标志：engine 实例本身不是响应式对象，
+// HUD 的挂载状态必须依赖 ref 才能在引擎创建/销毁后正确刷新。
+const engineReady = ref(false)
 let engine: ViewerEngine | null = null
 let canvasPointerDownHandler: ((event: PointerEvent) => void) | null = null
 let canvasPointerMoveHandler: ((event: PointerEvent) => void) | null = null
@@ -182,21 +202,101 @@ function toggleFullscreen() {
   }
 }
 
-// 监听照片数据加载或视图模式切换后初始化 3D 引擎
+// 监听照片数据加载或视图模式切换后初始化 3D 引擎；
+// "加载更多"追加照片时只增量刷新场景，不重建引擎（保留相机与特效状态）。
+let scenePhotoCount = 0
 watch(
-  () => [viewer.isReady.value, viewer.isEmpty.value, viewer.state.value, viewMode.value],
+  () => [viewer.isReady.value, viewer.isEmpty.value, viewer.state.value, viewMode.value, viewer.photos.value.length],
   async ([isReady, isEmpty, state, mode]) => {
     const embedReady = isEmbedPreview() && state !== 'loading' && state !== 'password_prompt'
     const canInit3d = mode === '3d' && (isReady || isEmpty || embedReady)
-    if (canInit3d) {
-      await nextTick()
-      init3DEngine()
-    } else if (mode === '2d') {
+    if (mode === '2d') {
       destroy3DEngine()
+      return
     }
+    if (!canInit3d) return
+
+    const photoCount = viewer.photos.value.length
+    if (engine) {
+      if (photoCount !== scenePhotoCount) {
+        scenePhotoCount = photoCount
+        refresh3DPhotos()
+      }
+      return
+    }
+
+    await nextTick()
+    init3DEngine()
   },
   { deep: true }
 )
+
+// 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
+function buildPhotoMeshes(rawPhotos: typeof viewer.photos.value): any[] {
+  const textureLoader = new THREE.TextureLoader()
+  const meshes: any[] = []
+
+  const photoList = rawPhotos.length > 0 ? rawPhotos : (isDevDemo() ? createDemoFallbackPhotos() : [])
+
+  photoList.forEach((p, i) => {
+    const photoItem = p as any
+    const w = 80
+    const aspectRatio = (p.width && p.height) ? (p.width / p.height) : (4 / 3)
+    const h = Math.round(w / aspectRatio)
+    const geometry = new THREE.PlaneGeometry(w, h)
+    let material: THREE.Material
+
+    if (photoItem.thumbnailUrl) {
+      const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl)
+      texture.colorSpace = THREE.SRGBColorSpace
+
+      // 使用 MeshStandardMaterial 以支持动态光照
+      // 优化参数确保照片在各种光照下都清晰可辨
+      material = new THREE.MeshStandardMaterial({
+        map: texture,
+        side: THREE.DoubleSide,
+        // 低金属度，照片不应有金属光泽
+        metalness: 0.0,
+        // 中等粗糙度，略带哑光质感，避免高光过亮
+        roughness: 0.7,
+        // 轻微的环境光遮蔽，增加深度感
+        aoMapIntensity: 0.3,
+        // 确保照片在暗光下仍可见
+        emissive: new THREE.Color(0x000000),
+        emissiveIntensity: 0.0
+      })
+    } else {
+      // 占位颜色也使用 MeshStandardMaterial
+      material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL((i * 0.15) % 1, 0.6, 0.5),
+        side: THREE.DoubleSide,
+        metalness: 0.0,
+        roughness: 0.7
+      })
+    }
+
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.userData = {
+      index: i,
+      title: photoItem.title || `Photo ${i + 1}`,
+      thumbnailUrl: photoItem.thumbnailUrl,
+      mediumUrl: photoItem.mediumUrl,
+      textureUrl: photoItem.textureUrl,
+      url: photoItem.url || photoItem.thumbnailUrl,
+      width: photoItem.width,
+      height: photoItem.height
+    }
+    meshes.push(mesh)
+  })
+
+  return meshes
+}
+
+// "加载更多"追加照片后增量刷新 3D 场景：引擎会回收被移除的资源并触发布局重排
+function refresh3DPhotos() {
+  if (!engine) return
+  engine.setPhotos(buildPhotoMeshes(viewer.photos.value))
+}
 
 async function init3DEngine() {
   if (!canvasRef.value) return
@@ -212,63 +312,9 @@ async function init3DEngine() {
     engine = new ViewerEngine(canvasRef.value)
 
     // 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
-    const textureLoader = new THREE.TextureLoader()
-    const meshes: any[] = []
+    engine.setPhotos(buildPhotoMeshes(rawPhotos))
+    scenePhotoCount = viewer.photos.value.length
 
-    const photoList = rawPhotos.length > 0 ? rawPhotos : (isDevDemo() ? createDemoFallbackPhotos() : [])
-
-    photoList.forEach((p, i) => {
-      const photoItem = p as any
-      const w = 80
-      const aspectRatio = (p.width && p.height) ? (p.width / p.height) : (4 / 3)
-      const h = Math.round(w / aspectRatio)
-      const geometry = new THREE.PlaneGeometry(w, h)
-      let material: THREE.Material
-
-      if (photoItem.thumbnailUrl) {
-        const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl)
-        texture.colorSpace = THREE.SRGBColorSpace
-        
-        // 使用 MeshStandardMaterial 以支持动态光照
-        // 优化参数确保照片在各种光照下都清晰可辨
-        material = new THREE.MeshStandardMaterial({
-          map: texture,
-          side: THREE.DoubleSide,
-          // 低金属度，照片不应有金属光泽
-          metalness: 0.0,
-          // 中等粗糙度，略带哑光质感，避免高光过亮
-          roughness: 0.7,
-          // 轻微的环境光遮蔽，增加深度感
-          aoMapIntensity: 0.3,
-          // 确保照片在暗光下仍可见
-          emissive: new THREE.Color(0x000000),
-          emissiveIntensity: 0.0
-        })
-      } else {
-        // 占位颜色也使用 MeshStandardMaterial
-        material = new THREE.MeshStandardMaterial({
-          color: new THREE.Color().setHSL((i * 0.15) % 1, 0.6, 0.5),
-          side: THREE.DoubleSide,
-          metalness: 0.0,
-          roughness: 0.7
-        })
-      }
-
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.userData = {
-        index: i,
-        title: photoItem.title || `Photo ${i + 1}`,
-        thumbnailUrl: photoItem.thumbnailUrl,
-        mediumUrl: photoItem.mediumUrl,
-        textureUrl: photoItem.textureUrl,
-        url: photoItem.url || photoItem.thumbnailUrl,
-        width: photoItem.width,
-        height: photoItem.height
-      }
-      meshes.push(mesh)
-    })
-
-    engine.setPhotos(meshes)
     try {
       await engine.init(slug)
     } catch (err) {
@@ -276,6 +322,7 @@ async function init3DEngine() {
       await engine.init()
     }
     engine.start()
+    engineReady.value = true
     notifyParentReady()
 
     // 初始相机行为跟随已发布配置
@@ -516,12 +563,14 @@ function destroy3DEngine() {
   webglLostHandler = null
   hoveredPhoto.value = null
   lastHoveredMesh = null
+  scenePhotoCount = 0
 
   if (engine) {
     engine.stop()
     engine.dispose()
     engine = null
   }
+  engineReady.value = false
 }
 
 async function handleUnlock(password: string) {
@@ -534,6 +583,20 @@ async function handleUnlock(password: string) {
 function openLightbox(index: number) {
   lightboxIndex.value = index
   showLightbox.value = true
+}
+
+// 照片数量与视图模式共同决定 HUD 装载：
+// 2D 视图/无照片时不再渲染 3D 专属控件（自动巡航、陀螺仪、氛围预设）。
+const hudState = computed(() => {
+  if (!viewer.isReady.value || viewer.photos.value.length === 0) return 'empty' as const
+  return viewMode.value === '3d' && !engineReady.value ? 'pending' as const : 'ready' as const
+})
+const show3dHud = computed(() => viewMode.value === '3d' && hudState.value === 'ready')
+
+// 视角复位：回到默认机位，不打断配置中的自动漫游状态
+function resetView() {
+  if (!engine) return
+  engine.resetView()
 }
 
 async function selectPreset(presetName: string) {
@@ -576,23 +639,10 @@ async function selectPreset(presetName: string) {
       <div v-if="webglFallbackMessage" class="webgl-fallback-banner" role="status">
         <Icon name="grid" :size="16" />
         <span>{{ webglFallbackMessage }}</span>
+        <button type="button" @click="webglFallbackMessage = ''">知道了</button>
       </div>
       <main class="editorial-main embed-fallback-main">
-        <section class="editorial-photo-grid" aria-label="照片墙">
-          <article
-            v-for="(photo, idx) in viewer.photos.value"
-            :key="photo.sortOrder ?? idx"
-            class="editorial-photo-card"
-            @click="openLightbox(idx)"
-          >
-            <div class="photo-img-frame">
-              <img :src="photo.thumbnailUrl || ''" :alt="photo.title || 'Photograph'" loading="lazy" />
-              <div class="card-overlay">
-                <span class="photo-caption">{{ photo.title || `Photograph ${idx + 1}` }}</span>
-              </div>
-            </div>
-          </article>
-        </section>
+        <PhotoWall :photos="viewer.photos.value" fit="cover" @select="openLightbox" />
       </main>
       <LightboxModal
         :show="showLightbox"
@@ -678,8 +728,17 @@ async function selectPreset(presetName: string) {
             </button>
           </div>
 
-          <!-- 3D Extra Tools (Preset, Tour, Gyro, APM) -->
-          <template v-if="viewMode === '3d'">
+          <!-- 3D Extra Tools (Preset, Tour, Gyro, APM)：仅在 3D 就绪时挂载，切换 2D 即释放 -->
+          <template v-if="show3dHud">
+            <!-- Reset View -->
+            <button
+              class="hud-icon-btn"
+              title="视角复位"
+              @click="resetView"
+            >
+              <Icon name="compass" :size="17" />
+            </button>
+
             <!-- Autopilot Tour -->
             <button
               class="hud-icon-btn"
@@ -801,7 +860,7 @@ async function selectPreset(presetName: string) {
       <div v-show="viewMode === '3d'" class="canvas-container">
         <canvas ref="canvasRef" class="webgl-canvas"></canvas>
         <div class="spatial-tips">
-          <p>单击照片聚焦飞入 · 按住左键旋转视角 · 滚轮缩放星云</p>
+          <p>单击照片聚焦飞入 · 拖动旋转视角 · 滚轮缩放 · 罗盘按钮复位视角</p>
         </div>
         <button
           v-if="viewer.hasMore.value"
@@ -822,25 +881,7 @@ async function selectPreset(presetName: string) {
           <p class="hero-meta">{{ viewer.total.value }} PHOTOGRAPHS · HIGH FIDELITY GALLERY</p>
         </div>
 
-        <section class="editorial-photo-grid" aria-label="照片墙">
-          <article
-            v-for="(photo, idx) in viewer.photos.value"
-            :key="photo.sortOrder ?? idx"
-            class="editorial-photo-card"
-            :class="{
-              'featured': idx % 7 === 0,
-              'tall': idx % 11 === 0 && idx % 7 !== 0
-            }"
-            @click="openLightbox(idx)"
-          >
-            <div class="photo-img-frame">
-              <img :src="photo.thumbnailUrl || ''" :alt="photo.title || 'Photograph'" loading="lazy" />
-              <div class="card-overlay">
-                <span class="photo-caption">{{ photo.title || `Photograph ${idx + 1}` }}</span>
-              </div>
-            </div>
-          </article>
-        </section>
+        <PhotoWall :photos="viewer.photos.value" fit="cover" @select="openLightbox" />
         <button
           v-if="viewer.hasMore.value"
           class="load-more-btn"
@@ -1415,44 +1456,6 @@ async function selectPreset(presetName: string) {
   letter-spacing: 0.1em;
 }
 
-.editorial-photo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-/* 响应式列数优化 - 不同屏幕显示不同列数 */
-@media (min-width: 1920px) {
-  .editorial-photo-grid {
-    grid-template-columns: repeat(6, 1fr);
-  }
-}
-
-@media (min-width: 1440px) and (max-width: 1919px) {
-  .editorial-photo-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
-}
-
-@media (min-width: 1024px) and (max-width: 1439px) {
-  .editorial-photo-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-@media (min-width: 768px) and (max-width: 1023px) {
-  .editorial-photo-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 767px) {
-  .editorial-photo-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-  }
-}
-
 .load-more-btn {
   display: block;
   margin: 28px auto 0;
@@ -1475,135 +1478,7 @@ async function selectPreset(presetName: string) {
   opacity: 0.65;
 }
 
-.editorial-photo-card {
-  position: relative;
-  border-radius: 14px;
-  overflow: hidden;
-  background: #0f1c16;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  cursor: pointer;
-  /* 更流畅的过渡效果 - Back Ease-Out 曲线 */
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  
-  /* 交错进入动画 - 初始状态 */
-  opacity: 0;
-  transform: translateY(20px);
-  animation: cardFadeIn 0.6s ease-out forwards;
-}
-
-/* 交错延迟 - 前24张照片有明显的交错效果 */
-.editorial-photo-card:nth-child(1) { animation-delay: 0.05s; }
-.editorial-photo-card:nth-child(2) { animation-delay: 0.1s; }
-.editorial-photo-card:nth-child(3) { animation-delay: 0.15s; }
-.editorial-photo-card:nth-child(4) { animation-delay: 0.2s; }
-.editorial-photo-card:nth-child(5) { animation-delay: 0.25s; }
-.editorial-photo-card:nth-child(6) { animation-delay: 0.3s; }
-.editorial-photo-card:nth-child(7) { animation-delay: 0.35s; }
-.editorial-photo-card:nth-child(8) { animation-delay: 0.4s; }
-.editorial-photo-card:nth-child(9) { animation-delay: 0.45s; }
-.editorial-photo-card:nth-child(10) { animation-delay: 0.5s; }
-.editorial-photo-card:nth-child(11) { animation-delay: 0.55s; }
-.editorial-photo-card:nth-child(12) { animation-delay: 0.6s; }
-.editorial-photo-card:nth-child(13) { animation-delay: 0.65s; }
-.editorial-photo-card:nth-child(14) { animation-delay: 0.7s; }
-.editorial-photo-card:nth-child(15) { animation-delay: 0.75s; }
-.editorial-photo-card:nth-child(16) { animation-delay: 0.8s; }
-.editorial-photo-card:nth-child(17) { animation-delay: 0.85s; }
-.editorial-photo-card:nth-child(18) { animation-delay: 0.9s; }
-.editorial-photo-card:nth-child(19) { animation-delay: 0.95s; }
-.editorial-photo-card:nth-child(20) { animation-delay: 1.0s; }
-.editorial-photo-card:nth-child(21) { animation-delay: 1.05s; }
-.editorial-photo-card:nth-child(22) { animation-delay: 1.1s; }
-.editorial-photo-card:nth-child(23) { animation-delay: 1.15s; }
-.editorial-photo-card:nth-child(24) { animation-delay: 1.2s; }
-/* 之后的照片立即显示，避免等待过久 */
-.editorial-photo-card:nth-child(n+25) { animation-delay: 0s; }
-
-@keyframes cardFadeIn {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.editorial-photo-card:hover {
-  /* 更明显的抬升 + 微缩放 */
-  transform: translateY(-8px) scale(1.02);
-  /* 多层阴影增加深度感 */
-  box-shadow: 
-    0 20px 40px rgba(0, 0, 0, 0.3),
-    0 8px 16px rgba(0, 0, 0, 0.2),
-    0 0 0 1px color-mix(in srgb, var(--accent, #10b981) 30%, transparent);
-  border-color: color-mix(in srgb, var(--accent, #10b981) 50%, transparent);
-}
-
-/* 特色照片 - 占据2列，更突出 */
-.editorial-photo-card.featured {
-  grid-column: span 2;
-}
-
-/* 高照片 - 占据2行，营造视觉层次 */
-.editorial-photo-card.tall {
-  grid-row: span 2;
-}
-
-/* 在小屏幕上取消特殊布局 */
-@media (max-width: 1023px) {
-  .editorial-photo-card.featured,
-  .editorial-photo-card.tall {
-    grid-column: span 1;
-    grid-row: span 1;
-  }
-}
-
-.photo-img-frame {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  width: 100%;
-  overflow: hidden;
-}
-
-/* 特色照片使用16:9宽屏比例 */
-.editorial-photo-card.featured .photo-img-frame {
-  aspect-ratio: 16 / 9;
-}
-
-/* 高照片使用3:4竖屏比例 */
-.editorial-photo-card.tall .photo-img-frame {
-  aspect-ratio: 3 / 4;
-}
-
-.photo-img-frame img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.5s ease;
-}
-
-.editorial-photo-card:hover .photo-img-frame img {
-  transform: scale(1.05);
-}
-
-.card-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 60%);
-  display: flex;
-  align-items: flex-end;
-  padding: 14px;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-}
-
-.editorial-photo-card:hover .card-overlay {
-  opacity: 1;
-}
-
-.photo-caption {
-  font-size: 13px;
-  font-weight: 500;
-  color: #f1f5f3;
-}
+/* 照片墙卡片样式见 PhotoWall.vue（2D 经典画廊与嵌入回退共用） */
 
 /* ==========================================
    7. Mobile Adaptations (Phase 3)

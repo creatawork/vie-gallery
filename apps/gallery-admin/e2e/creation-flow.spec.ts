@@ -159,6 +159,43 @@ test.describe('创作链路', () => {
     await page.keyboard.press('Enter')
   })
 
+  for (const view of ['网格', '列表']) {
+    test(`${view}标题搜索清理隐藏选择并禁用排序`, async ({ page }) => {
+      if (view === '列表') await page.getByRole('button', { name: '列表视图' }).click()
+      const container = page.locator(view === '列表' ? '.photo-list-container' : '.photo-grid-container')
+      await container.getByRole('button', { name: '全选当前' }).click()
+      await expect(container.locator('.batch-selected-badge')).toHaveText('2')
+      await container.getByRole('searchbox', { name: '搜索照片标题' }).fill('海浪')
+      await expect(container.locator('.batch-selected-badge')).toHaveText('1')
+      await expect(container.getByRole('button', { name: '取消全选' })).toBeVisible()
+      await expect(container).toContainText('筛选期间无法调整顺序')
+      if (view === '列表') {
+        await expect(container.locator('.row-drag-handle')).toHaveCount(0)
+        await expect(container.getByRole('button', { name: '前移', exact: true })).toBeDisabled()
+      }
+      await container.getByRole('searchbox', { name: '搜索照片标题' }).fill('不存在的标题')
+      await expect(container.locator('.floating-batch-bar')).toHaveCount(0)
+      await expect(container).toContainText('没有符合筛选条件的照片')
+      await container.getByRole('button', { name: '清除筛选' }).click()
+      await expect(container.getByRole('searchbox', { name: '搜索照片标题' })).toHaveValue('')
+      await expect(container.locator('.floating-batch-bar')).toHaveCount(0)
+      await expect(container.getByRole('button', { name: '全选当前' })).toBeVisible()
+    })
+  }
+
+  test('同数量状态切换不会误判全选或保留隐藏选择', async ({ page }) => {
+    photos = [photo('photo-1', '日出', 0), { ...photo('photo-2', '海浪', 1), status: 'FAILED' }]
+    await page.reload()
+    const container = page.locator('.photo-grid-container')
+    await container.getByRole('button', { name: '已就绪' }).click()
+    await container.getByRole('button', { name: '全选当前' }).click()
+    await container.locator('.category-pill', { hasText: '失败' }).click()
+    await expect(container.locator('.floating-batch-bar')).toHaveCount(0)
+    await expect(container.getByRole('button', { name: '全选当前' })).toBeVisible()
+    await container.getByRole('button', { name: '全选当前' }).click()
+    await expect(container.locator('.batch-selected-badge')).toHaveText('1')
+  })
+
   test('列表行前移触发批量排序端点', async ({ page }) => {
     await page.route(new RegExp(`/api/galleries/${GALLERY_ID}/photos/order$`), async route => {
       const body = route.request().postDataJSON() as { orderedPhotoIds: string[] }

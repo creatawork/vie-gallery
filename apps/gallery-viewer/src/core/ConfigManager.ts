@@ -256,20 +256,21 @@ export class ConfigManager {
 
   /**
    * 加载预设配置
+   * 只返回合并后的候选配置，不直接提交到 this.config：
+   * 引擎的 applyConfig 会先读取真正的当前配置做插件增删对比，再经 updateConfig 合并。
+   * 若在这里替换 this.config，prev/next 对比就变成了"预设 vs 预设"，导致插件装不上/卸不掉。
    */
   async loadPreset(name: string): Promise<ViewerConfig> {
     const builtin = BUILTIN_PRESETS[name]
     if (builtin) {
-      this.config = this.deepMerge(DEFAULT_CONFIG, builtin)
-      return this.getConfig()
+      return this.deepMerge(DEFAULT_CONFIG, builtin)
     }
 
     try {
       const response = await fetch(`/presets/${name}.json`)
       if (response.ok) {
         const preset = await response.json()
-        this.config = this.deepMerge(DEFAULT_CONFIG, preset)
-        return this.getConfig()
+        return this.deepMerge(DEFAULT_CONFIG, preset)
       }
     } catch (error) {
       console.error(`Error loading preset "${name}":`, error)

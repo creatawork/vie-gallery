@@ -27,6 +27,8 @@ export class PluginManager {
   private plugins: Map<string, PluginWrapper> = new Map()
   private context: ViewerContext | null = null
   private registry: Map<string, () => Promise<ViewerPlugin>> = new Map()
+  private disposed = false
+  private pendingInstalls = new Map<string, Promise<void>>()
 
   constructor() {}
 
@@ -34,7 +36,12 @@ export class PluginManager {
    * 设置插件上下文
    */
   setContext(context: ViewerContext): void {
-    this.context = context
+    if (this.disposed) return
+    if (this.context) {
+      Object.assign(this.context, context)
+    } else {
+      this.context = context
+    }
   }
 
   /**
@@ -71,6 +78,20 @@ export class PluginManager {
    * 安装插件
    */
   async install(name: string): Promise<void> {
+    if (this.disposed) return
+    const pending = this.pendingInstalls.get(name)
+    if (pending) return pending
+
+    const installation = this.installPlugin(name)
+    this.pendingInstalls.set(name, installation)
+    try {
+      await installation
+    } finally {
+      this.pendingInstalls.delete(name)
+    }
+  }
+
+  private async installPlugin(name: string): Promise<void> {
     let wrapper = this.plugins.get(name)
 
     // 如果未注册但在注册表中，先懒加载
@@ -228,8 +249,10 @@ export class PluginManager {
    * 清理所有插件
    */
   dispose(): void {
+    this.disposed = true
     const installedNames = Array.from(this.plugins.keys())
     this.uninstallAll(installedNames)
     this.plugins.clear()
+    this.pendingInstalls.clear()
   }
 }

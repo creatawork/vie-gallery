@@ -598,10 +598,27 @@ function applyPreset(name: string) {
   scheduleAutoSave()
 }
 
-async function save(options?: { silent?: boolean }) {
+let saveQueue: Promise<boolean> = Promise.resolve(true)
+
+/**
+ * 串行化保存入口：自动保存与显式保存可能高频触发，
+ * 按顺序排队发送（后一次执行时读取的是最新草稿），避免乱序覆盖。
+ * 返回是否保存成功，供发布/回滚/离开守卫判定，不再"吞异常假成功"。
+ */
+function save(options?: { silent?: boolean }): Promise<boolean> {
+  const run = () => doSave(options)
+  const result = saveQueue.then(run, run)
+  saveQueue = result.then(
+    () => true,
+    () => false
+  )
+  return result
+}
+
+async function doSave(options?: { silent?: boolean }): Promise<boolean> {
   if (!canConfigWrite.value) {
     if (!options?.silent) toast.error('当前角色没有修改配置的权限。')
-    return
+    return false
   }
   saving.value = true
   try {
@@ -632,9 +649,11 @@ async function save(options?: { silent?: boolean }) {
     lastSaveFailed.value = false
     refreshLivePreview()
     if (!options?.silent) toast.success('草稿已保存。')
+    return true
   } catch (err) {
     lastSaveFailed.value = true
     if (!options?.silent) toast.error(err instanceof Error ? err.message : '保存失败，请检查网络或登录状态')
+    return false
   } finally {
     saving.value = false
   }
@@ -642,6 +661,15 @@ async function save(options?: { silent?: boolean }) {
 
 async function publishDraft() {
   if (!canConfigWrite.value) return
+  // 发布前确保草稿已落库，避免把内存里的最新更改遗留在上一版草稿上
+  if (hasDraftChanges.value || lastSaveFailed.value) {
+    const saved = await save({ silent: true })
+    if (!saved) {
+      showPublishConfirm.value = false
+      toast.error('草稿尚未保存成功，请先重试保存再同步。')
+      return
+    }
+  }
   publishing.value = true
   try {
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
@@ -692,7 +720,8 @@ async function rollbackDraft() {
       if (selected.presetName) config.presetName = selected.presetName
       ensureConfigDefaults()
       syncAtmosphereFromConfig()
-      await save({ silent: true })
+      const saved = await save({ silent: true })
+      if (!saved) throw new Error('草稿保存失败，未完成回滚，请重试。')
       showRollbackConfirm.value = false
       rollbackVersionId.value = null
       refreshLivePreview()
@@ -774,12 +803,9 @@ onBeforeRouteLeave(async () => {
     window.clearTimeout(saveTimer)
     saveTimer = null
   }
-  try {
-    await save({ silent: true })
-    return true
-  } catch {
-    return window.confirm('展厅配置尚未保存成功，离开将丢失未保存的更改。确定离开？')
-  }
+  const saved = await save({ silent: true })
+  if (saved) return true
+  return window.confirm('展厅配置尚未保存成功，离开将丢失未保存的更改。确定离开？')
 })
 
 function handleConfigBeforeUnload(event: BeforeUnloadEvent) {
@@ -857,7 +883,7 @@ onUnmounted(() => {
         >
           <span>{{ saving ? '保存中…' : '重试保存' }}</span>
         </button>
-        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="publishing || hasDraftChanges || lastSaveFailed" @click="showPublishConfirm = true">
+        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="publishing || saving || hasDraftChanges || lastSaveFailed" @click="showPublishConfirm = true">
           <Icon name="send" :size="14" />
           <span>{{ publishing ? '同步中…' : '同步到访客端' }}</span>
         </button>

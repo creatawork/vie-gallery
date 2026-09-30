@@ -27,16 +27,19 @@ const gridRef = ref<HTMLElement | null>(null)
 // 状态筛选、多选与批量操作由共享 composable 提供（与列表视图一致）。
 const {
   activeFilter,
+  searchQuery,
   selectedPhotoIds,
   filteredPhotos,
   readyCount,
   processingCount,
   failedCount,
+  hasActiveFilter,
   sortingEnabled,
   allFilteredSelected,
   toggleSelect,
   selectAll,
-  clearSelection
+  clearSelection,
+  clearFilters
 } = usePhotoCuration({
   photos: () => props.photos
 })
@@ -153,6 +156,16 @@ defineExpose({ clearSelection })
         </button>
       </div>
 
+      <!-- 标题搜索：与状态筛选叠加生效，搜索期间禁用拖拽排序 -->
+      <input
+        v-model="searchQuery"
+        class="photo-search-input"
+        type="search"
+        aria-label="搜索照片标题"
+        placeholder="搜索照片标题"
+        autocomplete="off"
+      />
+
       <!-- Quick select all / actions -->
       <div v-if="canWrite && filteredPhotos.length" class="batch-trigger-tools">
         <button
@@ -170,6 +183,11 @@ defineExpose({ clearSelection })
         </button>
       </div>
     </div>
+
+    <!-- 筛选/搜索期间禁用拖拽排序的提示 -->
+    <p v-if="canWrite && !sortingEnabled && photos.length" class="sort-disabled-hint" role="note">
+      筛选期间无法调整顺序，清除筛选后可拖动排序。
+    </p>
 
     <!-- Photos Grid -->
     <div v-if="filteredPhotos.length" ref="gridRef" class="photos-masonry-grid photo-grid" aria-live="polite">
@@ -198,8 +216,17 @@ defineExpose({ clearSelection })
         <div class="empty-photo-icon">
           <Icon name="photo" :size="32" />
         </div>
-        <h3>{{ photos.length ? '当前分类下没有照片' : '相册内暂无照片' }}</h3>
-        <p>{{ photos.length ? '请切换筛选标签查看其他状态的照片。' : '在上方拖拽或选择照片上传，开启沉浸式 3D 展厅创作。' }}</p>
+        <template v-if="photos.length">
+          <h3>没有符合筛选条件的照片</h3>
+          <p>换个状态标签或搜索词试试。</p>
+          <button v-if="hasActiveFilter" class="btn btn-ghost btn-sm clear-filter-btn" type="button" @click="clearFilters">
+            清除筛选
+          </button>
+        </template>
+        <template v-else>
+          <h3>相册内暂无照片</h3>
+          <p>在上方拖拽或选择照片上传，开启沉浸式 3D 展厅创作。</p>
+        </template>
       </div>
     </div>
 
@@ -356,6 +383,35 @@ defineExpose({ clearSelection })
 .select-all-btn:hover {
   background: #e2e8f0;
   color: #0f172a;
+}
+
+.photo-search-input {
+  width: 200px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 12.5px;
+}
+
+.photo-search-input:focus {
+  outline: none;
+  border-color: rgba(16, 185, 129, 0.55);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.sort-disabled-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.clear-filter-btn {
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: #ffffff;
 }
 
 .photos-masonry-grid {

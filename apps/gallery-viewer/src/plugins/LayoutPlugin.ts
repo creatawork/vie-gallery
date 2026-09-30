@@ -45,8 +45,9 @@ export class LayoutPlugin implements ViewerPlugin {
       this.switchLayout(mode)
     })
 
-    // 监听相册照片加载事件
+    // 监听相册照片加载事件（含"加载更多"的整表重建刷新）
     context.on('photos:loaded', () => {
+      this.cancelInFlightMorphs()
       this.applyLayout(this.currentLayout)
     })
 
@@ -152,6 +153,17 @@ export class LayoutPlugin implements ViewerPlugin {
         }
       })
     }
+  }
+
+  /**
+   * 照片列表被整体重建时（如"加载更多"），丢弃引用旧 Mesh 的在途形变，
+   * 并归还一次转场计数，避免引擎因计数失衡而永远保持满帧唤醒。
+   */
+  private cancelInFlightMorphs(): void {
+    const hadTransition = this.isAnimating && this.morphs.length > 0
+    this.morphs = []
+    this.isAnimating = false
+    if (hadTransition) this.context?.emit('transition:end')
   }
 
   /**
