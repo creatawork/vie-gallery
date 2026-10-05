@@ -96,6 +96,26 @@ class GalleryViewerConfigVersioningTest {
         assertEquals(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, rollback.code());
     }
 
+    @Test void invalidSavePublishAndRollbackPerformNoWrites() {
+        UUID galleryId = UUID.randomUUID();
+        Fixture fixture = fixture(galleryId, MembershipRole.OWNER);
+        fixture.facade.saveConfig(galleryId, "{}", "custom");
+        ViewerConfigVersion published = fixture.facade.publishConfig(galleryId);
+        int configWrites = fixture.configs.writes;
+        assertThrows(DomainException.class, () -> fixture.facade.saveConfig(galleryId, "{\"particles\":{\"density\":3}}", "bad"));
+        assertEquals(configWrites, fixture.configs.writes);
+        // Deliberately corrupt storage to exercise old invalid snapshots.
+        fixture.configs.values.put(galleryId, GalleryViewerConfig.create(galleryId, "[]", "bad"));
+        ViewerConfigVersion corrupt = ViewerConfigVersion.create(TENANT_ID, galleryId, "[]", "bad", 1, USER_ID);
+        fixture.versions.versions.add(corrupt);
+        int count = fixture.versions.versions.size();
+        assertThrows(DomainException.class, () -> fixture.facade.publishConfig(galleryId));
+        assertThrows(DomainException.class, () -> fixture.facade.rollbackConfig(galleryId, corrupt.id()));
+        assertEquals(count, fixture.versions.versions.size());
+        assertEquals(configWrites, fixture.configs.writes);
+        assertEquals(published.id(), fixture.versions.published.get(galleryId));
+    }
+
     private static Fixture fixture(UUID galleryId, MembershipRole role) {
         Gallery gallery = new Gallery(galleryId, TENANT_ID, "demo", "Demo", GalleryVisibility.PUBLIC,
                 null, null, false, Instant.now(), GalleryStatus.PUBLISHED, Instant.now());
@@ -112,6 +132,7 @@ class GalleryViewerConfigVersioningTest {
                            InMemoryVersionRepository versions) {}
 
     private static final class InMemoryConfigRepository implements GalleryViewerConfigRepository {
+        private int writes;
         private final java.util.Map<UUID, GalleryViewerConfig> values = new java.util.HashMap<>();
 
         @Override
@@ -121,6 +142,7 @@ class GalleryViewerConfigVersioningTest {
 
         @Override
         public void save(GalleryViewerConfig config) {
+            writes++;
             values.put(config.galleryId(), config);
         }
 
