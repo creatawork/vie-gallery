@@ -4,10 +4,9 @@
     "mode": "helix"
   },
   "background": {
-    "type": "sky",
-    "sky": {
-      "theme": "ocean",
-      "timeOfDay": "auto"
+    "type": "image",
+    "image": {
+      "url": "/g/backgrounds/ocean-breeze.webp"
     }
   },
   "particles": {

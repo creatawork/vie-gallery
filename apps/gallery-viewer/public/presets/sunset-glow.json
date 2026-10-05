@@ -4,10 +4,9 @@
     "mode": "spiral"
   },
   "background": {
-    "type": "sky",
-    "sky": {
-      "theme": "sunset",
-      "timeOfDay": "sunset"
+    "type": "image",
+    "image": {
+      "url": "/g/backgrounds/sunset-glow.webp"
     }
   },
   "particles": {
@@ -17,7 +16,7 @@
   "effects": {
     "bloom": {
       "enabled": true,
-      "strength": 1.0
+      "strength": 1
     },
     "fog": {
       "enabled": true,

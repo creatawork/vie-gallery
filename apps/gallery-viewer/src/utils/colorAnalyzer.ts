@@ -3,6 +3,8 @@
  * 使用简化的 K-means 聚类算法提取照片的主导色彩
  */
 
+import { galleryMediaUrl } from '@vie/gallery-contracts'
+
 export interface ColorRGB {
   r: number
   g: number
@@ -209,7 +211,7 @@ async function loadAndSampleImage(
       reject(new Error(`Failed to load image: ${imageUrl}`))
     }
     
-    img.src = imageUrl
+    img.src = galleryMediaUrl(imageUrl)
   })
 }
 

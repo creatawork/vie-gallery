@@ -1,0 +1,28 @@
+{
+  "presetName": "film-gallery",
+  "layout": {
+    "mode": "carousel"
+  },
+  "particles": {
+    "enabled": false,
+    "types": []
+  },
+  "effects": {
+    "bloom": {
+      "enabled": false
+    },
+    "fog": {
+      "enabled": false
+    }
+  },
+  "lighting": {
+    "timeOfDay": "sunset",
+    "autoColorAdapt": false
+  },
+  "background": {
+    "type": "image",
+    "image": {
+      "url": "/g/backgrounds/film-gallery.webp"
+    }
+  }
+}

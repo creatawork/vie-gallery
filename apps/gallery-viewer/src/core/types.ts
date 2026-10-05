@@ -20,6 +20,7 @@ export interface PhotoMesh extends THREE.Mesh {
  */
 export interface ViewerConfig {
   presetName?: string
+  background?: { type: 'image' | 'none'; image?: { url: string } }
   // 基础
   quality: 'low' | 'mid' | 'high' | 'auto'
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SCENE_PRESETS, sceneBackgroundUrl } from '@vie/gallery-contracts'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
@@ -27,14 +28,7 @@ const LAYOUTS = [
   { id: 'random', label: '自由探索' }
 ] as const
 
-const ATMOSPHERE_PRESETS = [
-  { name: 'minimal', label: '极简空间', hint: '通透白净' },
-  { name: 'forest-dream', label: '森林之梦', hint: '樱花微尘' },
-  { name: 'starry-night', label: '星空夜曲', hint: '辉光星尘' },
-  { name: 'ocean-breeze', label: '海洋微风', hint: '蔚蓝天穹' },
-  { name: 'sunset-glow', label: '日落余晖', hint: '晚霞云彩' },
-  { name: 'romantic', label: '心动浪漫', hint: '玫瑰粉雾' }
-] as const
+const ATMOSPHERE_PRESETS = SCENE_PRESETS
 
 const PARTICLE_TYPES = [
   { id: 'stars', label: '星尘' },
@@ -151,6 +145,7 @@ function formatHistoryTime(value?: string) {
 function getCleanConfig() {
   return {
     presetName: config.presetName || 'custom',
+    background: { type: config.background.type, image: { url: config.background.image.url } },
     visitorAllowDownload: !!config.visitorAllowDownload,
     layout: {
       mode: config.layout?.mode || 'sphere'
@@ -194,6 +189,12 @@ function getCleanConfig() {
 }
 
 function ensureConfigDefaults() {
+  const presetUrl = sceneBackgroundUrl(config.presetName)
+  if (!config.background || !['image', 'none'].includes(config.background.type)) {
+    config.background = { type: 'image', image: { url: presetUrl || '' } }
+  }
+  if (!config.background.image) config.background.image = { url: presetUrl || '' }
+  if (!config.background.image.url && presetUrl) config.background.image.url = presetUrl
   if (!config.particles) config.particles = { enabled: true, types: ['stars'], density: 1.0 }
   if (!Array.isArray(config.particles.types)) config.particles.types = ['stars']
   if (!config.effects) config.effects = {} as any
@@ -306,6 +307,7 @@ async function retryEmbedPreview() {
 
 const config = reactive({
   presetName: 'custom' as string | null,
+  background: { type: 'image', image: { url: '' } },
   visitorAllowDownload: false,
   layout: { mode: 'sphere' },
   particles: { enabled: true, types: ['stars'] as string[], density: 1.0 },
@@ -588,10 +590,21 @@ function applyPreset(name: string) {
       lighting: { timeOfDay: 'night', autoColorAdapt: true }
     }
   }
+  presets['winter-snow'] = {
+    ...presets.minimal, presetName: 'winter-snow',
+    particles: { enabled: true, types: ['snow'], density: 0.6 },
+    effects: { bloom: { enabled: false, strength: 0.4, radius: 0.4, threshold: 0.25 }, fog: { enabled: true, color: '#c6d8e7', density: 0.0003 }, photoFloat: true },
+    lighting: { timeOfDay: 'noon', autoColorAdapt: false }
+  }
+  presets['film-gallery'] = {
+    ...presets.minimal, presetName: 'film-gallery', layout: { mode: 'carousel' },
+    lighting: { timeOfDay: 'sunset', autoColorAdapt: false }
+  }
   const next = presets[name]
   if (!next) return
   deepMerge(config, next)
   config.presetName = name
+  config.background = { type: 'image', image: { url: sceneBackgroundUrl(name) || '' } }
   ensureConfigDefaults()
   syncAtmosphereFromConfig()
   sendLiveMessage({ type: 'VIE_PRESET_CHANGE', presetName: name })
@@ -902,6 +915,7 @@ onUnmounted(() => {
 
     <div v-else class="config-split">
       <aside class="config-side">
+        <div class="side-heading"><span class="side-eyebrow">展厅设计</span><strong>让作品拥有自己的空间</strong><span>选择场景，细调每一束光</span></div>
         <div class="side-tabs" role="tablist" aria-label="配置分区">
           <button
             v-for="tab in CONFIG_TABS"
@@ -992,20 +1006,23 @@ onUnmounted(() => {
         <section v-show="configTab === 'atmosphere'" class="side-block">
           <h2>
             <Icon name="sparkles" :size="15" />
-            一键氛围
+            场景预设
           </h2>
+          <p class="section-description">八种氛围，为照片找到合适的背景。</p>
           <div class="preset-grid">
             <button
               v-for="preset in ATMOSPHERE_PRESETS"
               :key="preset.name"
               class="preset-mini"
               :class="{ active: config.presetName === preset.name }"
+              :aria-pressed="config.presetName === preset.name"
               type="button"
               :disabled="!canConfigWrite"
               @click="applyPreset(preset.name)"
             >
-              <strong>{{ preset.label }}</strong>
-              <small>{{ preset.hint }}</small>
+              <div class="preset-image"><img :src="sceneBackgroundUrl(preset.name)" alt="" loading="lazy" /><span v-if="config.presetName === preset.name" class="preset-check">✓</span></div>
+              <div class="preset-copy"><strong>{{ preset.label }}</strong>
+              <small>{{ preset.hint }}</small></div>
             </button>
           </div>
         </section>
@@ -1013,8 +1030,13 @@ onUnmounted(() => {
         <section v-show="configTab === 'atmosphere'" class="side-block">
           <h2>
             <Icon name="sparkles" :size="15" />
-            氛围
+            光影与氛围
           </h2>
+          <label class="field-label" for="scene-background">场景背景</label>
+          <select id="scene-background" v-model="config.background.type" class="field-input" :disabled="!canConfigWrite" @change="scheduleAutoSave">
+            <option value="image">主题背景图</option>
+            <option value="none">纯净空间</option>
+          </select>
 
           <div class="slider-row">
             <Icon name="sun" :size="15" />
@@ -1407,6 +1429,22 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.side-heading { display: flex; flex-direction: column; gap: 5px; padding: 0 4px; }
+.side-eyebrow { color: #27805b; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
+.side-heading strong { color: #18372a; font-size: 17px; font-weight: 700; letter-spacing: -.4px; }
+.side-heading > span:last-child { color: #6a7c71; font-size: 11px; }
+.side-block { padding: 16px 12px; border: 1px solid #e6ece8; border-radius: 14px; background: #fff; }
+.section-description { margin: -5px 0 14px; font-size: 11px; line-height: 1.5; color: #6a7c71; }
+.preset-image { position: relative; height: 72px; background: #dce7df; overflow: hidden; }
+.preset-image img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s; }
+.preset-mini:hover:not(:disabled) .preset-image img { transform: scale(1.05); }
+.preset-mini:hover:not(:disabled) { border-color: #75ab91; }
+.preset-copy { padding: 9px; }
+.preset-check { position: absolute; top: 7px; right: 7px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #146e4e; border: 1px solid #ffffffb0; color: white; font-size: 12px; }
+.config-side button:focus-visible, .config-side select:focus-visible, .config-side input:focus-visible { outline: 2px solid #19815c; outline-offset: 3px; }
+.config-side button:disabled { cursor: not-allowed; opacity: .65; }
+@media (prefers-reduced-motion: reduce) { .preset-image img { transition: none; } }
+
 .config-page {
   position: relative;
   min-height: 100dvh;
@@ -1559,47 +1597,58 @@ onUnmounted(() => {
 
 .config-side {
   overflow: auto;
-  padding: 18px 16px 22px;
-  background: #fff;
+  padding: 22px 16px;
+  background: #f7f9f8;
+  border: 1px solid rgba(255,255,255,.8);
   border-radius: 20px;
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+  scrollbar-width: thin;
+  scrollbar-color: #bccdc4 transparent;
+  box-shadow: 0 12px 36px rgba(15,40,28,.09);
 }
 
 .side-tabs {
+  position: sticky;
+  top: -22px;
+  z-index: 2;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 3px;
+  padding: 5px;
+  margin: 18px 0;
+  border: 1px solid #e3eae6;
+  border-radius: 13px;
+  background: #edf2ef;
 }
 
 .side-tab {
-  padding: 8px 6px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  min-height: 36px;
+  padding: 8px 4px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
   font-size: 12px;
   font-weight: 650;
-  color: #6b7280;
+  color: #5b6b63;
+  transition: background .15s, color .15s;
 }
 
 .side-tab.active {
-  color: #047857;
-  border-color: #00b88f;
-  background: #ecfdf5;
+  color: #126547;
+  border-color: #dde7e1;
+  background: #fff;
+  box-shadow: 0 2px 6px #173e2410;
 }
 
 .side-block + .side-block {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid #f3f4f6;
+  margin-top: 14px;
 }
 
 .side-block h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
-  color: #111827;
+  margin: 0 0 14px;
+  color: #18372a;
   font-size: 14px;
   font-weight: 750;
 }
@@ -1633,8 +1682,8 @@ onUnmounted(() => {
 
 .preset-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 10px;
 }
 
 .download-toggle-card {
@@ -1676,17 +1725,21 @@ onUnmounted(() => {
 }
 
 .preset-mini {
+  position: relative;
+  overflow: hidden;
   text-align: left;
-  padding: 10px 10px 8px;
-  border-radius: 12px;
-  border: 1px solid #eef0f2;
-  background: #f8fafc;
+  padding: 0;
+  border-radius: 11px;
+  border: 1px solid #e1e8e3;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
 }
 
 .preset-mini.active {
-  background: #ecfdf5;
-  border-color: #00b88f;
-  box-shadow: 0 0 0 1px #00b88f;
+  border-color: #19815c;
+  background: #f3fbf6;
+  box-shadow: 0 0 0 1px #19815c;
 }
 
 .preset-mini strong {
@@ -1696,8 +1749,10 @@ onUnmounted(() => {
 }
 
 .preset-mini small {
-  color: #9ca3af;
-  font-size: 11px;
+  display: block;
+  margin-top: 3px;
+  color: #64756b;
+  font-size: 10px;
 }
 
 .chip-row {
@@ -2039,6 +2094,17 @@ onUnmounted(() => {
   margin: 0 !important;
   padding: 0 !important;
   inset: 0 !important;
+}
+
+#scene-background { display: block; width: 100%; min-height: 40px; margin: 6px 0 18px; padding: 0 10px; border: 1px solid #dce6df; border-radius: 9px; background: #f8faf9; color: #244334; font: inherit; font-size: 12px; }
+@media (max-width: 720px) {
+  .config-nav { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin: 12px; padding: 12px; }
+  .config-tabs { width: 100%; box-sizing: border-box; overflow-x: auto; justify-self: stretch; }
+  .config-tab { flex: none; white-space: nowrap; padding: 8px; font-size: 11px; }
+  .nav-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .autosave { width: 100%; margin: 0; font-size: 11px; }
+  .config-split { margin: 12px; min-width: 0; }
+  .config-side, .preview-pane { min-width: 0; }
 }
 
 @media (max-width: 980px) {

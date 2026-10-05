@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { sceneBackgroundUrl } from '@vie/gallery-contracts'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import type { ViewerContext, ViewerConfig, PhotoMesh } from './types'
@@ -43,6 +44,9 @@ export class ViewerEngine {
 
   // 照片数据
   private photos: PhotoMesh[] = []
+  private backgroundTexture: THREE.Texture | null = null
+  private backgroundUrl: string | undefined
+  private backgroundRequest = 0
 
   // 渲染与调度状态
   private clock: THREE.Clock
@@ -143,6 +147,7 @@ export class ViewerEngine {
     // 6. 根据配置自动安装插件
     await this.installPluginsFromConfig()
 
+    this.applyBackground(this.configManager.getConfig())
     this.eventBus.emit('ready')
   }
 
@@ -204,6 +209,8 @@ export class ViewerEngine {
   async applyConfig(newConfig: Partial<ViewerConfig>): Promise<void> {
     const prevConfig = this.configManager.getConfig()
     const merged = this.configManager.updateConfig(newConfig)
+
+    this.applyBackground(merged)
 
     // 更新插件上下文配置对象
     this.pluginManager.setContext(this.createContext())
@@ -268,6 +275,33 @@ export class ViewerEngine {
     // 5. 广播配置更新事件给所有已装配的插件
     this.eventBus.emit('config:change', merged)
     this.eventBus.emit('config:update', merged)
+  }
+
+  private applyBackground(config: ViewerConfig): void {
+    const url = config.background?.type === 'none' ? undefined
+      : config.background?.image?.url || sceneBackgroundUrl(config.presetName)
+    if (url === this.backgroundUrl) return
+    this.backgroundUrl = url
+    const request = ++this.backgroundRequest
+    this.backgroundTexture?.dispose()
+    this.backgroundTexture = null
+    this.scene.background = null
+    if (!url) return
+    const pendingTexture = new THREE.TextureLoader().load(url, texture => {
+      if (this.disposed || request !== this.backgroundRequest) {
+        texture.dispose()
+        return
+      }
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.mapping = THREE.EquirectangularReflectionMapping
+      this.backgroundTexture = texture
+      this.scene.background = texture
+      this.wakeUp()
+    }, undefined, () => {
+      pendingTexture.dispose()
+      // Leave a neutral backdrop on failure; a later retry can reload the resource.
+      if (request === this.backgroundRequest) this.backgroundUrl = undefined
+    })
   }
 
   /**
@@ -570,6 +604,10 @@ export class ViewerEngine {
   dispose(): void {
     // 先置位销毁标志，拦截在途的异步初始化与运镜帧
     this.disposed = true
+    ++this.backgroundRequest
+    this.backgroundTexture?.dispose()
+    this.backgroundTexture = null
+    this.scene.background = null
     this.stop()
     this.cancelIntroFlight()
 

@@ -1,0 +1,30 @@
+{
+  "presetName": "winter-snow",
+  "layout": {
+    "mode": "sphere"
+  },
+  "particles": {
+    "enabled": true,
+    "types": [
+      "snow"
+    ]
+  },
+  "effects": {
+    "bloom": {
+      "enabled": false
+    },
+    "fog": {
+      "enabled": false
+    }
+  },
+  "lighting": {
+    "timeOfDay": "noon",
+    "autoColorAdapt": false
+  },
+  "background": {
+    "type": "image",
+    "image": {
+      "url": "/g/backgrounds/winter-snow.webp"
+    }
+  }
+}

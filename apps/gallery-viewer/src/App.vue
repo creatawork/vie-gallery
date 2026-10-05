@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
+import { SCENE_PRESETS } from '@vie/gallery-contracts'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
 import { ViewerEngine, WebGLUnavailableError, type EngineMetrics } from './core/ViewerEngine'
@@ -84,14 +85,7 @@ const raycaster = new THREE.Raycaster()
 const mousePos = new THREE.Vector2()
 let lastHoveredMesh: THREE.Mesh | null = null
 
-const presets = [
-  { name: 'starry-night', label: '星空夜曲 · Cosmic', icon: 'sparkles' },
-  { name: 'forest-dream', label: '森林之梦 · Sakura', icon: 'sparkles' },
-  { name: 'ocean-breeze', label: '海洋微风 · Breeze', icon: 'globe' },
-  { name: 'sunset-glow', label: '日落余晖 · Sunset', icon: 'sparkles' },
-  { name: 'romantic', label: '心动浪漫 · Hearts', icon: 'sparkles' },
-  { name: 'minimal', label: '极简空间 · Minimal', icon: 'cube' }
-]
+const presets = SCENE_PRESETS.map(p => ({ ...p, icon: 'sparkles' }))
 
 onMounted(() => {
   viewer.initialize()
@@ -231,10 +225,51 @@ watch(
   { deep: true }
 )
 
+const photoLoadNotice = ref(false)
+const unavailablePhotoCount = ref(0)
+let photoLoadBatch = 0
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
+let loadTimer: ReturnType<typeof setTimeout> | undefined
+
+function dismissPhotoLoadNotice() {
+  photoLoadNotice.value = false
+  clearTimeout(noticeTimer)
+}
+
+function showPhotoLoadNotice() {
+  photoLoadNotice.value = true
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(dismissPhotoLoadNotice, 5000)
+}
+
 // 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
 function buildPhotoMeshes(rawPhotos: typeof viewer.photos.value): any[] {
   const textureLoader = new THREE.TextureLoader()
   const meshes: any[] = []
+  const batch = ++photoLoadBatch
+  clearTimeout(loadTimer)
+  dismissPhotoLoadNotice()
+  unavailablePhotoCount.value = 0
+  let pending = rawPhotos.filter(p => p.textureUrl || p.thumbnailUrl).length
+  let announced = false
+  let timedOut = false
+  let failedCount = 0
+  const settle = (failed: boolean) => {
+    if (batch !== photoLoadBatch) return
+    pending--
+    if (failed) failedCount++
+    unavailablePhotoCount.value = failedCount + (timedOut ? pending : 0)
+    if (failed && !announced) { announced = true; showPhotoLoadNotice() }
+    if (pending <= 0) clearTimeout(loadTimer)
+    if (unavailablePhotoCount.value === 0) dismissPhotoLoadNotice()
+  }
+  if (pending) loadTimer = setTimeout(() => {
+    if (batch !== photoLoadBatch || announced) return
+    timedOut = true
+    unavailablePhotoCount.value = failedCount + pending
+    announced = true
+    showPhotoLoadNotice()
+  }, 12000)
 
   const photoList = rawPhotos.length > 0 ? rawPhotos : (isDevDemo() ? createDemoFallbackPhotos() : [])
 
@@ -246,8 +281,20 @@ function buildPhotoMeshes(rawPhotos: typeof viewer.photos.value): any[] {
     const geometry = new THREE.PlaneGeometry(w, h)
     let material: THREE.Material
 
-    if (photoItem.thumbnailUrl) {
-      const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl)
+    if (photoItem.textureUrl || photoItem.thumbnailUrl) {
+      const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl,
+        () => {
+          if (batch !== photoLoadBatch) { texture.dispose(); return }
+          settle(false)
+        }, undefined, () => {
+          if (batch !== photoLoadBatch) return
+          const photoMaterial = material as THREE.MeshStandardMaterial
+          texture.dispose()
+          photoMaterial.map = null
+          photoMaterial.color.set('#83918b')
+          photoMaterial.needsUpdate = true
+          settle(true)
+        })
       texture.colorSpace = THREE.SRGBColorSpace
 
       // 使用 MeshStandardMaterial 以支持动态光照
@@ -546,6 +593,9 @@ function createDemoFallbackPhotos() {
 }
 
 function destroy3DEngine() {
+  ++photoLoadBatch
+  clearTimeout(loadTimer)
+  dismissPhotoLoadNotice()
   const canvas = canvasRef.value
   if (canvas) {
     if (canvasPointerDownHandler) canvas.removeEventListener('pointerdown', canvasPointerDownHandler)
@@ -911,10 +961,19 @@ async function selectPreset(presetName: string) {
         @close="showShareSheet = false"
       />
     </div>
+      <div v-if="photoLoadNotice && viewMode === '3d'" class="photo-load-notice" role="status">
+        <span>{{ unavailablePhotoCount }} 张照片暂未载入，可继续预览</span>
+        <button type="button" @click="refresh3DPhotos">重试</button>
+        <button type="button" aria-label="关闭照片加载提示" @click="dismissPhotoLoadNotice">×</button>
+      </div>
   </div>
 </template>
 
 <style scoped>
+.photo-load-notice { position: absolute; z-index: 10; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 10px 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 12px; background: rgba(20,35,29,.9); box-shadow: 0 8px 24px #0002; color: #fff; font-size: 12px; }
+.photo-load-notice button { flex: none; color: #b5f3d4; background: transparent; padding: 4px; cursor: pointer; }
+.photo-load-notice button:focus-visible { outline: 2px solid #b5f3d4; outline-offset: 2px; }
+
 .viewer-app-root {
   position: relative;
   width: 100vw;

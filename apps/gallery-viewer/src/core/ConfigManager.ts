@@ -1,3 +1,4 @@
+import { sceneBackgroundUrl } from '@vie/gallery-contracts'
 import type { ViewerConfig } from './types'
 import { PublicApiClient } from '../api/client'
 
@@ -27,7 +28,7 @@ export function getDeviceProfile(): DeviceProfile {
 }
 
 /**
- * 6 大生产级预设配置定义
+ * 八个场景预设配置定义
  */
 export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
   'minimal': {
@@ -82,6 +83,20 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
     interaction: { clickRipple: true, cursorTrail: true },
     lighting: { timeOfDay: 'sunset', autoColorAdapt: true }
   },
+  'winter-snow': {
+    presetName: 'winter-snow', layout: { mode: 'sphere' },
+    particles: { enabled: true, types: ['snow'], density: 0.6 },
+    effects: { bloom: { enabled: false }, fog: { enabled: true, color: '#c6d8e7', density: 0.0003 } },
+    interaction: { clickRipple: true, cursorTrail: false },
+    lighting: { timeOfDay: 'noon', autoColorAdapt: false }
+  },
+  'film-gallery': {
+    presetName: 'film-gallery', layout: { mode: 'carousel' },
+    particles: { enabled: false, types: [] },
+    effects: { bloom: { enabled: false }, fog: { enabled: false } },
+    interaction: { clickRipple: true, cursorTrail: false },
+    lighting: { timeOfDay: 'sunset', autoColorAdapt: false }
+  },
   'romantic': {
     presetName: 'romantic',
     layout: { mode: 'spiral' },
@@ -93,6 +108,10 @@ export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
     interaction: { clickRipple: true, cursorTrail: true },
     lighting: { timeOfDay: 'night', autoColorAdapt: true }
   }
+}
+
+for (const [name, preset] of Object.entries(BUILTIN_PRESETS)) {
+  preset.background = { type: 'image', image: { url: sceneBackgroundUrl(name)! } }
 }
 
 /**
