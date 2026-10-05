@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { mergeViewerConfig } from '@vie/gallery-contracts'
+import { FrameClock } from './FrameClock'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import type { ViewerContext, ViewerConfig, PhotoMesh } from './types'
@@ -45,7 +47,7 @@ export class ViewerEngine {
   private photos: PhotoMesh[] = []
 
   // 渲染与调度状态
-  private clock: THREE.Clock
+  private clock: FrameClock
   private animationId: number | null = null
   private isRunning = false
   private isContextLost = false
@@ -59,7 +61,11 @@ export class ViewerEngine {
   private isIdle = false
   private activeTransitionsCount = 0
   private introFlightPlayed = false
-  private introFlightRaf: number | null = null
+  private introFlight: { start: number; duration: number; from: THREE.Vector3; to: THREE.Vector3; targetFrom?: THREE.Vector3; targetTo?: THREE.Vector3; complete?: () => void; arc?: boolean } | null = null
+  private motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  private pendingConfig: ViewerConfig | null = null
+  private inFlightConfig: ViewerConfig | null = null
+  private configDrain: Promise<void> | null = null
 
   // 性能 APM 探针
   private frameCount = 0
@@ -89,13 +95,16 @@ export class ViewerEngine {
     this.scene = new THREE.Scene()
     this.camera = this.createCamera()
     this.renderer = this.createRenderer()
-    this.clock = new THREE.Clock()
+    this.clock = new FrameClock()
 
     // 初始化交互控制器 (OrbitControls)
     this.controls = this.createControls()
 
     // 绑定系统事件与 WebGL 上下文监听
     window.addEventListener('resize', this.handleResize)
+    document.addEventListener('visibilitychange', this.handleVisibilityChange)
+    this.motionQuery.addEventListener('change', this.handleMotionChange)
+    this.controls?.addEventListener('start', this.handleControlsStart)
     this.canvas.addEventListener('webglcontextlost', this.handleContextLost, false)
     this.canvas.addEventListener('webglcontextrestored', this.handleContextRestored, false)
 
@@ -150,124 +159,74 @@ export class ViewerEngine {
    * 根据配置自动安装插件
    */
   private async installPluginsFromConfig(): Promise<void> {
-    if (this.disposed) return
-    const config = this.configManager.getConfig()
-    const pluginsToInstall: string[] = []
+    await this.reconcilePlugins(this.configManager.getConfig())
+  }
 
-    // 布局插件（必需）
-    pluginsToInstall.push('Layout')
+  getRequestedConfig(): ViewerConfig { return this.configManager.getConfig() }
 
-    // 光照插件（默认启用）
-    pluginsToInstall.push('Lighting')
+  applyConfig(patch: Partial<ViewerConfig>): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    try { this.pendingConfig = mergeViewerConfig(this.pendingConfig ?? this.inFlightConfig ?? this.configManager.getConfig(), patch) }
+    catch (error) { return Promise.reject(error) }
+    if (!this.configDrain) this.configDrain = this.drainConfigs().finally(() => { this.configDrain = null })
+    return this.configDrain
+  }
 
-    // 照片淡入淡出动画（默认启用）
-    pluginsToInstall.push('PhotoFade')
-
-    // 粒子插件
-    if (config.particles?.enabled && config.particles.types && config.particles.types.length > 0) {
-      pluginsToInstall.push('Particles')
-    }
-
-    // 后处理特效
-    if (config.effects?.bloom?.enabled) {
-      pluginsToInstall.push('Bloom')
-    }
-
-    if (config.effects?.fog?.enabled) {
-      pluginsToInstall.push('Fog')
-    }
-
-    // 交互插件
-    if (config.interaction?.clickRipple) {
-      pluginsToInstall.push('ClickRipple')
-    }
-
-    if (config.interaction?.cursorTrail) {
-      pluginsToInstall.push('CursorTrail')
-    }
-
-    // 批量安装
-    await this.pluginManager.installAll(pluginsToInstall)
-
-    // 如果安装了 Bloom，设置 composer
-    const bloomPlugin = this.pluginManager.get('Bloom') as any
-    if (bloomPlugin && bloomPlugin.getComposer) {
-      this.setComposer(bloomPlugin.getComposer())
-    } else {
-      this.setComposer(null)
+  private async drainConfigs(): Promise<void> {
+    while (this.pendingConfig && !this.disposed) {
+      const candidate = this.pendingConfig
+      this.pendingConfig = null
+      this.inFlightConfig = candidate
+      const previous = this.configManager.getConfig()
+      try {
+        await this.reconcilePlugins(candidate)
+        if (this.disposed) return
+        this.configManager.updateConfig(candidate)
+        this.eventBus.emit('config:update', this.pluginContext!.config)
+      } catch (error) {
+        this.pendingConfig = null
+        if (!this.disposed) {
+          await this.reconcilePlugins(previous)
+          this.eventBus.emit('config:update', this.pluginContext!.config)
+        }
+        throw error
+      } finally {
+        this.inFlightConfig = null
+      }
     }
   }
 
-  /**
-   * 动态应用新配置（支持运行时热更新与特效增删）
-   */
-  async applyConfig(newConfig: Partial<ViewerConfig>): Promise<void> {
-    const prevConfig = this.configManager.getConfig()
-    const merged = this.configManager.updateConfig(newConfig)
-
-    // 更新插件上下文配置对象
-    this.pluginManager.setContext(this.createContext())
-
-    // 1. 处理粒子系统开启/关闭或类型变化
-    if (newConfig.particles !== undefined) {
-      const prevEnabled = prevConfig.particles?.enabled
-      const nextEnabled = newConfig.particles?.enabled
-      const isCurrentlyInstalled = this.pluginManager.isInstalled('Particles')
-
-      // 粒子系统从禁用变为启用
-      if (!prevEnabled && nextEnabled && !isCurrentlyInstalled) {
-        await this.pluginManager.install('Particles')
-      } 
-      // 粒子系统从启用变为禁用
-      else if (prevEnabled && !nextEnabled && isCurrentlyInstalled) {
-        this.pluginManager.uninstall('Particles')
-      }
-      // 注意：粒子类型变化由 ParticlesPlugin 自己的 handleConfigChange 处理
+  private async reconcilePlugins(candidate: ViewerConfig): Promise<void> {
+    if (this.disposed) return
+    const context = this.pluginContext ?? this.createContext()
+    const effective = structuredClone(candidate)
+    if (this.motionQuery?.matches) {
+      effective.effects.photoFloat = false
+      effective.effects.photoEntrance = 'none'
+      effective.layout.transition = { ...effective.layout.transition, style: 'none' }
+      effective.particles.speed = 0
+      effective.camera = { ...effective.camera, autoRotate: false, introFlight: false }
     }
-
-    // 2. 处理 Bloom 后处理开启/关闭
-    if (newConfig.effects?.bloom !== undefined) {
-      const prevBloom = prevConfig.effects?.bloom?.enabled
-      const nextBloom = newConfig.effects?.bloom?.enabled
-
-      if (!prevBloom && nextBloom) {
-        await this.pluginManager.install('Bloom')
-        const bloom = this.pluginManager.get('Bloom') as any
-        if (bloom && bloom.getComposer) this.setComposer(bloom.getComposer())
-      } else if (prevBloom && !nextBloom) {
-        this.pluginManager.uninstall('Bloom')
-        this.setComposer(null)
-      }
+    context.config = effective
+    this.pluginManager.setContext(context)
+    const wanted = new Map<string, boolean>([
+      ['Layout', true], ['Lighting', true], ['PhotoFade', true],
+      ['Particles', effective.particles.enabled && effective.particles.types.length > 0 && (effective.particles.density ?? 1) > 0],
+      ['Bloom', !!effective.effects.bloom?.enabled], ['Fog', !!effective.effects.fog?.enabled],
+      ['ClickRipple', !!effective.interaction.clickRipple], ['CursorTrail', !!effective.interaction.cursorTrail]
+    ])
+    for (const [name, enabled] of wanted) {
+      if (enabled) await this.pluginManager.install(name)
+      else this.pluginManager.uninstall(name)
+      if (this.disposed) return
     }
-
-    // 3. 处理 Fog 雾效开启/关闭
-    if (newConfig.effects?.fog !== undefined) {
-      const prevFog = prevConfig.effects?.fog?.enabled
-      const nextFog = newConfig.effects?.fog?.enabled
-
-      if (!prevFog && nextFog) {
-        await this.pluginManager.install('Fog')
-      } else if (prevFog && !nextFog) {
-        this.pluginManager.uninstall('Fog')
-      }
+    const bloom = this.pluginManager.get('Bloom') as { getComposer?: () => EffectComposer | null } | undefined
+    this.setComposer(this.pluginManager.isInstalled('Bloom') ? bloom?.getComposer?.() ?? null : null)
+    if (this.controls) {
+      this.controls.autoRotate = !!effective.camera?.autoRotate
+      this.controls.autoRotateSpeed = effective.camera?.rotateSpeed ?? .5
     }
-
-    // 4. 处理星迹拖尾开启/关闭
-    if (newConfig.interaction?.cursorTrail !== undefined) {
-      const prevTrail = prevConfig.interaction?.cursorTrail
-      const nextTrail = newConfig.interaction.cursorTrail
-      const trailInstalled = this.pluginManager.isInstalled('CursorTrail')
-
-      if (!prevTrail && nextTrail && !trailInstalled) {
-        await this.pluginManager.install('CursorTrail')
-      } else if (prevTrail && !nextTrail && trailInstalled) {
-        this.pluginManager.uninstall('CursorTrail')
-      }
-    }
-
-    // 5. 广播配置更新事件给所有已装配的插件
-    this.eventBus.emit('config:change', merged)
-    this.eventBus.emit('config:update', merged)
+    if (!effective.camera?.introFlight && this.introFlight?.arc) this.cancelIntroFlight()
   }
 
   /**
@@ -303,6 +262,7 @@ export class ViewerEngine {
    * 唤醒引擎至满帧高响应状态，并重新计时空闲休眠
    */
   public wakeUp(durationMs = 4000): void {
+    if (this.disposed) return
     this.isIdle = false
     this.targetFps = 60
 
@@ -340,6 +300,7 @@ export class ViewerEngine {
   private handleContextLost = (event: Event): void => {
     event.preventDefault()
     this.isContextLost = true
+    this.cancelIntroFlight()
     this.stop()
     this.eventBus.emit('webgl:lost')
   }
@@ -349,7 +310,7 @@ export class ViewerEngine {
    */
   private handleContextRestored = (): void => {
     this.isContextLost = false
-    this.clock.start()
+    this.clock.resume(performance.now())
 
     // 重新校准尺寸与渲染器状态
     const width = this.canvas.clientWidth || window.innerWidth
@@ -432,16 +393,18 @@ export class ViewerEngine {
    * 启动渲染循环
    */
   start(): void {
-    if (this.isRunning) return
+    if (this.isRunning || this.disposed || document.hidden || this.isContextLost) return
 
     this.isRunning = true
-    this.clock.start()
+    this.clock.resume(performance.now())
     this.lastRenderTime = performance.now()
+    this.lastFpsUpdateTime = this.lastRenderTime
+    this.frameCount = 0
 
     // 开场电影运镜只随引擎首次启动播放一次
     if (!this.introFlightPlayed) {
       this.introFlightPlayed = true
-      if (this.configManager.getConfig().camera?.introFlight) {
+      if (this.pluginContext?.config.camera?.introFlight && !this.motionQuery.matches) {
         this.playIntroFlight()
       }
     }
@@ -455,51 +418,43 @@ export class ViewerEngine {
    * OrbitControls 每帧从当前相机位置派生状态，二者可共存。
    */
   private playIntroFlight(): void {
-    const controls = this.controls
-    if (!controls) return
-
-    const endPos = this.camera.position.clone()
-    // 起点：默认机位的右后上方拉远，制造俯冲推进感
-    const startPos = endPos.clone().add(new THREE.Vector3(900, 620, 1500))
-
+    if (!this.controls || this.motionQuery.matches) return
+    const to = this.camera.position.clone()
+    const from = to.clone().add(new THREE.Vector3(900, 620, 1500))
+    this.introFlight = { start: this.clock.elapsed, duration: this.pluginContext?.config.camera?.introDuration ?? 2, from, to, arc: true }
+    this.camera.position.copy(from)
     this.notifyTransitionStart()
-    this.camera.position.copy(startPos)
-
-    const duration = 2600
-    const startTime = performance.now()
-
-    const step = (now: number) => {
-      if (this.disposed) return
-
-      const t = Math.min(1, (now - startTime) / duration)
-      const ease = 1 - Math.pow(1 - t, 4)
-
-      this.camera.position.lerpVectors(startPos, endPos, ease)
-      // 正弦弧线抬升，让推进路径带一点"掠过"的弧度
-      this.camera.position.y += Math.sin(ease * Math.PI) * 70
-      controls.update()
-
-      if (t < 1) {
-        this.introFlightRaf = requestAnimationFrame(step)
-      } else {
-        this.camera.position.copy(endPos)
-        controls.update()
-        this.introFlightRaf = null
-        this.notifyTransitionEnd()
-      }
-    }
-
-    this.introFlightRaf = requestAnimationFrame(step)
   }
-
+  private updateIntroFlight(elapsed: number): void {
+    const flight = this.introFlight
+    if (!flight) return
+    const t = Math.min(1, (elapsed - flight.start) / flight.duration)
+    const eased = 1 - (1 - t) ** 4
+    this.camera.position.lerpVectors(flight.from, flight.to, eased)
+    if (flight.arc) this.camera.position.y += Math.sin(eased * Math.PI) * 70
+    if (flight.targetFrom && flight.targetTo) this.controls?.target.lerpVectors(flight.targetFrom, flight.targetTo, eased)
+    if (t === 1) { this.cancelIntroFlight(); flight.complete?.() }
+  }
+  flyTo(position: THREE.Vector3, target: THREE.Vector3, duration = 1.4, complete?: () => void): void {
+    if (!this.controls || this.disposed) return
+    this.cancelIntroFlight()
+    if (this.motionQuery.matches) { this.camera.position.copy(position); this.controls.target.copy(target); this.controls.update(); complete?.(); return }
+    this.introFlight = { start: this.clock.elapsed, duration, from: this.camera.position.clone(), to: position.clone(), targetFrom: this.controls.target.clone(), targetTo: target.clone(), complete }
+    this.notifyTransitionStart()
+  }
+  setAutoTour(enabled: boolean): void {
+    if (this.controls) {
+      this.controls.autoRotate = enabled && !this.motionQuery.matches
+      this.controls.autoRotateSpeed = this.pluginContext?.config.camera?.rotateSpeed ?? .5
+      this.wakeUp()
+    }
+  }
   private cancelIntroFlight(): void {
-    if (this.introFlightRaf !== null) {
-      cancelAnimationFrame(this.introFlightRaf)
-      this.introFlightRaf = null
-      // 运镜启动时占用了一个转场计数，取消时必须归还，否则引擎永远保持满帧
-      this.notifyTransitionEnd()
-    }
+    if (this.introFlight) { this.introFlight = null; this.notifyTransitionEnd() }
   }
+  private handleControlsStart = (): void => { this.cancelIntroFlight(); this.wakeUp() }
+  private handleVisibilityChange = (): void => { if (document.hidden) this.stop(); else this.start() }
+  private handleMotionChange = (): void => { void this.applyConfig({}) }
 
   /**
    * 视角复位：取消在途运镜并回到默认机位，不改动任何用户配置
@@ -522,6 +477,7 @@ export class ViewerEngine {
     if (!this.isRunning) return
 
     this.isRunning = false
+    this.clock.suspend()
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId)
       this.animationId = null
@@ -570,6 +526,7 @@ export class ViewerEngine {
   dispose(): void {
     // 先置位销毁标志，拦截在途的异步初始化与运镜帧
     this.disposed = true
+    this.pendingConfig = null
     this.stop()
     this.cancelIntroFlight()
 
@@ -585,6 +542,7 @@ export class ViewerEngine {
 
     // 销毁 OrbitControls
     if (this.controls) {
+      this.controls.removeEventListener('start', this.handleControlsStart)
       this.controls.dispose()
       this.controls = null
     }
@@ -602,6 +560,8 @@ export class ViewerEngine {
     this.renderer.dispose()
 
     window.removeEventListener('resize', this.handleResize)
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    this.motionQuery.removeEventListener('change', this.handleMotionChange)
     this.eventBus.clear()
     this.eventBus.emit('destroy')
   }
@@ -705,11 +665,13 @@ export class ViewerEngine {
         })
       },
 
+      now: () => this.clock.elapsed,
+      reducedMotion: () => this.motionQuery.matches,
       isMobile: () => /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent),
       getQuality: () => {
         const config = this.configManager.getConfig()
         if (config.quality === 'auto') {
-          return this.configManager.autoAdjustForDevice().quality as 'low' | 'mid' | 'high'
+          return getDeviceProfile().isLowEnd ? 'low' : 'mid'
         }
         return config.quality
       }
@@ -730,8 +692,7 @@ export class ViewerEngine {
       return
     }
 
-    const delta = this.clock.getDelta()
-    const elapsed = this.clock.getElapsedTime()
+    const { delta, elapsed } = this.clock.tick(now)
     const frameDuration = now - this.lastRenderTime
     this.lastRenderTime = now
 
@@ -755,7 +716,8 @@ export class ViewerEngine {
 
     // 更新 OrbitControls 阻尼
     if (this.controls) {
-      this.controls.update()
+      this.updateIntroFlight(elapsed)
+      this.controls.update(delta)
     }
 
     // 更新所有插件 (粒子动画、天空盒跟随、布局缓动)

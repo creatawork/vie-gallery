@@ -35,6 +35,7 @@ export class LayoutPlugin implements ViewerPlugin {
   private restPoses: Map<number, RestPose> = new Map()
   private clock = 0
   private isAnimating = false
+  private entranceOffsets = new WeakMap<THREE.Mesh, number>()
   private layoutSignature = ''
   private onLayoutChange = (mode: string) => this.switchLayout(mode)
   private onPhotosLoaded = () => { this.cancelInFlightMorphs(); this.applyLayout(this.currentLayout) }
@@ -54,6 +55,7 @@ export class LayoutPlugin implements ViewerPlugin {
     context.on('layout:change', this.onLayoutChange)
     context.on('photos:loaded', this.onPhotosLoaded)
     context.on('config:update', this.onConfigUpdate)
+    context.on('webgl:lost', this.onContextLost)
 
     // 初始布局
     this.applyLayout(this.currentLayout)
@@ -64,6 +66,7 @@ export class LayoutPlugin implements ViewerPlugin {
     this.context?.off('layout:change', this.onLayoutChange)
     this.context?.off('photos:loaded', this.onPhotosLoaded)
     this.context?.off('config:update', this.onConfigUpdate)
+    this.context?.off('webgl:lost', this.onContextLost)
     this.context = null
     this.morphs = []
     this.restPoses.clear()
@@ -72,6 +75,10 @@ export class LayoutPlugin implements ViewerPlugin {
 
   update(delta: number, elapsed: number): void {
     this.clock = elapsed
+    for (const photo of this.context?.photos ?? []) {
+      photo.position.y -= this.entranceOffsets.get(photo) ?? 0
+      this.entranceOffsets.delete(photo)
+    }
 
     // 1. 处理正在进行的流体形变转场动画
     if (this.morphs.length > 0) {
@@ -132,7 +139,7 @@ export class LayoutPlugin implements ViewerPlugin {
     // 2. 常态物理呼吸与空间漂浮微动 (Subtle Space Oscillation)
     // 配置关闭照片悬浮（effects.photoFloat === false）时平滑归位静止
     if (this.restPoses.size > 0 && this.context?.photos) {
-      const floatEnabled = this.context.config.effects?.photoFloat !== false
+      const floatEnabled = this.context.config.effects?.photoFloat !== false && !this.context.reducedMotion()
       const time = this.clock * (this.context.config.effects.floatSpeed ?? 1)
       const amplitude = this.context.config.effects.floatAmplitude ?? 1
       const moving = new Set(this.morphs.map(m => m.index))
@@ -156,6 +163,11 @@ export class LayoutPlugin implements ViewerPlugin {
         }
       })
     }
+    for (const photo of this.context?.photos ?? []) {
+      const offset = photo.userData.entranceOffsetY ?? 0
+      photo.position.y += offset
+      this.entranceOffsets.set(photo, offset)
+    }
   }
 
   /**
@@ -168,6 +180,7 @@ export class LayoutPlugin implements ViewerPlugin {
     this.isAnimating = false
     if (hadTransition) this.context?.emit('transition:end')
   }
+  private onContextLost = (): void => this.cancelInFlightMorphs()
 
   /**
    * 切换几何排布模型（带阶梯延时与空间粒子弧线形变）
@@ -181,10 +194,11 @@ export class LayoutPlugin implements ViewerPlugin {
 
     const rawPositions = generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode })
     const scale = this.context.config.layout.params?.scale ?? 1
-    for (const photo of photos) photo.scale.setScalar(scale)
+    for (const photo of photos) { photo.scale.setScalar(scale); photo.userData.layoutScale = scale }
+    this.entranceOffsets = new WeakMap()
 
     this.cancelInFlightMorphs()
-    if (this.context.config.layout.transition?.style === 'none') { this.applyLayout(mode); return }
+    if (this.context.config.layout.transition?.style === 'none' || this.context.reducedMotion()) { this.applyLayout(mode); return }
     this.restPoses.clear()
     this.isAnimating = true
 
@@ -239,7 +253,8 @@ export class LayoutPlugin implements ViewerPlugin {
 
     const rawPositions = generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode })
     const scale = this.context.config.layout.params?.scale ?? 1
-    for (const photo of photos) photo.scale.setScalar(scale)
+    for (const photo of photos) { photo.scale.setScalar(scale); photo.userData.layoutScale = scale }
+    this.entranceOffsets = new WeakMap()
     this.restPoses.clear()
 
     photos.forEach((photo, i) => {

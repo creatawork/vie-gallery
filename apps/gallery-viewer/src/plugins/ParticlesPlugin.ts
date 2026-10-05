@@ -69,7 +69,7 @@ export class ParticlesPlugin implements ViewerPlugin {
   }
   getParticleCounts(): Readonly<Record<ParticleType, number>> { return { ...this.counts } }
   update(delta: number, _elapsed: number): void {
-    const speed = this.context?.config.particles.speed ?? 1
+    const speed = this.context?.reducedMotion() ? 0 : this.context?.config.particles.speed ?? 1
     const dt = Math.min(.1, Math.max(0, delta)) * speed
     if (dt === 0) return
     this.activeTime += dt

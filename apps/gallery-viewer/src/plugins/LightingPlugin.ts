@@ -25,6 +25,8 @@ export class LightingPlugin implements ViewerPlugin {
   version = '1.0.0'
   
   private context!: ViewerContext
+  private disposed = true
+  private colorRequest = 0
   
   // 光源对象
   private ambientLight: THREE.AmbientLight | null = null
@@ -53,6 +55,7 @@ export class LightingPlugin implements ViewerPlugin {
   
   async install(context: ViewerContext): Promise<void> {
     this.context = context
+    this.disposed = false
     
     // 从 ViewerConfig 读取配置（如果有）
     const viewerConfig = context.config as any
@@ -80,16 +83,18 @@ export class LightingPlugin implements ViewerPlugin {
     this.applyPreset(initialPreset, false) // 无过渡
     
     // 监听照片切换事件
-    if (this.config.autoColorAdapt) {
-      context.on('photo:click', this.handlePhotoChange)
-      context.on('photo:focus', this.handlePhotoChange)
-    }
+    context.on('photo:click', this.handlePhotoChange)
+    context.on('photo:focus', this.handlePhotoChange)
     
     // 监听配置变化
-    context.on('config:change', this.handleConfigChange)
+    context.on('config:update', this.handleConfigChange)
+    context.on('webgl:lost', this.handleContextLost)
   }
   
   uninstall(): void {
+    this.disposed = true
+    this.colorRequest++
+    this.cancelTransition()
     // 移除光源
     if (this.ambientLight) {
       this.context.removeFromScene(this.ambientLight)
@@ -109,7 +114,8 @@ export class LightingPlugin implements ViewerPlugin {
     // 移除事件监听
     this.context.off('photo:click', this.handlePhotoChange)
     this.context.off('photo:focus', this.handlePhotoChange)
-    this.context.off('config:change', this.handleConfigChange)
+    this.context.off('config:update', this.handleConfigChange)
+    this.context.off('webgl:lost', this.handleContextLost)
     
     // 清空缓存
     this.colorCache.clear()
@@ -160,12 +166,14 @@ export class LightingPlugin implements ViewerPlugin {
    * 应用光照预设
    */
   private applyPreset(preset: LightingPreset, animate = true): void {
+    this.cancelTransition()
+    animate = animate && !this.context.reducedMotion()
     if (animate && this.currentPreset) {
       // 启动过渡动画
       this.fromPreset = this.currentPreset
       this.targetPreset = preset
       this.isTransitioning = true
-      this.transitionStartTime = performance.now() / 1000 // 转换为秒
+      this.transitionStartTime = this.context.now()
       this.context.emit('transition:start')
     } else {
       // 立即应用
@@ -220,7 +228,8 @@ export class LightingPlugin implements ViewerPlugin {
    * 处理照片切换事件
    */
   private handlePhotoChange = async (data: any): Promise<void> => {
-    if (!this.config.autoColorAdapt) return
+    if (!this.config.autoColorAdapt || this.disposed) return
+    const request = ++this.colorRequest
     
     try {
       const photo = data?.photo
@@ -243,10 +252,12 @@ export class LightingPlugin implements ViewerPlugin {
         })
         
         // 缓存结果
+        if (this.disposed || request !== this.colorRequest || !this.config.autoColorAdapt) return
         this.colorCache.set(imageUrl, colorResult)
       }
       
       // 创建基于照片颜色的自定义预设
+      if (this.disposed || request !== this.colorRequest) return
       const customPreset = this.createColorAdaptedPreset(colorResult)
       
       // 平滑过渡到新预设
@@ -321,6 +332,9 @@ export class LightingPlugin implements ViewerPlugin {
     if (newConfig.lighting) {
       const oldConfig = this.config
       this.config = { ...this.config, ...newConfig.lighting }
+      this.transitionDuration = this.config.transitionDuration
+      if (this.context.getQuality() === 'low') this.config.autoColorAdapt = false
+      this.colorRequest++
       
       // 如果时间段模式改变，应用新预设
       if (this.config.timeOfDay !== oldConfig.timeOfDay) {
@@ -347,6 +361,12 @@ export class LightingPlugin implements ViewerPlugin {
   /**
    * 缓动函数：ease-out cubic
    */
+  private cancelTransition(): void {
+    if (this.isTransitioning) this.context.emit('transition:end')
+    this.isTransitioning = false
+    this.fromPreset = null
+  }
+  private handleContextLost = (): void => { this.colorRequest++; this.cancelTransition() }
   private easeOutCubic(t: number): number {
     return 1 - Math.pow(1 - t, 3)
   }

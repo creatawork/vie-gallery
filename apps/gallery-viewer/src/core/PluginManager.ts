@@ -57,6 +57,7 @@ export class PluginManager {
    * 注册插件
    */
   register(plugin: ViewerPlugin, alias?: string): void {
+    if (this.disposed) { plugin.uninstall(); return }
     const wrapper: PluginWrapper = {
       plugin,
       state: PluginState.UNINSTALLED
@@ -98,6 +99,7 @@ export class PluginManager {
     if (!wrapper && this.registry.has(name)) {
       const loader = this.registry.get(name)!
       const plugin = await loader()
+      if (this.disposed) { plugin.uninstall(); return }
       this.register(plugin, name)
       wrapper = this.plugins.get(name) || this.plugins.get(plugin.name)
     }
@@ -129,8 +131,10 @@ export class PluginManager {
 
     try {
       await wrapper.plugin.install(this.context)
+      if (this.disposed) { wrapper.plugin.uninstall(); return }
       wrapper.state = PluginState.INSTALLED
     } catch (error) {
+      wrapper.plugin.uninstall()
       wrapper.state = PluginState.FAILED
       wrapper.error = error as Error
       console.error(`Failed to install plugin "${name}":`, error)
@@ -215,14 +219,13 @@ export class PluginManager {
    * 更新所有插件
    */
   update(delta: number, elapsed: number): void {
-    const visited = new Set<ViewerPlugin>()
-    for (const wrapper of this.plugins.values()) {
-      if (wrapper.state === PluginState.INSTALLED && wrapper.plugin.update && !visited.has(wrapper.plugin)) {
-        visited.add(wrapper.plugin)
+    const order = (name: string) => name === 'PhotoFade' ? 0 : name === 'Layout' ? 1 : 2
+    for (const plugin of this.getInstalled().sort((a, b) => order(a.name) - order(b.name))) {
+      if (plugin.update) {
         try {
-          wrapper.plugin.update(delta, elapsed)
+          plugin.update(delta, elapsed)
         } catch (error) {
-          console.error(`Error updating plugin "${wrapper.plugin.name}":`, error)
+          console.error(`Error updating plugin "${plugin.name}":`, error)
         }
       }
     }

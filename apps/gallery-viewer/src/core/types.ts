@@ -12,6 +12,8 @@ export interface PhotoMesh extends THREE.Mesh {
     mediumUrl?: string | null
     textureUrl?: string | null
     title?: string
+    entranceOffsetY?: number
+    layoutScale?: number
   }
 }
 
@@ -53,6 +55,8 @@ export interface ViewerContext {
   isMobile(): boolean
   getQuality(): 'low' | 'mid' | 'high'
   getParticleBudget?(): number
+  now(): number
+  reducedMotion(): boolean
 }
 
 /**
