@@ -76,6 +76,7 @@ const isAutoTour = ref(false)
 const hoveredPhoto = ref<{ index: number; title: string } | null>(null)
 const hoveredScreenPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
 const showApm = ref(false)
+const diagnosticsEnabled = import.meta.env.DEV || import.meta.env.VITE_VIEWER_DIAGNOSTICS === 'true'
 const apmMetrics = ref<EngineMetrics | null>(null)
 const gyroEnabled = ref(false)
 
@@ -253,6 +254,8 @@ async function init3DEngine() {
     engine.getEventBus().on('effects:fallback', (data: { message: string }) => {
       webglFallbackMessage.value = data.message
     })
+    engine.getEventBus().on('quality:changed', () => { webglFallbackMessage.value = '已优化显示效果' })
+    engine.getEventBus().on('quality:fallback', (data: { message: string }) => fallbackTo2D(data.message))
 
     // 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
     engine.syncPhotos(scenePhotos())
@@ -674,6 +677,7 @@ async function selectPreset(presetName: string) {
 
             <!-- APM Performance Probe -->
             <button
+              v-if="diagnosticsEnabled"
               class="hud-icon-btn"
               :class="{ active: showApm }"
               title="3D 性能指标探针"
@@ -725,7 +729,7 @@ async function selectPreset(presetName: string) {
       </header>
 
       <!-- APM Real-time Dashboard Capsule -->
-      <aside v-if="showApm && viewMode === '3d' && apmMetrics" class="apm-dashboard">
+      <aside v-if="diagnosticsEnabled && showApm && viewMode === '3d' && apmMetrics" class="apm-dashboard">
         <div class="apm-title">
           <span class="live-dot"></span>
           <span>SPATIAL APM MONITOR</span>

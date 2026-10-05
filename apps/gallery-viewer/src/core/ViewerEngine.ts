@@ -3,6 +3,8 @@ import { mergeViewerConfig, type PublicPhoto } from '@vie/gallery-contracts'
 import { PhotoScene } from './PhotoScene'
 import { TexturePool, loadPhotoTexture } from './TexturePool'
 import { FrameClock } from './FrameClock'
+import { QualityController, QUALITY_BUDGETS, initialQuality, type Quality, type QualitySample, type QualityDecision } from './QualityController'
+import type { ParticlesPlugin } from '../plugins/ParticlesPlugin'
 import { PostProcessing } from './PostProcessing'
 import type { ViewerDiagnosticApi } from './types'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -76,6 +78,13 @@ export class ViewerEngine {
   private postProcessing: PostProcessing
   private frozenTime: number | null = null
   private diagnostics: ViewerDiagnosticApi | null = null
+  private effectiveQuality: Quality = 'mid'
+  private qualityRequest: ViewerConfig['quality'] = 'auto'
+  private qualityController: QualityController
+  private qualityReason: string | null = null
+  private cpuRenderMs = 0
+  private frames: Array<{ frameIntervalMs: number; cpuRenderMs: number; drawCalls: number }> = []
+  private frameCursor = 0
 
   // 性能 APM 探针
   private frameCount = 0
@@ -100,6 +109,9 @@ export class ViewerEngine {
     this.eventBus = new EventBus()
     this.pluginManager = new PluginManager()
     this.configManager = new ConfigManager(initialConfig)
+    this.qualityRequest = this.configManager.getConfig().quality
+    this.effectiveQuality = initialQuality(this.qualityRequest, getDeviceProfile().isLowEnd)
+    this.qualityController = new QualityController(this.effectiveQuality, this.qualityRequest === 'auto' ? 'high' : this.qualityRequest, performance.now())
 
     // 初始化 Three.js
     this.scene = new THREE.Scene()
@@ -107,7 +119,7 @@ export class ViewerEngine {
     this.renderer = this.createRenderer()
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
     this.clock = new FrameClock()
-    this.texturePool = new TexturePool({ maxEdge: 1024, bytes: 64 * 1024 ** 2, concurrent: 3, resident: 64 }, loadPhotoTexture)
+    this.texturePool = new TexturePool(QUALITY_BUDGETS[this.effectiveQuality], loadPhotoTexture)
     this.photoScene = new PhotoScene(this.scene, this.texturePool, mesh => this.eventBus.emit('photo:texture-ready', mesh))
 
     // 初始化交互控制器 (OrbitControls)
@@ -168,11 +180,12 @@ export class ViewerEngine {
     if (this.disposed) return
     if (import.meta.env.DEV || import.meta.env.VITE_VIEWER_DIAGNOSTICS === 'true') {
       this.diagnostics = {
-        snapshot: () => ({ postProcessing: this.postProcessing.getState(), requestedConfig: this.getRequestedConfig(), effectiveConfig: structuredClone(this.pluginContext!.config),
-          textures: { ...this.texturePool.getMetrics(), failed: this.photos.filter(photo => photo.userData.textureState === 'failed').length, budget: this.texturePool.getBudget() } }),
+        snapshot: () => this.getDiagnostics(),
         requestConfig: patch => this.applyConfig(patch),
         freezeTime: elapsed => { this.frozenTime = elapsed },
-        photoMeshIds: () => this.photos.map(photo => photo.uuid)
+        photoMeshIds: () => this.photos.map(photo => photo.uuid),
+        sampleQuality: sample => this.sampleQuality(sample),
+        drainFrames: () => this.drainFrames()
       }
       window.__VIE_VIEWER_DIAGNOSTICS__ = this.diagnostics
     }
@@ -222,8 +235,18 @@ export class ViewerEngine {
 
   private async reconcilePlugins(candidate: ViewerConfig): Promise<void> {
     if (this.disposed) return
+    if (candidate.quality !== this.qualityRequest) {
+      this.qualityRequest = candidate.quality
+      this.effectiveQuality = initialQuality(candidate.quality, getDeviceProfile().isLowEnd)
+      this.qualityController = new QualityController(this.effectiveQuality, candidate.quality === 'auto' ? 'high' : candidate.quality, performance.now())
+      this.qualityReason = null
+    }
     const context = this.pluginContext ?? this.createContext()
     const effective = structuredClone(candidate)
+    effective.quality = this.effectiveQuality
+    const budget = QUALITY_BUDGETS[this.effectiveQuality]
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, budget.dpr))
+    this.texturePool.setBudget(budget)
     if (this.motionQuery?.matches) {
       effective.effects.photoFloat = false
       effective.effects.photoEntrance = 'none'
@@ -409,6 +432,7 @@ export class ViewerEngine {
     this.lastRenderTime = performance.now()
     this.lastFpsUpdateTime = this.lastRenderTime
     this.frameCount = 0
+    this.qualityController.reset(this.lastRenderTime)
 
     // 开场电影运镜只随引擎首次启动播放一次
     if (!this.introFlightPlayed) {
@@ -566,6 +590,7 @@ export class ViewerEngine {
     this.postProcessing.dispose()
     if (window.__VIE_VIEWER_DIAGNOSTICS__ === this.diagnostics) delete window.__VIE_VIEWER_DIAGNOSTICS__
     this.diagnostics = null
+    this.frames = []
     this.renderer.dispose()
 
     window.removeEventListener('resize', this.handleResize)
@@ -592,7 +617,7 @@ export class ViewerEngine {
 
   private createRenderer(): THREE.WebGLRenderer {
     const profile = getDeviceProfile()
-    this.basePixelRatio = profile.pixelRatio
+    this.basePixelRatio = Math.min(window.devicePixelRatio || 1, QUALITY_BUDGETS[this.effectiveQuality].dpr)
 
     const context = this.canvas.getContext('webgl2') || this.canvas.getContext('webgl')
     if (!context) {
@@ -611,6 +636,7 @@ export class ViewerEngine {
       const height = this.canvas.clientHeight || window.innerHeight
       renderer.setSize(width, height)
       renderer.setPixelRatio(this.basePixelRatio)
+      renderer.info.autoReset = false
       renderer.toneMapping = THREE.ACESFilmicToneMapping
       renderer.toneMappingExposure = 1.25
 
@@ -677,13 +703,8 @@ export class ViewerEngine {
       now: () => this.frozenTime ?? this.clock.elapsed,
       reducedMotion: () => this.motionQuery.matches,
       isMobile: () => /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent),
-      getQuality: () => {
-        const config = this.configManager.getConfig()
-        if (config.quality === 'auto') {
-          return getDeviceProfile().isLowEnd ? 'low' : 'mid'
-        }
-        return config.quality
-      }
+      getQuality: () => this.effectiveQuality,
+      getParticleBudget: () => QUALITY_BUDGETS[this.effectiveQuality].particles
     }
     return this.pluginContext
   }
@@ -707,25 +728,19 @@ export class ViewerEngine {
     const frameDuration = now - this.lastRenderTime
     this.lastRenderTime = now
 
-    // 性能 APM 统计计算 (滑动平均)
     this.frameCount++
     this.currentFrameTime = frameDuration
-    if (now - this.lastFpsUpdateTime > 1000) {
-      this.currentFps = (this.frameCount * 1000) / (now - this.lastFpsUpdateTime)
-      this.frameCount = 0
-      this.lastFpsUpdateTime = now
-
-      // 动态分辨率自适应微调 (DRS)
-      if (this.currentFps < 30 && this.basePixelRatio > 1.0) {
-        this.renderer.setPixelRatio(1.0)
-        this.resizePostProcessing()
-      } else if (this.currentFps >= 55 && this.renderer.getPixelRatio() < this.basePixelRatio) {
-        this.renderer.setPixelRatio(this.basePixelRatio)
-        this.resizePostProcessing()
-      }
-
-      this.eventBus.emit('metrics:update', this.getMetrics())
+    const metricsDue = now - this.lastFpsUpdateTime >= 1000
+    if (metricsDue) {
+      this.currentFps = this.frameCount * 1000 / (now - this.lastFpsUpdateTime)
+      this.frameCount = 0; this.lastFpsUpdateTime = now
+      const textures = this.texturePool.getMetrics()
+      this.sampleQuality({ nowMs: now, fps: this.currentFps, idle: this.isIdle, hidden: document.hidden,
+        loading: textures.active > 0 || textures.pending > 0, transitioning: this.activeTransitionsCount > 0, contextLost: this.isContextLost })
+      if (this.disposed) return
     }
+    const cpuStart = performance.now()
+    this.renderer.info.reset()
 
     // 更新 OrbitControls 阻尼
     if (this.controls) {
@@ -743,12 +758,46 @@ export class ViewerEngine {
       this.renderer.render(this.scene, this.camera)
       this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
     }
+    this.cpuRenderMs = performance.now() - cpuStart
+    if (this.diagnostics) {
+      const frame = { frameIntervalMs: frameDuration, cpuRenderMs: this.cpuRenderMs, drawCalls: this.renderer.info.render.calls }
+      if (this.frames.length < 2400) this.frames.push(frame)
+      else { this.frames[this.frameCursor] = frame; this.frameCursor = (this.frameCursor + 1) % 2400 }
+    }
+    if (metricsDue) this.eventBus.emit('metrics:update', this.getMetrics())
   }
 
   private resizePostProcessing(): void {
-    const quality = this.pluginContext?.getQuality() ?? 'mid'
+    const quality = this.effectiveQuality
     this.postProcessing.resize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight,
-      this.renderer.getPixelRatio(), { low: .5, mid: .75, high: 1 }[quality])
+      this.renderer.getPixelRatio(), QUALITY_BUDGETS[quality].postScale)
+  }
+
+  getEffectiveQuality(): Quality { return this.effectiveQuality }
+  private sampleQuality(sample: QualitySample): QualityDecision {
+    const decision = this.qualityController.sample(sample)
+    this.qualityReason = decision.reason
+    if (decision.fallback2D) this.eventBus.emit('quality:fallback', { message: '已优化显示效果，继续使用经典画廊浏览。' })
+    else if (decision.quality !== this.effectiveQuality) {
+      this.effectiveQuality = decision.quality
+      void this.applyConfig({}).then(() => this.eventBus.emit('quality:changed', decision)).catch(() => {})
+    }
+    return decision
+  }
+  private getDiagnostics() {
+    const requested = this.getRequestedConfig(), metrics = this.getMetrics()
+    const particles = this.pluginManager.get('Particles') as ParticlesPlugin | undefined
+    return { postProcessing: this.postProcessing.getState(), requestedConfig: requested, requested,
+      effectiveConfig: structuredClone(this.pluginContext!.config), effectiveQuality: this.effectiveQuality, reason: this.qualityReason,
+      elapsed: this.frozenTime ?? this.clock.elapsed, meshCount: this.photos.length,
+      particleCounts: particles?.getParticleCounts() ?? { stars: 0, hearts: 0, sakura: 0, snow: 0, fireflies: 0, meteors: 0 },
+      textures: { ...this.texturePool.getMetrics(), failed: metrics.failedTextures ?? 0, budget: this.texturePool.getBudget() },
+      geometryCount: metrics.geometries, drawCalls: metrics.drawCalls, fps: metrics.fps, frameIntervalMs: this.currentFrameTime, cpuRenderMs: this.cpuRenderMs }
+  }
+  private drainFrames() {
+    const result = [...this.frames.slice(this.frameCursor), ...this.frames.slice(0, this.frameCursor)]
+    this.frames = []; this.frameCursor = 0
+    return result
   }
 
   private handleResize = (): void => {

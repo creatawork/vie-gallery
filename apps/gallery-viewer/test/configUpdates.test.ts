@@ -6,6 +6,7 @@ import { ConfigManager } from '../src/core/ConfigManager'
 import { PluginManager } from '../src/core/PluginManager'
 import { EventBus } from '../src/core/EventBus'
 import { FrameClock } from '../src/core/FrameClock'
+import { QualityController } from '../src/core/QualityController'
 import { createViewerContext } from './helpers/viewerContext'
 
 test('engine serializes updates, applies full candidates, and recovers failed plugin installs', async () => {
@@ -27,7 +28,9 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     Object.assign(engine, { pluginManager: manager, configManager: new ConfigManager(config), pluginContext: context,
       scene: context.scene, camera: context.camera, renderer: context.renderer, eventBus: bus, photos: [], clock: new FrameClock(), disposed: false,
       pendingConfig: null, configDrain: null, composer: null, motionQuery: { matches: false }, controls: null,
-      postProcessing: { apply: () => {}, dispose: () => {} }, resizePostProcessing: () => {} })
+      postProcessing: { apply: () => {}, dispose: () => {} }, resizePostProcessing: () => {},
+      effectiveQuality: 'mid', qualityRequest: 'auto', qualityController: new QualityController('mid', 'high', 0),
+      texturePool: { setBudget: () => {} }, renderer: { setPixelRatio: () => {} } })
     const a = engine.applyConfig({ particles: { enabled: true, types: ['stars'], density: .4 } })
     const b = engine.applyConfig({ particles: { density: .8 } } as never)
     for (let i = 0; i < 100 && !finish; i++) await Promise.resolve()

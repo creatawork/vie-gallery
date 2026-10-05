@@ -2,6 +2,8 @@ import type * as THREE from 'three'
 import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import type { PostProcessingState } from './PostProcessing'
 import type { TextureBudget } from './TexturePool'
+import type { Quality, QualitySample, QualityDecision } from './QualityController'
+import type { ParticleType } from '@vie/gallery-contracts'
 
 /**
  * 照片网格对象
@@ -120,10 +122,23 @@ export interface ViewerDiagnostics {
   requestedConfig: ViewerConfig
   effectiveConfig: ViewerConfig
   textures: { resident: number; bytes: number; pending: number; active: number; failed: number; budget: TextureBudget }
+  requested: ViewerConfig
+  effectiveQuality: Quality
+  reason: string | null
+  elapsed: number
+  meshCount: number
+  particleCounts: Record<ParticleType, number>
+  geometryCount: number
+  drawCalls: number
+  fps: number
+  frameIntervalMs: number
+  cpuRenderMs: number
 }
 export interface ViewerDiagnosticApi {
   snapshot(): ViewerDiagnostics
   requestConfig(patch: Partial<ViewerConfig>): Promise<void>
   freezeTime(elapsed: number | null): void
   photoMeshIds(): string[]
+  sampleQuality(sample: QualitySample): QualityDecision
+  drainFrames(): Array<{ frameIntervalMs: number; cpuRenderMs: number; drawCalls: number }>
 }
