@@ -7,6 +7,7 @@ import { PluginManager } from '../src/core/PluginManager'
 import { EventBus } from '../src/core/EventBus'
 import { FrameClock } from '../src/core/FrameClock'
 import { QualityController } from '../src/core/QualityController'
+import { applyViewerPreset } from '@vie/gallery-contracts'
 import { createViewerContext } from './helpers/viewerContext'
 
 test('engine serializes updates, applies full candidates, and recovers failed plugin installs', async () => {
@@ -26,7 +27,7 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     manager.setContext(context)
     const engine = Object.create(ViewerEngine.prototype) as ViewerEngine
     Object.assign(engine, { pluginManager: manager, configManager: new ConfigManager(config), pluginContext: context,
-      scene: context.scene, camera: context.camera, renderer: context.renderer, eventBus: bus, photos: [], clock: new FrameClock(), disposed: false,
+      scene: context.scene, camera: context.camera, eventBus: bus, photos: [], clock: new FrameClock(), disposed: false,
       pendingConfig: null, configDrain: null, composer: null, motionQuery: { matches: false }, controls: null,
       postProcessing: { apply: () => {}, dispose: () => {} }, resizePostProcessing: () => {},
       effectiveQuality: 'mid', qualityRequest: 'auto', qualityController: new QualityController('mid', 'high', 0),
@@ -55,6 +56,10 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     assert.equal(context.config.effects.fog?.enabled, false)
     assert.equal(removed, 1)
     assert.equal(manager.isInstalled('Fog'), false)
+    await engine.applyConfig({ particles: { color: '#112233' }, layout: { params: { radius: 900 } } } as never)
+    await engine.replaceConfig(applyViewerPreset('minimal', engine.getRequestedConfig()))
+    assert.equal(engine.getRequestedConfig().particles.color, undefined)
+    assert.equal(engine.getRequestedConfig().layout.params?.radius, undefined)
     manager.dispose()
   } finally { globalThis.window = oldWindow }
 })

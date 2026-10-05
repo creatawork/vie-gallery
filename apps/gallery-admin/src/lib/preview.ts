@@ -6,12 +6,13 @@ export interface PreviewToken {
 }
 
 export function viewerOrigin() {
+  if (import.meta.env.VITE_VIEWER_ORIGIN) return new URL(import.meta.env.VITE_VIEWER_ORIGIN).origin
   const { protocol, hostname, port } = window.location
   // 仅开发端口下 viewer 固定运行在 5174；
   // 其余场景（生产任意端口）viewer 与管理端同源同端口，
   // 丢弃端口会导致 iframe 指向默认端口而握手失败。
-  if (['5173', '5174', '5175'].includes(port)) {
-    return `${protocol}//${hostname}:5174`
+  if (import.meta.env.DEV && ['5173', '5174', '5175', '15173'].includes(port)) {
+    return `${protocol}//${hostname}:${port === '15173' ? '15174' : '5174'}`
   }
   return window.location.origin
 }

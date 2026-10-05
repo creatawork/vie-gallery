@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
+import { isTrustedPreviewMessage, normalizeViewerConfig, serializeViewerConfig, ViewerConfigValidationError } from '@vie/gallery-contracts'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
 import { ViewerEngine, WebGLUnavailableError, type EngineMetrics } from './core/ViewerEngine'
@@ -91,7 +92,9 @@ const presets = [
   { name: 'ocean-breeze', label: '海洋微风 · Breeze', icon: 'globe' },
   { name: 'sunset-glow', label: '日落余晖 · Sunset', icon: 'sparkles' },
   { name: 'romantic', label: '心动浪漫 · Hearts', icon: 'sparkles' },
-  { name: 'minimal', label: '极简空间 · Minimal', icon: 'cube' }
+  { name: 'minimal', label: '极简空间 · Minimal', icon: 'cube' },
+  { name: 'snowfall', label: '冬日雪境', icon: 'sparkles' },
+  { name: 'film', label: '胶片展厅', icon: 'cube' }
 ]
 
 onMounted(() => {
@@ -126,69 +129,37 @@ function isEmbedPreview() {
 }
 
 function adminEmbedOrigin() {
+  if (import.meta.env.VITE_ADMIN_ORIGIN) return new URL(import.meta.env.VITE_ADMIN_ORIGIN).origin
   const { protocol, hostname, port } = window.location
-  if (port === '5174' || port === '5175') {
-    return `${protocol}//${hostname}:5173`
-  }
-  if (document.referrer) {
-    try {
-      const referrer = new URL(document.referrer)
-      if (referrer.origin !== window.location.origin) {
-        return referrer.origin
-      }
-    } catch {
-      // Fall back to same-origin below.
-    }
-  }
+  if (import.meta.env.DEV && ['5174', '5175', '15174'].includes(port)) return protocol + '//' + hostname + ':' + (port === '15174' ? '15173' : '5173')
   return window.location.origin
 }
-
-function isTrustedPreviewOrigin(origin: string) {
-  if (origin === 'null') {
-    return import.meta.env.DEV && isEmbedPreview()
-  }
-  if (!origin) return false
-  try {
-    const url = new URL(origin)
-    const localHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
-    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) return true
-    return url.hostname === window.location.hostname
-  } catch {
-    return false
-  }
-}
-
+let previewSequence = 0
 async function handlePostMessage(event: MessageEvent) {
-  if (!isTrustedPreviewOrigin(event.origin)) return
-  if (isEmbedPreview() && event.source !== window.parent && event.source !== window.opener) return
-  if (!event.data || typeof event.data !== 'object') return
-  const { type, mode, config, presetName } = event.data
-
-  if (type === 'VIE_LAYOUT_CHANGE' && typeof mode === 'string' && engine) {
-    engine.getEventBus().emit('layout:change', mode)
-  } else if (type === 'VIE_PRESET_CHANGE' && typeof presetName === 'string') {
-    selectPreset(presetName)
-  } else if (type === 'VIE_CONFIG_UPDATE' && config && typeof config === 'object') {
-    viewer.viewerConfig.value = config
-    if (!engine && isEmbedPreview()) {
-      await nextTick()
-      await init3DEngine()
-    }
-    if (engine) engine.applyConfig(config)
-    // 相机行为跟随配置中心实时更新
-    applyAutoTour(config.camera?.autoRotate === true)
+  const origin = adminEmbedOrigin()
+  if (!isEmbedPreview() || !isTrustedPreviewMessage(event, window.parent, origin)) return
+  if (event.data?.type !== 'VIE_CONFIG_UPDATE' || !Number.isSafeInteger(event.data.sequence) || event.data.sequence <= previewSequence) return
+  const sequence: number = event.data.sequence
+  previewSequence = sequence
+  try {
+    const result = normalizeViewerConfig(event.data.config)
+    if (result.issues.length) throw new ViewerConfigValidationError(result.issues)
+    serializeViewerConfig(result.config)
+    const activeEngine = engine
+    if (!activeEngine) throw new Error('预览尚未就绪，请重试。')
+    await activeEngine.replaceConfig(result.config)
+    if (sequence !== previewSequence || activeEngine !== engine) return
+    viewer.viewerConfig.value = result.config
+    applyAutoTour(result.config.camera?.autoRotate === true)
+    window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence, effectiveQuality: activeEngine.getEffectiveQuality(), reason: activeEngine.getQualityReason() }, origin)
+  } catch (cause) {
+    if (sequence !== previewSequence) return
+    window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence, effectiveQuality: engine?.getEffectiveQuality() ?? 'low', reason: null,
+      error: cause instanceof ViewerConfigValidationError ? cause.message : '预览应用失败，请重试。' }, origin)
   }
 }
-
 function notifyParentReady() {
-  const payload = { type: 'VIE_PREVIEW_READY' }
-  const targetOrigin = adminEmbedOrigin()
-  if (window.parent && window.parent !== window) {
-    window.parent.postMessage(payload, targetOrigin)
-  }
-  if (window.opener && !window.opener.closed) {
-    window.opener.postMessage(payload, targetOrigin)
-  }
+  if (isEmbedPreview()) window.parent.postMessage({ type: 'VIE_PREVIEW_READY' }, adminEmbedOrigin())
 }
 
 function handleFullscreenChange() {

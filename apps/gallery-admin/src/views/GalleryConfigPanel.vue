@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
 import type { Gallery } from '@vie/gallery-contracts'
 import { useToast } from '../composables/useToast'
-import { useSliderEnhanceBatch } from '../composables/useSliderEnhance'
+import { useViewerConfigEditor } from '../composables/useViewerConfigEditor'
+import { createViewerPreviewChannel } from '../lib/viewerPreviewChannel'
+import { isViewerPreset, parseViewerConfig, serializeViewerConfig, type PresetName } from '@vie/gallery-contracts'
+import LayoutControls from '../components/gallery-config/LayoutControls.vue'
+import AtmosphereControls from '../components/gallery-config/AtmosphereControls.vue'
+import MotionQualityControls from '../components/gallery-config/MotionQualityControls.vue'
+import PresetCards from '../components/gallery-config/PresetCards.vue'
 import Icon from '../components/Icon.vue'
 import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -18,43 +24,6 @@ const { can } = useAuth()
 const canConfigWrite = can('CONFIG_WRITE')
 const galleryId = route.params.id as string
 
-const LAYOUTS = [
-  { id: 'sphere', label: '环形展厅' },
-  { id: 'carousel', label: '线性长廊' },
-  { id: 'helix', label: '螺旋长廊' },
-  { id: 'grid', label: '聚焦式' },
-  { id: 'spiral', label: '旋臂漫游' },
-  { id: 'random', label: '自由探索' }
-] as const
-
-const ATMOSPHERE_PRESETS = [
-  { name: 'minimal', label: '极简空间', hint: '通透白净' },
-  { name: 'forest-dream', label: '森林之梦', hint: '樱花微尘' },
-  { name: 'starry-night', label: '星空夜曲', hint: '辉光星尘' },
-  { name: 'ocean-breeze', label: '海洋微风', hint: '蔚蓝天穹' },
-  { name: 'sunset-glow', label: '日落余晖', hint: '晚霞云彩' },
-  { name: 'romantic', label: '心动浪漫', hint: '玫瑰粉雾' }
-] as const
-
-const PARTICLE_TYPES = [
-  { id: 'stars', label: '星尘' },
-  { id: 'sakura', label: '樱花' },
-  { id: 'hearts', label: '心形' },
-  { id: 'snow', label: '雪花' },
-  { id: 'fireflies', label: '萤火虫' },
-  { id: 'meteors', label: '流星' }
-] as const
-
-const FOG_COLORS = ['#e8f0ea', '#163124', '#0c4a6e', '#7c2d12', '#0f172a', '#4a0e2e']
-
-const LIGHTING_TIMES = [
-  { id: 'auto', label: '跟随时刻' },
-  { id: 'sunrise', label: '清晨' },
-  { id: 'noon', label: '正午' },
-  { id: 'sunset', label: '黄昏' },
-  { id: 'night', label: '夜晚' }
-] as const
-
 interface ConfigVersionItem {
   id: string
   configJson?: string
@@ -67,10 +36,11 @@ interface ConfigVersionItem {
 
 
 const loading = ref(true)
-const saving = ref(false)
+const editor = useViewerConfigEditor(galleryId, { canWrite: () => canConfigWrite.value })
+const { config, issues, saving, savedJson: savedDraftJson } = editor
+const previewStatus = ref('尚未应用')
 const galleryInfo = ref<Gallery | null>(null)
 const showResetConfirm = ref(false)
-const resetting = ref(false)
 const showPublishConfirm = ref(false)
 const showRollbackConfirm = ref(false)
 const publishing = ref(false)
@@ -79,17 +49,9 @@ const rollbackVersionId = ref<string | null>(null)
 const versions = ref<ConfigVersionItem[]>([])
 const publishedVersionId = ref<string | null>(null)
 const lastPublishedAt = ref<string | null>(null)
-const savedDraftJson = ref('')
 const publishedConfigJson = ref<string | null>(null)
 const previewKey = ref(0)
 
-const lightLevel = ref(72)
-const fogLevel = ref(35)
-const fogColor = ref('#e8f0ea')
-const bloomOn = ref(true)
-const bloomRadius = ref(50)
-const bloomThreshold = ref(18)
-const audioOn = ref(true)
 const lastSavedLabel = ref('')
 const lastSaveFailed = ref(false)
 const loadError = ref('')
@@ -148,146 +110,24 @@ function formatHistoryTime(value?: string) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${hm}`
 }
 
-function getCleanConfig() {
-  return {
-    presetName: config.presetName || 'custom',
-    visitorAllowDownload: !!config.visitorAllowDownload,
-    layout: {
-      mode: config.layout?.mode || 'sphere'
-    },
-    particles: {
-      enabled: !!config.particles?.enabled,
-      types: Array.isArray(config.particles?.types) ? [...config.particles.types] : ['stars'],
-      density: config.particles?.density ?? 1.0
-    },
-    effects: {
-      bloom: {
-        enabled: !!config.effects?.bloom?.enabled,
-        strength: config.effects?.bloom?.strength ?? 0.75,
-        radius: config.effects?.bloom?.radius ?? 0.5,
-        threshold: config.effects?.bloom?.threshold ?? 0.18
-      },
-      fog: {
-        enabled: !!config.effects?.fog?.enabled,
-        color: config.effects?.fog?.color || '#0f172a',
-        density: config.effects?.fog?.density ?? 0.0008
-      },
-      photoFloat: !!config.effects?.photoFloat
-    },
-    camera: {
-      autoRotate: !!config.camera?.autoRotate,
-      introFlight: !!config.camera?.introFlight
-    },
-    interaction: {
-      clickRipple: config.interaction?.clickRipple ?? true,
-      cursorTrail: !!config.interaction?.cursorTrail
-    },
-    audio: {
-      bgm: { enabled: !!config.audio?.bgm?.enabled },
-      sfx: { enabled: config.audio?.sfx?.enabled ?? true }
-    },
-    lighting: {
-      timeOfDay: config.lighting?.timeOfDay || 'auto',
-      autoColorAdapt: config.lighting?.autoColorAdapt ?? true
-    }
-  }
-}
-
-function ensureConfigDefaults() {
-  if (!config.particles) config.particles = { enabled: true, types: ['stars'], density: 1.0 }
-  if (!Array.isArray(config.particles.types)) config.particles.types = ['stars']
-  if (!config.effects) config.effects = {} as any
-  if (!config.effects.bloom) config.effects.bloom = { enabled: true, strength: 0.75, radius: 0.5, threshold: 0.18 }
-  if (!config.effects.fog) config.effects.fog = { enabled: false, color: '#0f172a', density: 0.0008 }
-  if (config.effects.photoFloat === undefined) config.effects.photoFloat = true
-  if (!config.layout) config.layout = { mode: 'sphere' }
-  if (!config.interaction) config.interaction = { clickRipple: true, cursorTrail: false }
-  if (config.interaction.cursorTrail === undefined) config.interaction.cursorTrail = false
-  if (!config.camera) config.camera = { autoRotate: false, introFlight: false }
-  if (config.camera.introFlight === undefined) config.camera.introFlight = false
-  if (!config.lighting) config.lighting = { timeOfDay: 'auto', autoColorAdapt: true }
-  if (!config.lighting.timeOfDay) config.lighting.timeOfDay = 'auto'
-  if (config.lighting.autoColorAdapt === undefined) config.lighting.autoColorAdapt = true
-}
-
-function deepMerge(target: any, source: any) {
-  if (!source) return target
-  for (const key of Object.keys(source)) {
-    const val = source[key]
-    if (val && typeof val === 'object' && !Array.isArray(val)) {
-      if (!target[key] || typeof target[key] !== 'object') target[key] = {}
-      deepMerge(target[key], val)
-    } else if (Array.isArray(val)) {
-      target[key] = [...val]
-    } else if (val !== undefined) {
-      target[key] = val
-    }
-  }
-  return target
-}
-
-function syncAtmosphereFromConfig() {
-  bloomOn.value = !!config.effects.bloom.enabled
-  lightLevel.value = Math.round(((config.effects.bloom.strength || 0.75) / 1.8) * 100)
-  bloomRadius.value = Math.round((config.effects.bloom.radius ?? 0.5) * 100)
-  bloomThreshold.value = Math.round((config.effects.bloom.threshold ?? 0.18) * 100)
-  fogLevel.value = Math.round(((config.effects.fog.density || 0) / 0.0015) * 100)
-  fogColor.value = config.effects.fog.color || '#e8f0ea'
-  audioOn.value = !!config.audio.bgm.enabled
-}
-
-function applyAtmosphereToConfig() {
-  config.effects.bloom.enabled = bloomOn.value
-  config.effects.bloom.strength = Math.max(0.1, (lightLevel.value / 100) * 1.8)
-  config.effects.bloom.radius = Math.max(0.1, bloomRadius.value / 100)
-  config.effects.bloom.threshold = Math.max(0.05, bloomThreshold.value / 100)
-  config.effects.fog.enabled = fogLevel.value > 0
-  config.effects.fog.density = (fogLevel.value / 100) * 0.0015
-  config.effects.fog.color = fogColor.value
-  config.audio.bgm.enabled = audioOn.value
-}
-
-function sendLiveMessage(payload: Record<string, unknown>) {
-  previewIframeRef.value?.contentWindow?.postMessage(payload, '*')
-}
-
-let livePreviewTimer: number | null = null
-
-// 拖动滑块时 input 事件高频触发，预览端每次都会重装特效插件；
-// 节流到 120ms 一条，肉眼无感知差异但避免预览卡顿。
+function getCleanConfig() { return config.value }
+function canonicalConfig(json: string): string { return serializeViewerConfig(parseViewerConfig(json, 1, 'legacy').config) }
+let previewChannel: ReturnType<typeof createViewerPreviewChannel> | null = null
 function refreshLivePreview() {
-  if (livePreviewTimer) return
-  livePreviewTimer = window.setTimeout(() => {
-    livePreviewTimer = null
-    sendLiveMessage({ type: 'VIE_CONFIG_UPDATE', config: getCleanConfig() })
-  }, 120)
+  if (issues.value.length) return
+  previewChannel?.send(config.value)
+  previewStatus.value = '正在应用…'
 }
-
-function isTrustedPreviewOrigin(origin: string) {
-  if (!origin || origin === 'null') return true
-  try {
-    const url = new URL(origin)
-    const localHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
-    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) return true
-    return url.hostname === window.location.hostname
-  } catch {
-    return false
-  }
-}
-
-function onPreviewReady(event: MessageEvent) {
-  if (!isTrustedPreviewOrigin(event.origin)) return
-  if (event.data?.type !== 'VIE_PREVIEW_READY') return
-  clearHandshakeTimer()
-  embedTimedOut.value = false
-  previewLive.value = true
-  const payload = { type: 'VIE_CONFIG_UPDATE', config: getCleanConfig() }
-  const source = event.source as Window | MessagePort | ServiceWorker | null
-  if (source && 'postMessage' in source) {
-    source.postMessage(payload, { targetOrigin: event.origin === 'null' ? '*' : event.origin } as WindowPostMessageOptions)
-  }
-  nextTick(() => refreshLivePreview())
-}
+watch(previewIframeRef, iframe => {
+  previewChannel?.dispose(); previewChannel = null
+  if (!iframe) return
+  previewChannel = createViewerPreviewChannel(iframe, message => {
+    previewStatus.value = message.error ? '预览应用失败，请重试' : '已应用'
+      + ' · 有效画质 ' + ({ low: '低', mid: '中', high: '高' }[message.effectiveQuality])
+      + (message.reason ? ' · ' + message.reason : '')
+  }, () => { clearHandshakeTimer(); embedTimedOut.value = false; previewLive.value = true })
+  refreshLivePreview()
+}, { flush: 'post' })
 
 async function retryEmbedPreview() {
   embedTimedOut.value = false
@@ -304,26 +144,11 @@ async function retryEmbedPreview() {
   if (showPreviewFrame.value) startHandshakeTimer()
 }
 
-const config = reactive({
-  presetName: 'custom' as string | null,
-  visitorAllowDownload: false,
-  layout: { mode: 'sphere' },
-  particles: { enabled: true, types: ['stars'] as string[], density: 1.0 },
-  effects: {
-    bloom: { enabled: true, strength: 1.3, radius: 0.5, threshold: 0.18 },
-    fog: { enabled: true, color: '#e8f0ea', density: 0.0007 },
-    photoFloat: true
-  },
-  interaction: { clickRipple: true, cursorTrail: false },
-  camera: { autoRotate: false, introFlight: false },
-  audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-  lighting: { timeOfDay: 'auto' as string, autoColorAdapt: true }
-})
-
-const hasDraftChanges = computed(() => savedDraftJson.value !== JSON.stringify(getCleanConfig()))
+const hasDraftChanges = editor.dirty
 const hasUnpublishedDraft = computed(() => !publishedVersionId.value || publishedConfigJson.value !== savedDraftJson.value)
 const syncStatus = computed(() => {
   if (saving.value) return '正在保存草稿…'
+  if (issues.value.length) return '请先修正配置错误'
   if (lastSaveFailed.value) return '草稿保存失败，请重试'
   if (hasDraftChanges.value) return '有未保存的更改'
   if (hasUnpublishedDraft.value) {
@@ -376,7 +201,7 @@ async function loadVersions() {
   const data = await response.json()
   versions.value = Array.isArray(data.items) ? data.items : []
   const published = versions.value.find(version => version.id === publishedVersionId.value)
-  publishedConfigJson.value = published?.configJson || publishedConfigJson.value
+  if (published?.configJson) publishedConfigJson.value = canonicalConfig(published.configJson)
 }
 
 async function loadGalleryAndConfig() {
@@ -415,23 +240,18 @@ async function loadGalleryAndConfig() {
       const data = await response.json()
       if (data) {
         if (data.configJson) {
-          const parsed = JSON.parse(data.configJson)
-          deepMerge(config, parsed)
-          if (data.presetName) config.presetName = data.presetName
+          editor.replace(data.configJson, false, data.schemaVersion ?? 1)
+          if (data.presetName) config.value.presetName = data.presetName
         }
         publishedVersionId.value = data.publishedVersionId || null
         lastPublishedAt.value = data.lastPublishedAt || null
-        publishedConfigJson.value = data.publishedConfigJson || (data.publishedVersionId ? null : JSON.stringify(getCleanConfig()))
+        publishedConfigJson.value = data.publishedConfigJson ? canonicalConfig(data.publishedConfigJson) : (data.publishedVersionId ? null : serializeViewerConfig(getCleanConfig()))
       }
-      ensureConfigDefaults()
-      syncAtmosphereFromConfig()
-      savedDraftJson.value = JSON.stringify(getCleanConfig())
+      savedDraftJson.value = serializeViewerConfig(getCleanConfig())
       lastSavedLabel.value = formatClock(new Date())
       await loadVersions()
     } else if (response.status === 404) {
-      ensureConfigDefaults()
-      syncAtmosphereFromConfig()
-      savedDraftJson.value = JSON.stringify(getCleanConfig())
+      editor.replace('{}', true)
     } else {
       loadError.value = '展厅配置加载失败，请稍后重试。'
     }
@@ -444,159 +264,17 @@ async function loadGalleryAndConfig() {
 }
 
 function scheduleAutoSave() {
-  if (!canConfigWrite.value) return
-  applyAtmosphereToConfig()
+  if (!canConfigWrite.value || issues.value.length) {
+    if (saveTimer) window.clearTimeout(saveTimer)
+    return
+  }
   refreshLivePreview()
   if (saveTimer) window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(() => {
-    save({ silent: true })
-  }, 800)
+  saveTimer = window.setTimeout(() => { saveTimer = null; void save({ silent: true }) }, 800)
 }
-
-function setLayout(mode: string) {
-  if (!canConfigWrite.value) return
-  config.layout.mode = mode
-  config.presetName = 'custom'
-  sendLiveMessage({ type: 'VIE_LAYOUT_CHANGE', mode })
-  scheduleAutoSave()
-}
-
-function onAtmosphereInput() {
-  config.presetName = 'custom'
-  applyAtmosphereToConfig()
-  scheduleAutoSave()
-}
-
-function toggleParticleType(id: string) {
-  if (!canConfigWrite.value) return
-  const types = config.particles.types
-  const index = types.indexOf(id)
-  if (index >= 0) types.splice(index, 1)
-  else types.push(id)
-  config.particles.enabled = types.length > 0
-  config.presetName = 'custom'
-  scheduleAutoSave()
-}
-
-function setParticlesEnabled(enabled: boolean) {
-  if (!canConfigWrite.value) return
-  config.particles.enabled = enabled
-  if (enabled && !config.particles.types.length) config.particles.types = ['stars']
-  config.presetName = 'custom'
-  scheduleAutoSave()
-}
-
-function setFogColor(color: string) {
-  if (!canConfigWrite.value) return
-  fogColor.value = color
-  config.presetName = 'custom'
-  scheduleAutoSave()
-}
-
-function setLightingTime(time: string) {
-  if (!canConfigWrite.value) return
-  config.lighting.timeOfDay = time
-  config.presetName = 'custom'
-  scheduleAutoSave()
-}
-
-function applyPreset(name: string) {
-  if (!canConfigWrite.value) return
-  const presets: Record<string, Partial<typeof config>> = {
-    minimal: {
-      presetName: 'minimal',
-      layout: { mode: 'sphere' },
-      particles: { enabled: false, types: [], density: 1 },
-      effects: {
-        bloom: { enabled: false, strength: 0.4, radius: 0.4, threshold: 0.3 },
-        fog: { enabled: false, color: '#e8f0ea', density: 0 },
-        photoFloat: false
-      },
-      interaction: { clickRipple: true, cursorTrail: false },
-      camera: { autoRotate: false, introFlight: false },
-      audio: { bgm: { enabled: false }, sfx: { enabled: true } },
-      lighting: { timeOfDay: 'noon', autoColorAdapt: false }
-    },
-    'forest-dream': {
-      presetName: 'forest-dream',
-      layout: { mode: 'helix' },
-      particles: { enabled: true, types: ['sakura', 'fireflies'], density: 1 },
-      effects: {
-        bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
-        fog: { enabled: true, color: '#163124', density: 0.0006 },
-        photoFloat: true
-      },
-      interaction: { clickRipple: true, cursorTrail: false },
-      camera: { autoRotate: false, introFlight: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-      lighting: { timeOfDay: 'sunrise', autoColorAdapt: true }
-    },
-    'starry-night': {
-      presetName: 'starry-night',
-      layout: { mode: 'sphere' },
-      particles: { enabled: true, types: ['stars', 'meteors'], density: 1.2 },
-      effects: {
-        bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
-        fog: { enabled: false, color: '#0f172a', density: 0 },
-        photoFloat: false
-      },
-      interaction: { clickRipple: true, cursorTrail: true },
-      camera: { autoRotate: false, introFlight: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-      lighting: { timeOfDay: 'night', autoColorAdapt: true }
-    },
-    'ocean-breeze': {
-      presetName: 'ocean-breeze',
-      layout: { mode: 'spiral' },
-      particles: { enabled: false, types: [], density: 1 },
-      effects: {
-        bloom: { enabled: false, strength: 0.4, radius: 0.4, threshold: 0.25 },
-        fog: { enabled: true, color: '#0c4a6e', density: 0.0008 },
-        photoFloat: false
-      },
-      interaction: { clickRipple: true, cursorTrail: false },
-      camera: { autoRotate: true, introFlight: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-      lighting: { timeOfDay: 'noon', autoColorAdapt: true }
-    },
-    'sunset-glow': {
-      presetName: 'sunset-glow',
-      layout: { mode: 'grid' },
-      particles: { enabled: true, types: ['sakura'], density: 0.8 },
-      effects: {
-        bloom: { enabled: true, strength: 0.85, radius: 0.6, threshold: 0.2 },
-        fog: { enabled: true, color: '#7c2d12', density: 0.0005 },
-        photoFloat: true
-      },
-      interaction: { clickRipple: true, cursorTrail: true },
-      camera: { autoRotate: false, introFlight: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-      lighting: { timeOfDay: 'sunset', autoColorAdapt: true }
-    },
-    romantic: {
-      presetName: 'romantic',
-      layout: { mode: 'spiral' },
-      particles: { enabled: true, types: ['hearts', 'fireflies'], density: 1 },
-      effects: {
-        bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
-        fog: { enabled: false, color: '#4a0e2e', density: 0 },
-        photoFloat: true
-      },
-      interaction: { clickRipple: true, cursorTrail: true },
-      camera: { autoRotate: false, introFlight: false },
-      audio: { bgm: { enabled: true }, sfx: { enabled: true } },
-      lighting: { timeOfDay: 'night', autoColorAdapt: true }
-    }
-  }
-  const next = presets[name]
-  if (!next) return
-  deepMerge(config, next)
-  config.presetName = name
-  ensureConfigDefaults()
-  syncAtmosphereFromConfig()
-  sendLiveMessage({ type: 'VIE_PRESET_CHANGE', presetName: name })
-  scheduleAutoSave()
-}
+function patchConfig(input: unknown) { editor.patch(input); scheduleAutoSave() }
+function applyPreset(name: PresetName) { editor.preset(name); scheduleAutoSave() }
+function resetPreset() { editor.resetPreset(); scheduleAutoSave() }
 
 let saveQueue: Promise<boolean> = Promise.resolve(true)
 
@@ -616,51 +294,19 @@ function save(options?: { silent?: boolean }): Promise<boolean> {
 }
 
 async function doSave(options?: { silent?: boolean }): Promise<boolean> {
-  if (!canConfigWrite.value) {
-    if (!options?.silent) toast.error('当前角色没有修改配置的权限。')
-    return false
-  }
-  saving.value = true
-  try {
-    ensureConfigDefaults()
-    applyAtmosphereToConfig()
-    const cleanConfig = getCleanConfig()
-    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        configJson: JSON.stringify(cleanConfig),
-        presetName: cleanConfig.presetName,
-        schemaVersion: 1
-      })
-    })
-
-    if (!response.ok) {
-      let msg = '草稿保存失败，请稍后重试。'
-      try {
-        const data = await response.json()
-        if (data && (data.message || data.code)) msg = data.message || data.code
-      } catch (_) {}
-      throw new Error(msg)
-    }
-
-    savedDraftJson.value = JSON.stringify(cleanConfig)
+  if (saveTimer) { window.clearTimeout(saveTimer); saveTimer = null }
+  const success = await editor.save()
+  lastSaveFailed.value = !success
+  if (success) {
     lastSavedLabel.value = formatClock(new Date())
-    lastSaveFailed.value = false
     refreshLivePreview()
     if (!options?.silent) toast.success('草稿已保存。')
-    return true
-  } catch (err) {
-    lastSaveFailed.value = true
-    if (!options?.silent) toast.error(err instanceof Error ? err.message : '保存失败，请检查网络或登录状态')
-    return false
-  } finally {
-    saving.value = false
-  }
+  } else if (!options?.silent) toast.error(issues.value.length ? '请先修正配置字段错误。' : editor.error.value || '草稿未保存，请检查权限。')
+  return success
 }
 
 async function publishDraft() {
-  if (!canConfigWrite.value) return
+  if (!canConfigWrite.value || issues.value.length || publishing.value) return
   // 发布前确保草稿已落库，避免把内存里的最新更改遗留在上一版草稿上
   if (hasDraftChanges.value || lastSaveFailed.value) {
     const saved = await save({ silent: true })
@@ -670,6 +316,12 @@ async function publishDraft() {
       return
     }
   }
+  if (hasDraftChanges.value) {
+    toast.info('保存期间有新更改，请先保存最新草稿后再同步。')
+    showPublishConfirm.value = false
+    return
+  }
+  const publishedSnapshot = savedDraftJson.value
   publishing.value = true
   try {
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
@@ -682,7 +334,7 @@ async function publishDraft() {
     }
     const version = await response.json()
     publishedVersionId.value = version.id || null
-    publishedConfigJson.value = savedDraftJson.value
+    publishedConfigJson.value = publishedSnapshot
     lastPublishedAt.value = version.createdAt || new Date().toISOString()
     await loadVersions()
     showPublishConfirm.value = false
@@ -716,10 +368,8 @@ async function rollbackDraft() {
     const selected = versions.value.find(version => version.id === rollbackVersionId.value)
     if (selected?.configJson) {
       const parsed = JSON.parse(selected.configJson)
-      deepMerge(config, parsed)
-      if (selected.presetName) config.presetName = selected.presetName
-      ensureConfigDefaults()
-      syncAtmosphereFromConfig()
+      editor.replace(JSON.stringify(parsed))
+      if (selected.presetName) config.value.presetName = selected.presetName
       const saved = await save({ silent: true })
       if (!saved) throw new Error('草稿保存失败，未完成回滚，请重试。')
       showRollbackConfirm.value = false
@@ -736,11 +386,9 @@ async function rollbackDraft() {
     if (!response.ok) throw new Error('回滚失败，请稍后重试。')
     const version = await response.json()
     const parsed = JSON.parse(version.configJson)
-    deepMerge(config, parsed)
-    if (version.presetName) config.presetName = version.presetName
-    ensureConfigDefaults()
-    syncAtmosphereFromConfig()
-    savedDraftJson.value = JSON.stringify(getCleanConfig())
+    editor.replace(JSON.stringify(parsed))
+    if (version.presetName) config.value.presetName = version.presetName
+    savedDraftJson.value = serializeViewerConfig(getCleanConfig())
     await loadVersions()
     showRollbackConfirm.value = false
     rollbackVersionId.value = null
@@ -754,22 +402,8 @@ async function rollbackDraft() {
 }
 
 async function confirmReset() {
-  if (!canConfigWrite.value) return
-  resetting.value = true
-  try {
-    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`, { method: 'DELETE' })
-    if (response.ok) {
-      await loadGalleryAndConfig()
-      toast.success('已恢复默认配置')
-      showResetConfirm.value = false
-    } else {
-      toast.error('重置失败，请稍后重试')
-    }
-  } catch {
-    toast.error('重置操作失败')
-  } finally {
-    resetting.value = false
-  }
+  resetPreset()
+  showResetConfirm.value = false
 }
 
 async function openLivePreview() {
@@ -798,7 +432,7 @@ watch(showPreviewFrame, (shouldEmbed) => {
 // 补存失败时由用户确认是否放弃。
 onBeforeRouteLeave(async () => {
   if (!canConfigWrite.value) return true
-  if (!hasDraftChanges.value && !lastSaveFailed.value) return true
+  if (!hasDraftChanges.value && !lastSaveFailed.value && !issues.value.length) return true
   if (saveTimer) {
     window.clearTimeout(saveTimer)
     saveTimer = null
@@ -809,31 +443,27 @@ onBeforeRouteLeave(async () => {
 })
 
 function handleConfigBeforeUnload(event: BeforeUnloadEvent) {
-  if (!hasDraftChanges.value && !lastSaveFailed.value) return
+  if (!hasDraftChanges.value && !lastSaveFailed.value && !issues.value.length) return
   event.preventDefault()
   event.returnValue = '展厅配置尚未保存，确定离开？'
 }
 
 onMounted(() => {
   loadGalleryAndConfig()
-  window.addEventListener('message', onPreviewReady)
 
-  // 初始化滑块增强效果
-  useSliderEnhanceBatch('.range')
   window.addEventListener('beforeunload', handleConfigBeforeUnload)
 })
 
 onUnmounted(() => {
   if (saveTimer) window.clearTimeout(saveTimer)
-  if (livePreviewTimer) window.clearTimeout(livePreviewTimer)
+  previewChannel?.dispose()
   clearHandshakeTimer()
-  window.removeEventListener('message', onPreviewReady)
   window.removeEventListener('beforeunload', handleConfigBeforeUnload)
 })
 </script>
 
 <template>
-  <div class="config-page" :class="{ 'is-full': isFullscreen }" :style="{ '--light': lightLevel / 100, '--fog': fogLevel / 100 }">
+  <div class="config-page" :class="{ 'is-full': isFullscreen }">
     <div class="config-scene" aria-hidden="true"></div>
 
     <header class="config-nav">
@@ -862,7 +492,7 @@ onUnmounted(() => {
       </nav>
 
       <div class="nav-actions">
-        <p class="autosave" :class="{ 'is-warn': lastSaveFailed || hasDraftChanges }">
+        <p role="status" class="autosave" :class="{ 'is-warn': lastSaveFailed || hasDraftChanges }">
           <Icon :name="lastSaveFailed || hasDraftChanges ? 'alert-circle' : 'check-circle'" :size="15" />
           <span>{{ syncStatus }}</span>
         </p>
@@ -870,7 +500,7 @@ onUnmounted(() => {
           <Icon name="undo" :size="14" />
           <span>回滚</span>
         </button>
-        <button v-if="canConfigWrite" class="btn ghost" type="button" @click="showResetConfirm = true">
+        <button v-if="canConfigWrite" class="btn ghost" type="button" :disabled="!config.presetName || !isViewerPreset(config.presetName)" @click="showResetConfirm = true">
           <Icon name="refresh" :size="14" />
           <span>重置</span>
         </button>
@@ -883,7 +513,8 @@ onUnmounted(() => {
         >
           <span>{{ saving ? '保存中…' : '重试保存' }}</span>
         </button>
-        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="publishing || saving || hasDraftChanges || lastSaveFailed" @click="showPublishConfirm = true">
+        <button v-if="canConfigWrite" class="btn outline" type="button" :disabled="saving || !!issues.length" @click="save()">{{ saving ? '保存中…' : '保存草稿' }}</button>
+        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="publishing || saving || hasDraftChanges || lastSaveFailed || !!issues.length" @click="showPublishConfirm = true">
           <Icon name="send" :size="14" />
           <span>{{ publishing ? '同步中…' : '同步到访客端' }}</span>
         </button>
@@ -917,408 +548,13 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <section v-show="configTab === 'basics'" class="side-block">
-          <h2>
-            <Icon name="layout" :size="15" />
-            布局预设
-          </h2>
-          <div class="layout-grid">
-            <button
-              v-for="item in LAYOUTS"
-              :key="item.id"
-              class="layout-card"
-              :class="{ active: config.layout.mode === item.id }"
-              type="button"
-              :disabled="!canConfigWrite"
-              @click="setLayout(item.id)"
-            >
-              <span class="layout-glyph" :data-layout="item.id" aria-hidden="true">
-                <svg v-if="item.id === 'sphere'" viewBox="0 0 32 32" fill="none">
-                  <circle cx="16" cy="16" r="9" />
-                  <ellipse cx="16" cy="16" rx="9" ry="3.5" />
-                  <ellipse cx="16" cy="16" rx="3.5" ry="9" />
-                </svg>
-                <svg v-else-if="item.id === 'carousel'" viewBox="0 0 32 32" fill="none">
-                  <path d="M6 20c4-8 16-8 20 0" />
-                  <path d="M8 16c3.4-5 13-5 16 0" />
-                  <circle cx="9" cy="18" r="1.5" fill="currentColor" stroke="none" />
-                  <circle cx="16" cy="13" r="1.5" fill="currentColor" stroke="none" />
-                  <circle cx="23" cy="18" r="1.5" fill="currentColor" stroke="none" />
-                </svg>
-                <svg v-else-if="item.id === 'helix'" viewBox="0 0 32 32" fill="none">
-                  <path d="M11 7c6 2 6 6 0 8s-6 6 0 8" />
-                  <path d="M21 7c-6 2-6 6 0 8s6 6 0 8" />
-                </svg>
-                <svg v-else-if="item.id === 'spiral'" viewBox="0 0 32 32" fill="none">
-                  <path d="M16 16c6 0 8-4 8-7s-3-6-8-6-9 3-9 8 4 10 10 10 8-3 8-7" />
-                </svg>
-                <svg v-else-if="item.id === 'random'" viewBox="0 0 32 32" fill="none">
-                  <circle cx="10" cy="11" r="2.2" fill="currentColor" stroke="none" />
-                  <circle cx="22" cy="9" r="1.6" fill="currentColor" stroke="none" />
-                  <circle cx="24" cy="20" r="2" fill="currentColor" stroke="none" />
-                  <circle cx="13" cy="22" r="1.7" fill="currentColor" stroke="none" />
-                  <circle cx="17" cy="15" r="1.4" fill="currentColor" stroke="none" />
-                </svg>
-                <svg v-else viewBox="0 0 32 32" fill="none">
-                  <rect x="8" y="8" width="16" height="16" rx="2" />
-                  <rect x="12" y="12" width="8" height="8" rx="1" />
-                </svg>
-              </span>
-              <span>{{ item.label }}</span>
-            </button>
-          </div>
-        </section>
-
-        <section v-show="configTab === 'basics'" class="side-block">
-          <h2>
-            <Icon name="download" :size="15" />
-            访客下载权限
-          </h2>
-          <label class="download-toggle-card">
-            <div class="toggle-info">
-              <strong>允许访客下载照片</strong>
-              <p>开启后访客在浏览展厅时可下载中等画质原片；默认关闭。</p>
-            </div>
-            <input
-              v-model="config.visitorAllowDownload"
-              type="checkbox"
-              class="download-checkbox"
-              :disabled="!canConfigWrite"
-              @change="scheduleAutoSave"
-            />
-          </label>
-        </section>
-
-        <section v-show="configTab === 'atmosphere'" class="side-block">
-          <h2>
-            <Icon name="sparkles" :size="15" />
-            一键氛围
-          </h2>
-          <div class="preset-grid">
-            <button
-              v-for="preset in ATMOSPHERE_PRESETS"
-              :key="preset.name"
-              class="preset-mini"
-              :class="{ active: config.presetName === preset.name }"
-              type="button"
-              :disabled="!canConfigWrite"
-              @click="applyPreset(preset.name)"
-            >
-              <strong>{{ preset.label }}</strong>
-              <small>{{ preset.hint }}</small>
-            </button>
-          </div>
-        </section>
-
-        <section v-show="configTab === 'atmosphere'" class="side-block">
-          <h2>
-            <Icon name="sparkles" :size="15" />
-            氛围
-          </h2>
-
-          <div class="slider-row">
-            <Icon name="sun" :size="15" />
-            <div class="slider-copy">
-              <span>
-                辉光强度
-                <span class="help-tip" title="控制照片周围的光晕效果。值越高，光晕越明显">ⓘ</span>
-              </span>
-              <strong>{{ lightLevel }}%</strong>
-            </div>
-          </div>
-          <input
-            v-model.number="lightLevel"
-            class="range"
-            type="range"
-            min="5"
-            max="100"
-            :disabled="!canConfigWrite || !bloomOn"
-            @input="onAtmosphereInput"
-          />
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="zap" :size="15" />
-              <span>辉光效果</span>
-            </div>
-            <label class="switch">
-              <input v-model="bloomOn" type="checkbox" :disabled="!canConfigWrite" @change="onAtmosphereInput" />
-              <span></span>
-            </label>
-          </div>
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="volume" :size="15" />
-              <span>环境音效</span>
-            </div>
-            <label class="switch">
-              <input v-model="audioOn" type="checkbox" :disabled="!canConfigWrite" @change="onAtmosphereInput" />
-              <span></span>
-            </label>
-          </div>
-
-          <label class="field-label">光照时段</label>
-          <div class="chip-row">
-            <button
-              v-for="item in LIGHTING_TIMES"
-              :key="item.id"
-              class="chip"
-              :class="{ active: config.lighting.timeOfDay === item.id }"
-              type="button"
-              :disabled="!canConfigWrite"
-              @click="setLightingTime(item.id)"
-            >
-              {{ item.label }}
-            </button>
-          </div>
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="sparkles" :size="15" />
-              <span>
-                照片主色适应
-                <span class="help-tip" title="点击照片时，环境光会缓缓染上这张照片的主色调">ⓘ</span>
-              </span>
-            </div>
-            <label class="switch">
-              <input
-                v-model="config.lighting.autoColorAdapt"
-                type="checkbox"
-                :disabled="!canConfigWrite"
-                @change="onAtmosphereInput"
-              />
-              <span></span>
-            </label>
-          </div>
-
-          <div class="slider-row">
-            <Icon name="cloud" :size="15" />
-            <div class="slider-copy">
-              <span>
-                空间雾化
-                <span class="help-tip" title="增加空间深度感，营造氛围">ⓘ</span>
-              </span>
-              <strong>{{ fogLevel }}%</strong>
-            </div>
-          </div>
-          <input
-            v-model.number="fogLevel"
-            class="range"
-            type="range"
-            min="0"
-            max="80"
-            :disabled="!canConfigWrite"
-            @input="onAtmosphereInput"
-          />
-
-          <div v-if="fogLevel > 0" class="swatch-row">
-            <span class="swatch-label">雾色</span>
-            <div class="swatches">
-              <button
-                v-for="color in FOG_COLORS"
-                :key="color"
-                class="swatch"
-                :class="{ active: fogColor.toLowerCase() === color.toLowerCase() }"
-                type="button"
-                :style="{ background: color }"
-                :disabled="!canConfigWrite"
-                :aria-label="`使用雾色 ${color}`"
-                @click="setFogColor(color)"
-              ></button>
-              <input
-                type="color"
-                class="swatch-picker"
-                v-model="fogColor"
-                :disabled="!canConfigWrite"
-                aria-label="自定义雾色"
-                @input="onAtmosphereInput"
-              />
-            </div>
-          </div>
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="mouse-pointer" :size="15" />
-              <span>
-                星迹拖尾
-                <span class="help-tip" title="鼠标划过画面时带出一串金色星尘轨迹">ⓘ</span>
-              </span>
-            </div>
-            <label class="switch">
-              <input
-                v-model="config.interaction.cursorTrail"
-                type="checkbox"
-                :disabled="!canConfigWrite"
-                @change="scheduleAutoSave"
-              />
-              <span></span>
-            </label>
-          </div>
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="star" :size="15" />
-              <span>
-                点击涟漪
-                <span class="help-tip" title="点击照片时显示涟漪特效">ⓘ</span>
-              </span>
-            </div>
-            <label class="switch">
-              <input v-model="config.interaction.clickRipple" type="checkbox" :disabled="!canConfigWrite" @change="scheduleAutoSave" />
-              <span></span>
-            </label>
-          </div>
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="move" :size="15" />
-              <span>
-                照片悬浮
-                <span class="help-tip" title="照片轻微浮动，增加动态感">ⓘ</span>
-              </span>
-            </div>
-            <label class="switch">
-              <input 
-                v-model="config.effects.photoFloat" 
-                type="checkbox" 
-                :disabled="!canConfigWrite" 
-                @change="scheduleAutoSave" 
-              />
-              <span></span>
-            </label>
-          </div>
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="compass" :size="15" />
-              <span>
-                自动漫游
-                <span class="help-tip" title="相机自动缓慢旋转，展示全景">ⓘ</span>
-              </span>
-            </div>
-            <label class="switch">
-              <input
-                v-model="config.camera.autoRotate"
-                type="checkbox"
-                :disabled="!canConfigWrite"
-                @change="scheduleAutoSave"
-              />
-              <span></span>
-            </label>
-          </div>
-
-          <div class="toggle-row">
-            <div class="slider-row">
-              <Icon name="eye" :size="15" />
-              <span>
-                开场电影运镜
-                <span class="help-tip" title="进入展厅时镜头从远景高位弧线推进，下次进入生效">ⓘ</span>
-              </span>
-            </div>
-            <label class="switch">
-              <input
-                v-model="config.camera.introFlight"
-                type="checkbox"
-                :disabled="!canConfigWrite"
-                @change="scheduleAutoSave"
-              />
-              <span></span>
-            </label>
-          </div>
-        </section>
-
-        <section v-show="configTab === 'advanced'" class="side-block">
-          <h2>
-            <Icon name="sun" :size="15" />
-            辉光微调
-          </h2>
-          <div class="slider-row">
-            <div class="slider-copy">
-              <span>
-                辉光范围
-                <span class="help-tip" title="光晕从照片边缘向外扩散的距离">ⓘ</span>
-              </span>
-              <strong>{{ bloomRadius }}%</strong>
-            </div>
-          </div>
-          <input
-            v-model.number="bloomRadius"
-            class="range"
-            type="range"
-            min="0"
-            max="100"
-            :disabled="!canConfigWrite || !bloomOn"
-            @input="onAtmosphereInput"
-          />
-
-          <div class="slider-row">
-            <div class="slider-copy">
-              <span>
-                辉光阈值
-                <span class="help-tip" title="亮度超过该比例的区域才会发光，越低整体越亮">ⓘ</span>
-              </span>
-              <strong>{{ bloomThreshold }}%</strong>
-            </div>
-          </div>
-          <input
-            v-model.number="bloomThreshold"
-            class="range"
-            type="range"
-            min="5"
-            max="100"
-            :disabled="!canConfigWrite || !bloomOn"
-            @input="onAtmosphereInput"
-          />
-        </section>
-
-        <section v-show="configTab === 'advanced'" class="side-block">
-          <h2>
-            <Icon name="star" :size="15" />
-            粒子特效
-          </h2>
-          <div class="toggle-row">
-            <span class="field-inline">启用粒子</span>
-            <label class="switch">
-              <input
-                type="checkbox"
-                :checked="config.particles.enabled"
-                :disabled="!canConfigWrite"
-                @change="setParticlesEnabled(($event.target as HTMLInputElement).checked)"
-              />
-              <span></span>
-            </label>
-          </div>
-          <div class="chip-row particle-chips">
-            <button
-              v-for="item in PARTICLE_TYPES"
-              :key="item.id"
-              class="chip"
-              :class="{ active: config.particles.types.includes(item.id) }"
-              type="button"
-              :disabled="!canConfigWrite"
-              @click="toggleParticleType(item.id)"
-            >
-              {{ item.label }}
-            </button>
-          </div>
-          <div class="slider-row">
-            <div class="slider-copy">
-              <span>粒子密度</span>
-              <strong>{{ Number(config.particles.density || 1).toFixed(1) }}</strong>
-            </div>
-          </div>
-          <input
-            v-model.number="config.particles.density"
-            class="range"
-            type="range"
-            min="0.2"
-            max="2"
-            step="0.1"
-            :disabled="!canConfigWrite || !config.particles.enabled"
-            @input="onAtmosphereInput"
-          />
-        </section>
+        <div v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite" @patch="patchConfig" /></div>
+        <div v-show="configTab === 'atmosphere'">
+          <PresetCards :config="config" :disabled="!canConfigWrite" @preset="applyPreset" @reset="resetPreset" />
+          <AtmosphereControls :config="config" :issues="issues" :disabled="!canConfigWrite" @patch="patchConfig" />
+        </div>
+        <div v-show="configTab === 'advanced'"><MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite" @patch="patchConfig" /></div>
+        <p v-if="issues.length" class="config-errors" role="alert">有 {{ issues.length }} 项配置错误，请修正后保存。</p>
 
         <section v-show="configTab === 'history'" class="side-block">
           <h2>
@@ -1361,6 +597,8 @@ onUnmounted(() => {
         ></iframe>
 
         <div class="preview-tools">
+          <p role="status" class="preview-status">{{ previewStatus }}</p>
+          <button v-if="previewLive" class="glass-btn" type="button" :disabled="!!issues.length" @click="refreshLivePreview">重新应用</button>
           <button class="glass-btn" type="button" @click="openLivePreview">
             <Icon name="external" :size="14" />
             <span>新窗口预览</span>
@@ -1395,11 +633,10 @@ onUnmounted(() => {
 
     <ConfirmModal
       :show="showResetConfirm"
-      title="恢复默认配置"
-      message="确定要将当前展厅配置重置为系统初始预设吗？"
+      title="恢复当前预设"
+      message="恢复当前预设的布局与效果？画质上限和下载设置会保留。"
       confirm-text="确认重置"
       danger
-      :loading="resetting"
       @confirm="confirmReset"
       @cancel="showResetConfirm = false"
     />
@@ -1407,6 +644,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.config-side :deep(.side-block) { padding: 1.25rem; border-bottom: 1px solid rgba(15,23,42,.1); }
+.config-side :deep(h2) { font-size: .9375rem; margin: 0 0 .75rem; }
+.config-errors { color: #b91c1c; padding: 1rem; }
+.preview-status { color: #fff; background: rgba(15,23,42,.9); border-radius: .5rem; padding: .75rem; max-width: 25rem; font-size: .8125rem; }
+
 .config-page {
   position: relative;
   min-height: 100dvh;
@@ -1481,6 +723,7 @@ onUnmounted(() => {
 
 .nav-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -1979,6 +1222,9 @@ onUnmounted(() => {
   right: 16px;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 32px);
   gap: 8px;
 }
 
@@ -2042,6 +1288,10 @@ onUnmounted(() => {
 }
 
 @media (max-width: 980px) {
+  .config-nav { grid-template-columns: 1fr; }
+  .config-tabs { flex-wrap: wrap; justify-self: start; }
+  .nav-actions { gap: .5rem; }
+  .config-side { overflow: visible; }
   .config-split {
     grid-template-columns: 1fr;
     height: auto;

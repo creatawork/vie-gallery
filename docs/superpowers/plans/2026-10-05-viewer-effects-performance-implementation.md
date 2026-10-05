@@ -571,6 +571,8 @@ texturePool.setBudget(budget)
 
 ## Task 9: 配置工作台、可信预览与访问状态一致
 
+2026-10-05 执行变更：用户要求“取消验证工作，由我手动验收”。继续实现，停止自动验证；任务 9 后续测试、构建、浏览器检查不再执行。已编写的回归用例保留，不将取消后的实现记为已验证。任务 10 自动验收和性能跑分改为交付 [手动验收清单](../../viewer-effects-performance-acceptance.md)，由用户完成验收。
+
 **Files:** Create Admin `composables/useViewerConfigEditor.ts`、`lib/viewerPreviewChannel.ts`、`components/gallery-config/LayoutControls.vue`、`AtmosphereControls.vue`、`MotionQualityControls.vue`、`PresetCards.vue`、`e2e/viewer-config.spec.ts`；Modify Admin `views/GalleryConfigPanel.vue`、`lib/preview.ts`，Viewer `App.vue`、`composables/useViewerState.ts`、`vite-env.d.ts`。
 
 **Interfaces:**

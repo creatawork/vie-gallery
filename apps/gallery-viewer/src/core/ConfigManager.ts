@@ -59,6 +59,12 @@ export class ConfigManager {
     this.config = mergeViewerConfig(this.config, updates)
     return this.getConfig()
   }
+  replaceConfig(input: ViewerConfig): ViewerConfig {
+    const result = normalizeViewerConfig(input)
+    if (result.issues.length) throw new ViewerConfigValidationError(result.issues)
+    this.config = result.config
+    return this.getConfig()
+  }
   reset(): ViewerConfig { this.serverConfig = null; this.clearPreference(); return this.getConfig() }
   async loadPreset(name: string): Promise<ViewerConfig> { return isViewerPreset(name) ? applyViewerPreset(name, this.config) : this.getConfig() }
   exportConfig(): string { return serializeViewerConfig(this.config) }

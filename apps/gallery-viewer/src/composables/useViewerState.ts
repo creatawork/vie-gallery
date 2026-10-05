@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { parseViewerConfig } from '@vie/gallery-contracts'
 import { PublicApiClient, PublicApiError } from '../api/client'
 import type { PublicGalleryResponse, PublicPhoto, PublicPhotoPage } from '../types/api'
 
@@ -48,19 +49,22 @@ export function useViewerState(slug: string) {
   const hasMore = computed(() => photos.value.length < total.value)
   const allowDownload = computed(() => viewerConfig.value?.visitorAllowDownload === true)
 
-  async function loadConfig() {
+  async function loadConfig(version = requestVersion) {
     try {
       const cfg = await client.getViewerConfig(slug)
-      if (cfg?.configJson) {
-        viewerConfig.value = JSON.parse(cfg.configJson)
-      }
-    } catch {
-      // Configuration is optional or falls back to defaults
+      if (version !== requestVersion) return
+      viewerConfig.value = cfg?.configJson ? parseViewerConfig(cfg.configJson, cfg.schemaVersion ?? 1, 'legacy').config : null
+    } catch (cause) {
+      if (version !== requestVersion) return
+      viewerConfig.value = null
+      if (cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403)) throw cause
     }
   }
+  function clearAccess() { viewerConfig.value = null; photos.value = []; total.value = 0; gallery.value = null }
 
   async function initialize() {
     const version = ++requestVersion
+    clearAccess()
     state.value = 'loading'
     error.value = null
     photos.value = []
@@ -71,10 +75,11 @@ export function useViewerState(slug: string) {
       const nextGallery = await client.getGallery(slug)
       if (version !== requestVersion) return
       gallery.value = nextGallery
-      void loadConfig()
 
       switch (nextGallery.accessState) {
         case 'READY':
+          await loadConfig(version)
+          if (version !== requestVersion) return
           await loadPhotos(0, pageSize.value, version)
           break
         case 'PASSWORD_REQUIRED':
@@ -85,6 +90,8 @@ export function useViewerState(slug: string) {
           error.value = '此空间需要有效的分享链接才能访问。'
           break
         case 'EMPTY':
+          await loadConfig(version)
+          if (version !== requestVersion) return
           state.value = 'empty'
           break
         default:
@@ -99,13 +106,21 @@ export function useViewerState(slug: string) {
 
   async function unlock(password: string): Promise<boolean> {
     if (unlocking.value) return false
+    const version = ++requestVersion
+    viewerConfig.value = null
     unlocking.value = true
     error.value = null
     try {
       await client.unlock(slug, password)
-      await loadPhotos(0, pageSize.value)
+      const nextGallery = await client.getGallery(slug)
+      if (version !== requestVersion) return false
+      gallery.value = nextGallery
+      await loadConfig(version)
+      if (version !== requestVersion) return false
+      await loadPhotos(0, pageSize.value, version)
       return state.value === 'ready' || state.value === 'empty'
     } catch (cause) {
+      if (version !== requestVersion) return false
       handleError(cause, '解锁相册失败，请稍后重试。', true)
       return false
     } finally {
@@ -127,13 +142,18 @@ export function useViewerState(slug: string) {
 
   async function loadMore() {
     if (loadingMore.value || !hasMore.value || state.value !== 'ready') return
+    const version = requestVersion
     loadingMore.value = true
     error.value = null
     try {
-      await loadPhotos(currentPage.value + 1, pageSize.value)
+      await loadPhotos(currentPage.value + 1, pageSize.value, version)
     } catch (cause) {
+      if (version !== requestVersion) return
       // Loading another page must not replace an already usable gallery with a
       // full-screen error. Keep the ready state and expose a retryable message.
+      if (cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403)) {
+        requestVersion++; clearAccess(); handleError(cause, '访问已失效，请重新解锁。'); return
+      }
       if (cause instanceof PublicApiError) {
         error.value = userMessage(cause, '加载更多照片失败，请重试。')
       } else {
@@ -146,7 +166,8 @@ export function useViewerState(slug: string) {
 
   function handleError(cause: unknown, fallback: string, preservePasswordPrompt = false) {
     if (cause instanceof PublicApiError) {
-      if (cause.isSessionExpired) {
+      if (cause.isSessionExpired || cause.isPasswordRequired) {
+        clearAccess()
         state.value = 'password_prompt'
         error.value = userMessage(cause, fallback)
         return

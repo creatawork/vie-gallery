@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { mergeViewerConfig, type PublicPhoto } from '@vie/gallery-contracts'
+import { mergeViewerConfig, normalizeViewerConfig, ViewerConfigValidationError, type PublicPhoto } from '@vie/gallery-contracts'
 import { PhotoScene } from './PhotoScene'
 import { TexturePool, loadPhotoTexture } from './TexturePool'
 import { FrameClock } from './FrameClock'
@@ -209,6 +209,15 @@ export class ViewerEngine {
     return this.configDrain
   }
 
+  replaceConfig(config: ViewerConfig): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    const result = normalizeViewerConfig(config)
+    if (result.issues.length) return Promise.reject(new ViewerConfigValidationError(result.issues))
+    this.pendingConfig = result.config
+    if (!this.configDrain) this.configDrain = this.drainConfigs().finally(() => { this.configDrain = null })
+    return this.configDrain
+  }
+
   private async drainConfigs(): Promise<void> {
     while (this.pendingConfig && !this.disposed) {
       const candidate = this.pendingConfig
@@ -218,7 +227,7 @@ export class ViewerEngine {
       try {
         await this.reconcilePlugins(candidate)
         if (this.disposed) return
-        this.configManager.updateConfig(candidate)
+        this.configManager.replaceConfig(candidate)
         this.eventBus.emit('config:update', this.pluginContext!.config)
       } catch (error) {
         this.pendingConfig = null
@@ -286,7 +295,7 @@ export class ViewerEngine {
    */
   async loadPreset(presetName: string): Promise<void> {
     const config = await this.configManager.loadPreset(presetName)
-    await this.applyConfig(config)
+    await this.replaceConfig(config)
   }
 
   /**
@@ -774,6 +783,7 @@ export class ViewerEngine {
   }
 
   getEffectiveQuality(): Quality { return this.effectiveQuality }
+  getQualityReason(): string | null { return this.qualityReason }
   private sampleQuality(sample: QualitySample): QualityDecision {
     const decision = this.qualityController.sample(sample)
     this.qualityReason = decision.reason
