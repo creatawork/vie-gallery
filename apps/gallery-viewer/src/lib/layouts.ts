@@ -1,4 +1,4 @@
-import type { LayoutPosition } from '../core/types'
+import type { LayoutPosition, ViewerConfig } from '../core/types'
 
 const TWO_PI = Math.PI * 2
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)) // ~137.5 degrees
@@ -110,10 +110,10 @@ export function helixLayout(count: number, opts: any = {}): LayoutPosition[] {
   }
 
   const radius = opts.radius ?? Math.max(220, Math.min(480, 200 + Math.sqrt(count) * 25))
-  const totalHeight = Math.max(300, Math.min(900, count * 35))
+  const totalHeight = opts.height ?? Math.max(300, Math.min(900, count * 35))
   const stepY = count > 1 ? totalHeight / (count - 1) : 0
   const startY = -totalHeight / 2
-  const turns = Math.max(1.2, count * 0.18)
+  const turns = opts.turns ?? Math.max(1.2, count * 0.18)
 
   for (let i = 0; i < count; i++) {
     const isStrandB = i % 2 === 1
@@ -199,7 +199,7 @@ export function spiralLayout(count: number, opts: any = {}): LayoutPosition[] {
   const arms = count <= 3 ? 1 : (count <= 8 ? 2 : 3)
   const baseRadius = opts.baseRadius ?? (count <= 4 ? 140 : 100)
   const maxRadius = opts.maxRadius ?? Math.max(360, Math.min(800, 220 + count * 22))
-  const turns = Math.max(1.0, Math.min(2.5, count * 0.15))
+  const turns = opts.turns ?? Math.max(1.0, Math.min(2.5, count * 0.15))
 
   for (let i = 0; i < count; i++) {
     const armIndex = i % arms
@@ -272,4 +272,13 @@ export const LAYOUT_GENERATORS = {
   grid: gridLayout,
   spiral: spiralLayout,
   random: randomLayout
+}
+
+export function generateLayout(count: number, layout: ViewerConfig['layout']): LayoutPosition[] {
+  const params = layout.params ?? {}
+  const options = { ...params, cols: params.columns ?? params.cols, maxRadius: params.radius ?? params.maxRadius }
+  const spacing = params.spacing ?? 1
+  return LAYOUT_GENERATORS[layout.mode](count, options).map(position => ({
+    ...position, x: position.x * spacing, y: position.y * spacing, z: position.z * spacing
+  }))
 }

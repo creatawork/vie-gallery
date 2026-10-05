@@ -1,5 +1,5 @@
 import type { ViewerPlugin, ViewerContext } from '../core/types'
-import { LAYOUT_GENERATORS } from '../lib/layouts'
+import { generateLayout } from '../lib/layouts'
 import * as THREE from 'three'
 
 interface MorphTarget {
@@ -35,34 +35,35 @@ export class LayoutPlugin implements ViewerPlugin {
   private restPoses: Map<number, RestPose> = new Map()
   private clock = 0
   private isAnimating = false
+  private layoutSignature = ''
+  private onLayoutChange = (mode: string) => this.switchLayout(mode)
+  private onPhotosLoaded = () => { this.cancelInFlightMorphs(); this.applyLayout(this.currentLayout) }
+  private onConfigUpdate = () => {
+    const signature = JSON.stringify(this.context?.config.layout)
+    if (signature !== this.layoutSignature && this.context) {
+      this.layoutSignature = signature
+      this.switchLayout(this.context.config.layout.mode)
+    }
+  }
 
   install(context: ViewerContext): void {
     this.context = context
     this.currentLayout = context.config.layout?.mode || 'sphere'
 
-    // 监听布局切换事件
-    context.on('layout:change', (mode: string) => {
-      this.switchLayout(mode)
-    })
-
-    // 监听相册照片加载事件（含"加载更多"的整表重建刷新）
-    context.on('photos:loaded', () => {
-      this.cancelInFlightMorphs()
-      this.applyLayout(this.currentLayout)
-    })
-
-    // 只监听 config:update 事件，避免重复触发
-    context.on('config:update', (data: any) => {
-      if (data.layout?.mode && data.layout.mode !== this.currentLayout) {
-        this.switchLayout(data.layout.mode)
-      }
-    })
+    this.layoutSignature = JSON.stringify(context.config.layout)
+    context.on('layout:change', this.onLayoutChange)
+    context.on('photos:loaded', this.onPhotosLoaded)
+    context.on('config:update', this.onConfigUpdate)
 
     // 初始布局
     this.applyLayout(this.currentLayout)
   }
 
   uninstall(): void {
+    this.cancelInFlightMorphs()
+    this.context?.off('layout:change', this.onLayoutChange)
+    this.context?.off('photos:loaded', this.onPhotosLoaded)
+    this.context?.off('config:update', this.onConfigUpdate)
     this.context = null
     this.morphs = []
     this.restPoses.clear()
@@ -132,15 +133,17 @@ export class LayoutPlugin implements ViewerPlugin {
     // 配置关闭照片悬浮（effects.photoFloat === false）时平滑归位静止
     if (this.restPoses.size > 0 && this.context?.photos) {
       const floatEnabled = this.context.config.effects?.photoFloat !== false
-      const time = this.clock
+      const time = this.clock * (this.context.config.effects.floatSpeed ?? 1)
+      const amplitude = this.context.config.effects.floatAmplitude ?? 1
+      const moving = new Set(this.morphs.map(m => m.index))
       this.context.photos.forEach((photo, idx) => {
         const pose = this.restPoses.get(idx)
         // 仅在未处于形变动画中的照片上叠加微动
-        if (pose && !this.morphs.some(m => m.index === idx)) {
+        if (pose && !moving.has(idx)) {
           if (floatEnabled) {
-            const swayY = Math.sin(time * 1.3 + pose.seed) * 3.2
-            const swayX = Math.cos(time * 0.9 + pose.seed) * 1.8
-            const tiltZ = Math.sin(time * 1.1 + pose.seed) * 0.015
+            const swayY = Math.sin(time * 1.3 + pose.seed) * 3.2 * amplitude
+            const swayX = Math.cos(time * 0.9 + pose.seed) * 1.8 * amplitude
+            const tiltZ = Math.sin(time * 1.1 + pose.seed) * 0.015 * amplitude
 
             photo.position.x = pose.basePos.x + swayX
             photo.position.y = pose.basePos.y + swayY
@@ -169,18 +172,19 @@ export class LayoutPlugin implements ViewerPlugin {
   /**
    * 切换几何排布模型（带阶梯延时与空间粒子弧线形变）
    */
-  switchLayout(mode: string, baseDuration = 1.1): void {
+  switchLayout(mode: string, baseDuration = this.context?.config.layout.transition?.duration ?? 1.2): void {
     if (!this.context) return
-    const key = (mode || 'sphere') as keyof typeof LAYOUT_GENERATORS
-    const generator = LAYOUT_GENERATORS[key] || LAYOUT_GENERATORS.sphere
     this.currentLayout = mode
 
     const photos = this.context.photos
     if (!photos || photos.length === 0) return
 
-    const rawPositions = generator(photos.length)
+    const rawPositions = generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode })
+    const scale = this.context.config.layout.params?.scale ?? 1
+    for (const photo of photos) photo.scale.setScalar(scale)
 
-    this.morphs = []
+    this.cancelInFlightMorphs()
+    if (this.context.config.layout.transition?.style === 'none') { this.applyLayout(mode); return }
     this.restPoses.clear()
     this.isAnimating = true
 
@@ -202,7 +206,7 @@ export class LayoutPlugin implements ViewerPlugin {
       if (normalDir.lengthSq() < 0.01) {
         normalDir.set(0, 1, 0.5).normalize()
       }
-      const arcExpansion = Math.min(220, startPos.distanceTo(targetPos) * 0.35)
+      const arcExpansion = this.context!.config.layout.transition?.style === 'smooth' ? 0 : Math.min(220, startPos.distanceTo(targetPos) * 0.35)
       const midArc = centerVec.add(normalDir.multiplyScalar(arcExpansion))
 
       // 阶梯延时：每张照片依次错落启动
@@ -228,14 +232,14 @@ export class LayoutPlugin implements ViewerPlugin {
    */
   private applyLayout(mode: string): void {
     if (!this.context) return
-    const key = (mode || 'sphere') as keyof typeof LAYOUT_GENERATORS
-    const generator = LAYOUT_GENERATORS[key] || LAYOUT_GENERATORS.sphere
     this.currentLayout = mode
 
     const photos = this.context.photos
     if (!photos || photos.length === 0) return
 
-    const rawPositions = generator(photos.length)
+    const rawPositions = generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode })
+    const scale = this.context.config.layout.params?.scale ?? 1
+    for (const photo of photos) photo.scale.setScalar(scale)
     this.restPoses.clear()
 
     photos.forEach((photo, i) => {

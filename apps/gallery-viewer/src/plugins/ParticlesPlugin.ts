@@ -1,27 +1,8 @@
 import * as THREE from 'three'
-import type { ViewerPlugin, ViewerContext } from '../core/types'
+import type { ParticleType } from '@vie/gallery-contracts'
+import type { ViewerPlugin, ViewerContext, ViewerConfig } from '../core/types'
+import { allocateParticleCounts } from '../lib/particleBudget'
 
-/**
- * Particles Plugin - 生产级高阶动态物理粒子系统
- *
- * 特性：
- * - stars: 璀璨星尘（3D 向量涡流微旋 + 独立周期闪烁）
- * - sakura: 落樱花瓣（3D 翻滚自旋 + 重力空气阻尼）
- * - hearts: 心动浪漫（心形参数网格 + 心跳脉冲律动）
- * - snow: 晶莹静雪（六角晶体散射 + 柔和气流飘荡）
- * - fireflies: 夏夜萤火（游走漂浮 + 呼吸式明灭发光）
- * - meteors: 流星雨（拖尾划痕 + 随机划落周期）
- * 
- * 性能优化：
- * - 设备性能自适应粒子数量
- * - 对象池复用（避免频繁 GC）
- * - 边界自动回收
- * - 内存占用监控
- */
-
-/**
- * 根据设备性能获取粒子数量配置
- */
 interface ParticleCountConfig {
   stars: number
   sakura: number
@@ -64,160 +45,83 @@ function getParticleCountByQuality(quality: 'low' | 'mid' | 'high', isMobile: bo
 
 export class ParticlesPlugin implements ViewerPlugin {
   name = 'Particles'
-  version = '2.1.0'
-  dependencies = []
-
+  version = '3.0.0'
   private context: ViewerContext | null = null
-  private systems: Map<string, ParticleSystem> = new Map()
-  private currentTypes: string[] = []
-  private lastConfigHash: string = ''
-
-  async install(context: ViewerContext): Promise<void> {
+  private systems = new Map<ParticleType, ParticleSystem>()
+  private counts: Record<ParticleType, number> = { stars: 0, hearts: 0, sakura: 0, snow: 0, fireflies: 0, meteors: 0 }
+  private signature = ''
+  private activeTime = 0
+  private parameters = new WeakMap<ParticleSystem, { size: number; color?: THREE.Color }>()
+  constructor(private readonly random: () => number = Math.random) {}
+  install(context: ViewerContext): void {
     this.context = context
-    const config = context.config.particles
-
-    if (!config?.enabled) return
-
-    const types = config.types || []
-    this.currentTypes = [...types]
-    this.lastConfigHash = this.getConfigHash(config)
-
-    // 根据配置创建粒子系统
-    this.createParticleSystems(types)
-
-    // 只监听 config:update 事件，避免重复触发
+    this.refresh()
     context.on('config:update', this.handleConfigChange)
-    
-    // 监听光照变化，调整粒子颜色
-    context.on('config:change', this.handleLightingChange)
   }
-
   uninstall(): void {
-    for (const system of this.systems.values()) {
-      system.dispose()
-    }
-    this.systems.clear()
-    this.currentTypes = []
-    this.lastConfigHash = ''
-
     this.context?.off('config:update', this.handleConfigChange)
-    this.context?.off('config:change', this.handleLightingChange)
-    this.context = null
-  }
-
-  update(_delta: number, elapsed: number): void {
-    for (const system of this.systems.values()) {
-      system.update(elapsed)
-    }
-  }
-
-  /**
-   * 创建粒子系统
-   */
-  private createParticleSystems(types: string[]): void {
-    if (!this.context) return
-
-    const isMobile = this.context.isMobile()
-    const quality = this.context.getQuality()
-    const particleCount = getParticleCountByQuality(quality, isMobile)
-
-    for (const type of types) {
-      let system: ParticleSystem
-
-      switch (type) {
-        case 'stars':
-          system = new StarDustSystem(this.context.scene, particleCount.stars)
-          break
-        case 'sakura':
-          system = new SakuraSystem(this.context.scene, particleCount.sakura)
-          break
-        case 'hearts':
-          system = new HeartsSystem(this.context.scene, particleCount.hearts)
-          break
-        case 'snow':
-          system = new SnowSystem(this.context.scene, particleCount.snow)
-          break
-        case 'fireflies':
-          system = new FirefliesSystem(this.context.scene, particleCount.fireflies)
-          break
-        case 'meteors':
-          system = new MeteorSystem(this.context.scene, particleCount.meteors)
-          break
-        default:
-          continue
-      }
-
-      this.systems.set(type, system)
-    }
-  }
-
-  /**
-   * 生成配置哈希，用于检测真正的变化
-   */
-  private getConfigHash(config: any): string {
-    const types = (config.types || []).sort().join(',')
-    const density = config.density || 1.0
-    return `${types}:${density}`
-  }
-
-  private handleConfigChange = (newConfig: any): void => {
-    if (!newConfig?.particles || !this.context) return
-
-    const newHash = this.getConfigHash(newConfig.particles)
-    
-    // 使用哈希检测配置是否真正变化，避免重复触发
-    if (newHash === this.lastConfigHash) {
-      return
-    }
-
-    this.lastConfigHash = newHash
-
-    const newTypes = newConfig.particles.types || []
-    
-    // 先卸载旧系统
-    for (const system of this.systems.values()) {
-      system.dispose()
-    }
+    for (const system of this.systems.values()) system.dispose()
     this.systems.clear()
-
-    // 重新创建新系统
-    if (newConfig.particles.enabled) {
-      this.currentTypes = [...newTypes]
-      this.createParticleSystems(newTypes)
-    }
+    this.context = null
+    this.signature = ''
+    this.activeTime = 0
+    this.counts = { stars: 0, hearts: 0, sakura: 0, snow: 0, fireflies: 0, meteors: 0 }
   }
-
-  /**
-   * 响应光照变化，调整粒子颜色
-   */
-  private handleLightingChange = (newConfig: any): void => {
-    if (!newConfig?.lighting) return
-
-    const timeOfDay = newConfig.lighting.timeOfDay
-    if (!timeOfDay) return
-
-    // 根据时间段调整粒子颜色
-    for (const [type, system] of this.systems.entries()) {
-      if (type === 'stars' && 'setColors' in system) {
-        // 星星粒子根据时间段变色
-        if (timeOfDay === 'night') {
-          (system as any).setColors(
-            new THREE.Color('#38bdf8'), // 蔚蓝
-            new THREE.Color('#c084fc')  // 紫罗兰
-          )
-        } else if (timeOfDay === 'sunset') {
-          (system as any).setColors(
-            new THREE.Color('#fbbf24'), // 金色
-            new THREE.Color('#f97316')  // 橙色
-          )
-        }
+  getParticleCounts(): Readonly<Record<ParticleType, number>> { return { ...this.counts } }
+  update(delta: number, _elapsed: number): void {
+    const speed = this.context?.config.particles.speed ?? 1
+    const dt = Math.min(.1, Math.max(0, delta)) * speed
+    if (dt === 0) return
+    this.activeTime += dt
+    for (const system of this.systems.values()) system.update(this.activeTime, dt)
+  }
+  private handleConfigChange = (_config: ViewerConfig) => this.refresh()
+  private refresh(): void {
+    if (!this.context) return
+    const config = this.context.config.particles
+    const quality = this.context.getQuality()
+    const budget = this.context.getParticleBudget?.() ?? { low: 200, mid: 700, high: 1600 }[quality]
+    const counts = allocateParticleCounts(getParticleCountByQuality(quality, this.context.isMobile()), config.enabled ? config.types : [], config.density ?? 1, budget)
+    const signature = JSON.stringify(counts)
+    if (signature !== this.signature) {
+      this.signature = signature
+      for (const system of this.systems.values()) system.dispose()
+      this.systems.clear()
+      this.counts = counts
+      this.activeTime = 0
+      const constructors = { stars: StarDustSystem, hearts: HeartsSystem, sakura: SakuraSystem, snow: SnowSystem, fireflies: FirefliesSystem, meteors: MeteorSystem }
+      for (const type of Object.keys(counts) as ParticleType[]) {
+        if (counts[type] === 0) continue
+        const system = new constructors[type](this.context.scene, counts[type], this.random)
+        system.mesh.frustumCulled = false
+        system.update(0, 0)
+        this.systems.set(type, system)
       }
     }
+    for (const system of this.systems.values()) this.setParameters(system, config.size ?? 1, config.color)
+  }
+  private setParameters(system: ParticleSystem, size: number, color?: string): void {
+    const mesh = system.mesh
+    const material = mesh.material as THREE.Material & { color?: THREE.Color; size?: number; uniforms?: Record<string, THREE.IUniform> }
+    let previous = this.parameters.get(system)
+    if (!previous) { previous = { size: 1, color: material.color?.clone() }; this.parameters.set(system, previous) }
+    if (material.uniforms) {
+      material.uniforms.uSize.value = size
+      material.uniforms.uColor.value.set(color ?? '#ffffff')
+      material.uniforms.uUseColor.value = color ? 1 : 0
+    } else {
+      if (material.color) material.color.copy(color ? new THREE.Color(color) : previous.color!)
+      if (mesh instanceof THREE.InstancedMesh) mesh.geometry.scale(size / previous.size, size / previous.size, size / previous.size)
+      else if (typeof material.size === 'number') material.size *= size / previous.size
+      if (system instanceof MeteorSystem) system.size = size
+    }
+    previous.size = size
   }
 }
 
 interface ParticleSystem {
-  update(elapsed: number): void
+  mesh: THREE.Points | THREE.InstancedMesh | THREE.LineSegments
+  update(elapsed: number, delta: number): void
   dispose(): void
 }
 
@@ -226,12 +130,12 @@ interface ParticleSystem {
  * 优化：对象池、边界回收、动态颜色
  */
 class StarDustSystem implements ParticleSystem {
-  private mesh: THREE.Points
+  readonly mesh: THREE.Points
   private material: THREE.ShaderMaterial
   private scene: THREE.Scene
   private count: number
 
-  constructor(scene: THREE.Scene, count: number) {
+  constructor(scene: THREE.Scene, count: number, private readonly random: () => number = Math.random) {
     this.scene = scene
     this.count = count
     const geometry = new THREE.BufferGeometry()
@@ -242,19 +146,19 @@ class StarDustSystem implements ParticleSystem {
 
     for (let i = 0; i < count; i++) {
       // 空间球体分布
-      const r = 400 + Math.random() * 1600
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
+      const r = 400 + this.random() * 1600
+      const theta = this.random() * Math.PI * 2
+      const phi = Math.acos(2 * this.random() - 1)
 
       positions[i * 3] = r * Math.sin(phi) * Math.cos(theta)
       positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.8
       positions[i * 3 + 2] = r * Math.cos(phi)
 
-      randoms[i * 3] = Math.random()
-      randoms[i * 3 + 1] = Math.random()
-      randoms[i * 3 + 2] = Math.random()
+      randoms[i * 3] = this.random()
+      randoms[i * 3 + 1] = this.random()
+      randoms[i * 3 + 2] = this.random()
 
-      scales[i] = Math.random() * 2.5 + 0.8
+      scales[i] = this.random() * 2.5 + 0.8
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -263,12 +167,15 @@ class StarDustSystem implements ParticleSystem {
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
-        uTime: { value: 0 },
+        uTime: { value: 0 }, uSize: { value: 1 }, uColor: { value: new THREE.Color() }, uUseColor: { value: 0 },
         uColor1: { value: new THREE.Color('#38bdf8') }, // 蔚蓝
         uColor2: { value: new THREE.Color('#c084fc') }  // 紫罗兰
       },
       vertexShader: `
         uniform float uTime;
+        uniform float uSize;
+        uniform vec3 uColor;
+        uniform float uUseColor;
         attribute vec3 aRandom;
         attribute float aScale;
         varying float vAlpha;
@@ -292,12 +199,12 @@ class StarDustSystem implements ParticleSystem {
           gl_Position = projectionMatrix * mvPosition;
 
           // 距离自适应大小
-          gl_PointSize = aScale * (240.0 / -mvPosition.z);
+          gl_PointSize = aScale * uSize * (240.0 / -mvPosition.z);
 
           // 独立闪烁
           float twinkle = sin(uTime * (1.5 + aRandom.z * 3.0) + aRandom.x * 10.0);
           vAlpha = 0.4 + 0.6 * (twinkle * 0.5 + 0.5);
-          vColor = mix(uColor1, uColor2, aRandom.y);
+          vColor = mix(mix(uColor1, uColor2, aRandom.y), uColor, uUseColor);
         }
       `,
       fragmentShader: `
@@ -325,7 +232,7 @@ class StarDustSystem implements ParticleSystem {
     scene.add(this.mesh)
   }
 
-  update(elapsed: number): void {
+  update(elapsed: number, delta: number): void {
     if (this.material.uniforms?.uTime) {
       this.material.uniforms.uTime.value = elapsed
     }
@@ -355,7 +262,7 @@ class StarDustSystem implements ParticleSystem {
  * 优化：可配置粒子数量、边界自动回收
  */
 class SakuraSystem implements ParticleSystem {
-  private mesh: THREE.InstancedMesh
+  readonly mesh: THREE.InstancedMesh
   private count: number
   private dummy = new THREE.Object3D()
   private scene: THREE.Scene
@@ -368,7 +275,7 @@ class SakuraSystem implements ParticleSystem {
     seed: number
   }> = []
 
-  constructor(scene: THREE.Scene, count: number) {
+  constructor(scene: THREE.Scene, count: number, private readonly random: () => number = Math.random) {
     this.scene = scene
     this.count = count
 
@@ -392,27 +299,27 @@ class SakuraSystem implements ParticleSystem {
 
     for (let i = 0; i < count; i++) {
       const pos = new THREE.Vector3(
-        (Math.random() - 0.5) * 1600,
-        Math.random() * 900 - 100,
-        (Math.random() - 0.5) * 1400
+        (this.random() - 0.5) * 1600,
+        this.random() * 900 - 100,
+        (this.random() - 0.5) * 1400
       )
       const rot = new THREE.Vector3(
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2
+        this.random() * Math.PI * 2,
+        this.random() * Math.PI * 2,
+        this.random() * Math.PI * 2
       )
       const rotSpeed = new THREE.Vector3(
-        (Math.random() - 0.5) * 1.5,
-        (Math.random() - 0.5) * 2.0,
-        (Math.random() - 0.5) * 1.2
+        (this.random() - 0.5) * 1.5,
+        (this.random() - 0.5) * 2.0,
+        (this.random() - 0.5) * 1.2
       )
 
       this.petalData.push({
         pos,
         rot,
         rotSpeed,
-        fallSpeed: 35 + Math.random() * 30,
-        swaySpeed: 1.0 + Math.random() * 1.5,
+        fallSpeed: 35 + this.random() * 30,
+        swaySpeed: 1.0 + this.random() * 1.5,
         seed: i * 0.7
       })
     }
@@ -420,26 +327,26 @@ class SakuraSystem implements ParticleSystem {
     scene.add(this.mesh)
   }
 
-  update(elapsed: number): void {
+  update(elapsed: number, delta: number): void {
     for (let i = 0; i < this.count; i++) {
       const p = this.petalData[i]
 
       // 飘落与边界自动回收
-      p.pos.y -= p.fallSpeed * 0.016
-      p.pos.x += Math.sin(elapsed * p.swaySpeed + p.seed) * 0.8
-      p.pos.z += Math.cos(elapsed * p.swaySpeed * 0.7 + p.seed) * 0.6
+      p.pos.y -= p.fallSpeed * delta
+      p.pos.x += Math.sin(elapsed * p.swaySpeed + p.seed) * 0.8 * delta * 60
+      p.pos.z += Math.cos(elapsed * p.swaySpeed * 0.7 + p.seed) * 0.6 * delta * 60
 
       // 超出下边界时回收到顶部
       if (p.pos.y < -500) {
-        p.pos.y = 700 + Math.random() * 200
-        p.pos.x = (Math.random() - 0.5) * 1600
-        p.pos.z = (Math.random() - 0.5) * 1400
+        p.pos.y = 700 + this.random() * 200
+        p.pos.x = (this.random() - 0.5) * 1600
+        p.pos.z = (this.random() - 0.5) * 1400
       }
 
       // 三维翻滚自旋
-      p.rot.x += p.rotSpeed.x * 0.016
-      p.rot.y += p.rotSpeed.y * 0.016
-      p.rot.z += p.rotSpeed.z * 0.016
+      p.rot.x += p.rotSpeed.x * delta
+      p.rot.y += p.rotSpeed.y * delta
+      p.rot.z += p.rotSpeed.z * delta
 
       this.dummy.position.copy(p.pos)
       this.dummy.rotation.set(p.rot.x, p.rot.y, p.rot.z)
@@ -463,7 +370,7 @@ class SakuraSystem implements ParticleSystem {
  * 优化：可配置粒子数量、边界自动回收
  */
 class HeartsSystem implements ParticleSystem {
-  private mesh: THREE.InstancedMesh
+  readonly mesh: THREE.InstancedMesh
   private count: number
   private dummy = new THREE.Object3D()
   private scene: THREE.Scene
@@ -474,7 +381,7 @@ class HeartsSystem implements ParticleSystem {
     seed: number
   }> = []
 
-  constructor(scene: THREE.Scene, count: number) {
+  constructor(scene: THREE.Scene, count: number, private readonly random: () => number = Math.random) {
     this.scene = scene
     this.count = count
 
@@ -504,15 +411,15 @@ class HeartsSystem implements ParticleSystem {
 
     for (let i = 0; i < count; i++) {
       const pos = new THREE.Vector3(
-        (Math.random() - 0.5) * 1400,
-        (Math.random() - 0.5) * 800,
-        (Math.random() - 0.5) * 1200
+        (this.random() - 0.5) * 1400,
+        (this.random() - 0.5) * 800,
+        (this.random() - 0.5) * 1200
       )
 
       this.heartData.push({
         pos,
-        baseScale: 0.6 + Math.random() * 0.7,
-        riseSpeed: 20 + Math.random() * 25,
+        baseScale: 0.6 + this.random() * 0.7,
+        riseSpeed: 20 + this.random() * 25,
         seed: i * 1.5
       })
     }
@@ -520,19 +427,19 @@ class HeartsSystem implements ParticleSystem {
     scene.add(this.mesh)
   }
 
-  update(elapsed: number): void {
+  update(elapsed: number, delta: number): void {
     for (let i = 0; i < this.count; i++) {
       const h = this.heartData[i]
 
       // 向上冉冉升起
-      h.pos.y += h.riseSpeed * 0.016
-      h.pos.x += Math.sin(elapsed * 1.2 + h.seed) * 0.5
+      h.pos.y += h.riseSpeed * delta
+      h.pos.x += Math.sin(elapsed * 1.2 + h.seed) * 0.5 * delta * 60
 
       // 超出上边界时回收到底部
       if (h.pos.y > 650) {
         h.pos.y = -500
-        h.pos.x = (Math.random() - 0.5) * 1400
-        h.pos.z = (Math.random() - 0.5) * 1200
+        h.pos.x = (this.random() - 0.5) * 1400
+        h.pos.z = (this.random() - 0.5) * 1200
       }
 
       // 周期性心跳缩放脉冲 (Heartbeat Pulse)
@@ -562,13 +469,13 @@ class HeartsSystem implements ParticleSystem {
  * 优化：可配置粒子数量、边界自动回收
  */
 class SnowSystem implements ParticleSystem {
-  private mesh: THREE.Points
+  readonly mesh: THREE.Points
   private scene: THREE.Scene
   private count: number
   private positions: Float32Array
   private velocities: Float32Array
 
-  constructor(scene: THREE.Scene, count: number) {
+  constructor(scene: THREE.Scene, count: number, private readonly random: () => number = Math.random) {
     this.scene = scene
     this.count = count
     const geometry = new THREE.BufferGeometry()
@@ -576,10 +483,10 @@ class SnowSystem implements ParticleSystem {
     this.velocities = new Float32Array(count)
 
     for (let i = 0; i < count; i++) {
-      this.positions[i * 3] = (Math.random() - 0.5) * 1600
-      this.positions[i * 3 + 1] = Math.random() * 1000 - 300
-      this.positions[i * 3 + 2] = (Math.random() - 0.5) * 1400
-      this.velocities[i] = 0.8 + Math.random() * 0.8 // 随机下落速度
+      this.positions[i * 3] = (this.random() - 0.5) * 1600
+      this.positions[i * 3 + 1] = this.random() * 1000 - 300
+      this.positions[i * 3 + 2] = (this.random() - 0.5) * 1400
+      this.velocities[i] = 0.8 + this.random() * 0.8 // 随机下落速度
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3))
@@ -597,19 +504,19 @@ class SnowSystem implements ParticleSystem {
     scene.add(this.mesh)
   }
 
-  update(elapsed: number): void {
+  update(elapsed: number, delta: number): void {
     const pos = this.positions
     for (let i = 0; i < this.count; i++) {
       // 使用独立速度下落
-      pos[i * 3 + 1] -= this.velocities[i]
+      pos[i * 3 + 1] -= this.velocities[i] * delta * 60
       // 水平飘移
-      pos[i * 3] += Math.sin(elapsed * 1.5 + i) * 0.4
+      pos[i * 3] += Math.sin(elapsed * 1.5 + i) * 0.4 * delta * 60
 
       // 超出下边界时回收到顶部
       if (pos[i * 3 + 1] < -500) {
         pos[i * 3 + 1] = 600
-        pos[i * 3] = (Math.random() - 0.5) * 1600
-        pos[i * 3 + 2] = (Math.random() - 0.5) * 1400
+        pos[i * 3] = (this.random() - 0.5) * 1600
+        pos[i * 3 + 2] = (this.random() - 0.5) * 1400
       }
     }
     this.mesh.geometry.attributes.position.needsUpdate = true
@@ -627,11 +534,11 @@ class SnowSystem implements ParticleSystem {
  * 特点：多频正弦游走漂移 + 呼吸/脉冲式明灭发光，琥珀金与萤绿双色
  */
 class FirefliesSystem implements ParticleSystem {
-  private mesh: THREE.Points
+  readonly mesh: THREE.Points
   private material: THREE.ShaderMaterial
   private scene: THREE.Scene
 
-  constructor(scene: THREE.Scene, count: number) {
+  constructor(scene: THREE.Scene, count: number, private readonly random: () => number = Math.random) {
     this.scene = scene
     const geometry = new THREE.BufferGeometry()
     const positions = new Float32Array(count * 3)
@@ -639,11 +546,11 @@ class FirefliesSystem implements ParticleSystem {
     const scales = new Float32Array(count)
 
     for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 1800
-      positions[i * 3 + 1] = -250 + Math.random() * 800
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 1600
-      seeds[i] = Math.random() * 100
-      scales[i] = 0.7 + Math.random() * 1.3
+      positions[i * 3] = (this.random() - 0.5) * 1800
+      positions[i * 3 + 1] = -250 + this.random() * 800
+      positions[i * 3 + 2] = (this.random() - 0.5) * 1600
+      seeds[i] = this.random() * 100
+      scales[i] = 0.7 + this.random() * 1.3
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -652,10 +559,13 @@ class FirefliesSystem implements ParticleSystem {
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
-        uTime: { value: 0 }
+        uTime: { value: 0 }, uSize: { value: 1 }, uColor: { value: new THREE.Color() }, uUseColor: { value: 0 }
       },
       vertexShader: `
         uniform float uTime;
+        uniform float uSize;
+        uniform vec3 uColor;
+        uniform float uUseColor;
         attribute float aSeed;
         attribute float aScale;
         varying float vGlow;
@@ -672,7 +582,7 @@ class FirefliesSystem implements ParticleSystem {
 
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           gl_Position = projectionMatrix * mvPosition;
-          gl_PointSize = aScale * (200.0 / -mvPosition.z);
+          gl_PointSize = aScale * uSize * (200.0 / -mvPosition.z);
 
           // 呼吸式明灭 + 偶发高亮脉冲（萤火虫只在瞬间最亮）
           float breath = 0.3 + 0.3 * sin(uTime * (0.8 + fract(aSeed) * 0.8) + aSeed);
@@ -680,7 +590,7 @@ class FirefliesSystem implements ParticleSystem {
           vGlow = clamp(breath + flash, 0.04, 1.0);
 
           // 琥珀金与萤绿之间取色
-          vColor = mix(vec3(1.0, 0.75, 0.15), vec3(0.64, 0.9, 0.2), fract(aSeed * 7.31));
+          vColor = mix(mix(vec3(1.0, 0.75, 0.15), vec3(0.64, 0.9, 0.2), fract(aSeed * 7.31)), uColor, uUseColor);
         }
       `,
       fragmentShader: `
@@ -705,7 +615,7 @@ class FirefliesSystem implements ParticleSystem {
     scene.add(this.mesh)
   }
 
-  update(elapsed: number): void {
+  update(elapsed: number, delta: number): void {
     if (this.material.uniforms?.uTime) {
       this.material.uniforms.uTime.value = elapsed
     }
@@ -723,7 +633,8 @@ class FirefliesSystem implements ParticleSystem {
  * 特点：渐隐拖尾划痕 + 随机划落周期，帧率无关的位移积分
  */
 class MeteorSystem implements ParticleSystem {
-  private mesh: THREE.LineSegments
+  size = 1
+  readonly mesh: THREE.LineSegments
   private scene: THREE.Scene
   private count: number
   private positions: Float32Array
@@ -738,7 +649,7 @@ class MeteorSystem implements ParticleSystem {
     respawnAt: number
   }> = []
 
-  constructor(scene: THREE.Scene, count: number) {
+  constructor(scene: THREE.Scene, count: number, private readonly random: () => number = Math.random) {
     this.scene = scene
     this.count = count
     this.positions = new Float32Array(count * 6)
@@ -766,7 +677,7 @@ class MeteorSystem implements ParticleSystem {
         speed: 0,
         tail: 0,
         active: false,
-        respawnAt: Math.random() * 6
+        respawnAt: this.random() * 6
       })
       this.hideMeteor(i)
     }
@@ -782,22 +693,22 @@ class MeteorSystem implements ParticleSystem {
 
   private respawn(meteor: (typeof this.meteors)[number]): void {
     meteor.head.set(
-      (Math.random() - 0.5) * 2200,
-      450 + Math.random() * 550,
-      (Math.random() - 0.5) * 1800
+      (this.random() - 0.5) * 2200,
+      450 + this.random() * 550,
+      (this.random() - 0.5) * 1800
     )
     // 斜向下划落，方向带随机扰动
     meteor.dir.set(
-      0.55 + Math.random() * 0.35,
-      -(0.5 + Math.random() * 0.4),
-      (Math.random() - 0.5) * 0.35
+      0.55 + this.random() * 0.35,
+      -(0.5 + this.random() * 0.4),
+      (this.random() - 0.5) * 0.35
     ).normalize()
-    meteor.speed = 900 + Math.random() * 700
-    meteor.tail = 160 + Math.random() * 140
+    meteor.speed = 900 + this.random() * 700
+    meteor.tail = 160 + this.random() * 140
     meteor.active = true
   }
 
-  update(elapsed: number): void {
+  update(elapsed: number, delta: number): void {
     const dt = Math.min(0.1, Math.max(0, elapsed - this.lastElapsed))
     this.lastElapsed = elapsed
 
@@ -816,9 +727,9 @@ class MeteorSystem implements ParticleSystem {
       this.positions[base] = meteor.head.x
       this.positions[base + 1] = meteor.head.y
       this.positions[base + 2] = meteor.head.z
-      this.positions[base + 3] = meteor.head.x - meteor.dir.x * meteor.tail
-      this.positions[base + 4] = meteor.head.y - meteor.dir.y * meteor.tail
-      this.positions[base + 5] = meteor.head.z - meteor.dir.z * meteor.tail
+      this.positions[base + 3] = meteor.head.x - meteor.dir.x * meteor.tail * this.size
+      this.positions[base + 4] = meteor.head.y - meteor.dir.y * meteor.tail * this.size
+      this.positions[base + 5] = meteor.head.z - meteor.dir.z * meteor.tail * this.size
 
       this.colors[base] = 0.92
       this.colors[base + 1] = 0.96
@@ -834,7 +745,7 @@ class MeteorSystem implements ParticleSystem {
         Math.abs(meteor.head.z) > 2200
       ) {
         meteor.active = false
-        meteor.respawnAt = elapsed + 1.5 + Math.random() * 6
+        meteor.respawnAt = elapsed + 1.5 + this.random() * 6
         this.hideMeteor(i)
       }
     }

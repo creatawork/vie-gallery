@@ -52,6 +52,7 @@ export interface ViewerContext {
   // 工具方法
   isMobile(): boolean
   getQuality(): 'low' | 'mid' | 'high'
+  getParticleBudget?(): number
 }
 
 /**
