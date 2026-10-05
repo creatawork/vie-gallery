@@ -231,71 +231,11 @@ watch(
   { deep: true }
 )
 
-// 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
-function buildPhotoMeshes(rawPhotos: typeof viewer.photos.value): any[] {
-  const textureLoader = new THREE.TextureLoader()
-  const meshes: any[] = []
-
-  const photoList = rawPhotos.length > 0 ? rawPhotos : (isDevDemo() ? createDemoFallbackPhotos() : [])
-
-  photoList.forEach((p, i) => {
-    const photoItem = p as any
-    const w = 80
-    const aspectRatio = (p.width && p.height) ? (p.width / p.height) : (4 / 3)
-    const h = Math.round(w / aspectRatio)
-    const geometry = new THREE.PlaneGeometry(w, h)
-    let material: THREE.Material
-
-    if (photoItem.thumbnailUrl) {
-      const texture = textureLoader.load(photoItem.textureUrl || photoItem.thumbnailUrl)
-      texture.colorSpace = THREE.SRGBColorSpace
-
-      // 使用 MeshStandardMaterial 以支持动态光照
-      // 优化参数确保照片在各种光照下都清晰可辨
-      material = new THREE.MeshStandardMaterial({
-        map: texture,
-        side: THREE.DoubleSide,
-        // 低金属度，照片不应有金属光泽
-        metalness: 0.0,
-        // 中等粗糙度，略带哑光质感，避免高光过亮
-        roughness: 0.7,
-        // 轻微的环境光遮蔽，增加深度感
-        aoMapIntensity: 0.3,
-        // 确保照片在暗光下仍可见
-        emissive: new THREE.Color(0x000000),
-        emissiveIntensity: 0.0
-      })
-    } else {
-      // 占位颜色也使用 MeshStandardMaterial
-      material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color().setHSL((i * 0.15) % 1, 0.6, 0.5),
-        side: THREE.DoubleSide,
-        metalness: 0.0,
-        roughness: 0.7
-      })
-    }
-
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.userData = {
-      index: i,
-      title: photoItem.title || `Photo ${i + 1}`,
-      thumbnailUrl: photoItem.thumbnailUrl,
-      mediumUrl: photoItem.mediumUrl,
-      textureUrl: photoItem.textureUrl,
-      url: photoItem.url || photoItem.thumbnailUrl,
-      width: photoItem.width,
-      height: photoItem.height
-    }
-    meshes.push(mesh)
-  })
-
-  return meshes
+function scenePhotos() {
+  return viewer.photos.value.length ? viewer.photos.value : (isDevDemo() ? createDemoFallbackPhotos() : [])
 }
-
-// "加载更多"追加照片后增量刷新 3D 场景：引擎会回收被移除的资源并触发布局重排
 function refresh3DPhotos() {
-  if (!engine) return
-  engine.setPhotos(buildPhotoMeshes(viewer.photos.value))
+  engine?.syncPhotos(scenePhotos())
 }
 
 async function init3DEngine() {
@@ -315,7 +255,7 @@ async function init3DEngine() {
     })
 
     // 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
-    engine.setPhotos(buildPhotoMeshes(rawPhotos))
+    engine.syncPhotos(scenePhotos())
     scenePhotoCount = viewer.photos.value.length
 
     try {
@@ -652,6 +592,10 @@ async function selectPreset(presetName: string) {
 
     <!-- 5. 就绪：沉浸式双模画廊 -->
     <div v-else-if="viewer.isReady.value" class="gallery-viewport">
+      <div v-if="viewMode === '3d' && apmMetrics?.failedTextures" class="webgl-fallback-banner" role="status">
+        <span>{{ apmMetrics?.failedTextures }} 张照片的预览暂未载入</span>
+        <button type="button" @click="engine?.retryPhotoTextures()">重试照片预览</button>
+      </div>
       <div v-if="webglFallbackMessage" class="webgl-fallback-banner" role="status">
         <Icon name="grid" :size="16" />
         <span>{{ webglFallbackMessage }}</span>

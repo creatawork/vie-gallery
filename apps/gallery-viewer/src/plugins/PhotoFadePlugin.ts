@@ -10,6 +10,7 @@ export class PhotoFadePlugin implements ViewerPlugin {
   install(context: ViewerContext): void {
     this.context = context
     context.on('photos:loaded', this.handlePhotosLoaded)
+    context.on('photo:texture-ready', this.handleTextureReady)
     context.on('photo:focus', this.handleFocus)
     context.on('photo:blur', this.handleBlur)
     context.on('webgl:lost', this.handleContextLost)
@@ -17,6 +18,7 @@ export class PhotoFadePlugin implements ViewerPlugin {
   }
   uninstall(): void {
     this.context?.off('photos:loaded', this.handlePhotosLoaded)
+    this.context?.off('photo:texture-ready', this.handleTextureReady)
     this.context?.off('photo:focus', this.handleFocus)
     this.context?.off('photo:blur', this.handleBlur)
     this.context?.off('webgl:lost', this.handleContextLost)
@@ -39,7 +41,7 @@ export class PhotoFadePlugin implements ViewerPlugin {
   private handlePhotosLoaded = (photos: PhotoMesh[]): void => {
     if (!this.context) return
     const config = this.context.config.effects
-    const fresh = photos.filter(mesh => !this.seen.has(mesh))
+    const fresh = photos.filter(mesh => !this.seen.has(mesh) && (!mesh.userData.textureState || mesh.userData.textureState === 'ready'))
     fresh.forEach((mesh, index) => {
       this.seen.add(mesh)
       if (this.context!.reducedMotion() || config.photoEntrance === 'none') {
@@ -55,6 +57,7 @@ export class PhotoFadePlugin implements ViewerPlugin {
   private handleFocus = (data: { photo: PhotoMesh }) => {
     this.context?.photos.forEach(mesh => this.fadeTo(mesh, mesh === data.photo ? 1 : .6))
   }
+  private handleTextureReady = (mesh: PhotoMesh) => this.handlePhotosLoaded([mesh])
   private handleBlur = () => this.context?.photos.forEach(mesh => this.fadeTo(mesh, 1))
   private handleContextLost = () => this.resetAllOpacity()
   fadeIn(mesh: PhotoMesh, duration = .5, targetOpacity = 1): void { this.fadeTo(mesh, targetOpacity, duration) }

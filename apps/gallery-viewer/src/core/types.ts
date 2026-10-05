@@ -1,6 +1,7 @@
 import type * as THREE from 'three'
 import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import type { PostProcessingState } from './PostProcessing'
+import type { TextureBudget } from './TexturePool'
 
 /**
  * 照片网格对象
@@ -15,6 +16,7 @@ export interface PhotoMesh extends THREE.Mesh {
     title?: string
     entranceOffsetY?: number
     layoutScale?: number
+    textureState?: 'placeholder' | 'ready' | 'failed'
   }
 }
 
@@ -117,6 +119,7 @@ export interface ViewerDiagnostics {
   postProcessing: PostProcessingState
   requestedConfig: ViewerConfig
   effectiveConfig: ViewerConfig
+  textures: { resident: number; bytes: number; pending: number; active: number; failed: number; budget: TextureBudget }
 }
 export interface ViewerDiagnosticApi {
   snapshot(): ViewerDiagnostics

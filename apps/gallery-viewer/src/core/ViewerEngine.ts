@@ -1,5 +1,7 @@
 import * as THREE from 'three'
-import { mergeViewerConfig } from '@vie/gallery-contracts'
+import { mergeViewerConfig, type PublicPhoto } from '@vie/gallery-contracts'
+import { PhotoScene } from './PhotoScene'
+import { TexturePool, loadPhotoTexture } from './TexturePool'
 import { FrameClock } from './FrameClock'
 import { PostProcessing } from './PostProcessing'
 import type { ViewerDiagnosticApi } from './types'
@@ -26,6 +28,7 @@ export interface EngineMetrics {
   textures: number
   pixelRatio: number
   isThrottled: boolean
+  failedTextures?: number
 }
 
 /**
@@ -68,6 +71,8 @@ export class ViewerEngine {
   private pendingConfig: ViewerConfig | null = null
   private inFlightConfig: ViewerConfig | null = null
   private configDrain: Promise<void> | null = null
+  private texturePool: TexturePool
+  private photoScene: PhotoScene
   private postProcessing: PostProcessing
   private frozenTime: number | null = null
   private diagnostics: ViewerDiagnosticApi | null = null
@@ -102,6 +107,8 @@ export class ViewerEngine {
     this.renderer = this.createRenderer()
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
     this.clock = new FrameClock()
+    this.texturePool = new TexturePool({ maxEdge: 1024, bytes: 64 * 1024 ** 2, concurrent: 3, resident: 64 }, loadPhotoTexture)
+    this.photoScene = new PhotoScene(this.scene, this.texturePool, mesh => this.eventBus.emit('photo:texture-ready', mesh))
 
     // 初始化交互控制器 (OrbitControls)
     this.controls = this.createControls()
@@ -161,7 +168,8 @@ export class ViewerEngine {
     if (this.disposed) return
     if (import.meta.env.DEV || import.meta.env.VITE_VIEWER_DIAGNOSTICS === 'true') {
       this.diagnostics = {
-        snapshot: () => ({ postProcessing: this.postProcessing.getState(), requestedConfig: this.getRequestedConfig(), effectiveConfig: structuredClone(this.pluginContext!.config) }),
+        snapshot: () => ({ postProcessing: this.postProcessing.getState(), requestedConfig: this.getRequestedConfig(), effectiveConfig: structuredClone(this.pluginContext!.config),
+          textures: { ...this.texturePool.getMetrics(), failed: this.photos.filter(photo => photo.userData.textureState === 'failed').length, budget: this.texturePool.getBudget() } }),
         requestConfig: patch => this.applyConfig(patch),
         freezeTime: elapsed => { this.frozenTime = elapsed },
         photoMeshIds: () => this.photos.map(photo => photo.uuid)
@@ -348,40 +356,19 @@ export class ViewerEngine {
    * 设置照片数据（自动应用视锥体剔除优化）
    * 追加照片时 App 会整表重建 Mesh，因此这里负责回收被替换照片的几何与纹理
    */
-  setPhotos(photos: PhotoMesh[]): void {
-    this.photos.forEach(photo => {
-      this.scene.remove(photo)
-      this.disposePhotoResources(photo)
-    })
-
-    this.photos = photos
-
-    // 启用视锥体剔除并计算边界球
-    this.photos.forEach(photo => {
-      photo.frustumCulled = true
-      if (photo.geometry && !photo.geometry.boundingSphere) {
-        photo.geometry.computeBoundingSphere()
-      }
-      this.scene.add(photo)
-    })
-
-    // 同步插件共享上下文，Layout 等插件监听 photos:loaded 后立即拿到新列表
-    if (this.pluginContext) {
-      this.pluginContext.photos = this.photos
-    }
-
-    this.eventBus.emit('photos:loaded', photos)
+  syncPhotos(photos: PublicPhoto[]): void {
+    if (this.disposed) return
+    const diff = this.photoScene.sync(photos)
+    this.photos = diff.all
+    if (this.pluginContext) this.pluginContext.photos = this.photos
+    this.eventBus.emit('photos:loaded', this.photos)
+    this.eventBus.emit('photos:added', diff.added)
     this.wakeUp(3000)
   }
-
-  private disposePhotoResources(photo: PhotoMesh): void {
-    photo.geometry?.dispose()
-    const materials = Array.isArray(photo.material) ? photo.material : [photo.material]
-    materials.forEach(material => {
-      const map = (material as THREE.MeshStandardMaterial).map
-      if (map) map.dispose()
-      material.dispose()
-    })
+  retryPhotoTextures(): void {
+    // PhotoScene stores public identities; retry only failed entries.
+    this.photoScene.retryFailed()
+    this.wakeUp(3000)
   }
 
   /**
@@ -406,7 +393,8 @@ export class ViewerEngine {
       geometries: memory.geometries || 0,
       textures: memory.textures || 0,
       pixelRatio: parseFloat(this.renderer.getPixelRatio().toFixed(2)),
-      isThrottled: this.isIdle
+      isThrottled: this.isIdle,
+      failedTextures: this.photos.filter(photo => photo.userData.textureState === 'failed').length
     }
   }
 
@@ -571,11 +559,8 @@ export class ViewerEngine {
     // 卸载所有插件
     this.pluginManager.dispose()
 
-    // 清理照片 Mesh 及其几何/材质/纹理
-    this.photos.forEach(photo => {
-      this.scene.remove(photo)
-      this.disposePhotoResources(photo)
-    })
+    this.photoScene.dispose()
+    this.texturePool.dispose()
     this.photos = []
 
     this.postProcessing.dispose()
@@ -750,6 +735,7 @@ export class ViewerEngine {
 
     // 更新所有插件 (粒子动画、天空盒跟随、布局缓动)
     this.pluginManager.update(delta, elapsed)
+    this.photoScene.updateVisibility(this.camera)
 
     try { this.postProcessing.render(delta) }
     catch {
