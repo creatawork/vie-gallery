@@ -1,6 +1,7 @@
 export * from './brandSite'
 export * from './brandTokens'
 export * from './viewerConfig'
+export * from './viewerPresets'
 
 export type GalleryVisibility = 'PUBLIC' | 'PRIVATE' | 'PASSWORD'
 export type GalleryStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'

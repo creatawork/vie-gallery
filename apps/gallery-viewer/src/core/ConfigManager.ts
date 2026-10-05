@@ -1,388 +1,88 @@
-import type { ViewerConfig } from './types'
+import { createDefaultViewerConfig, normalizeViewerConfig, parseViewerConfig, mergeViewerConfig, serializeViewerConfig,
+  ViewerConfigValidationError, VIEWER_PRESETS, applyViewerPreset, isViewerPreset, type ViewerConfig, type ConfigIssue } from '@vie/gallery-contracts'
 import { PublicApiClient } from '../api/client'
 
-export interface DeviceProfile {
-  isMobile: boolean
-  memory: number
-  cores: number
-  isLowEnd: boolean
-  pixelRatio: number
-}
-
+export interface DeviceProfile { isMobile: boolean; memory: number; cores: number; isLowEnd: boolean; pixelRatio: number }
 export function getDeviceProfile(): DeviceProfile {
-  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
-  const isMobile = /Mobi|Android|iPhone|iPad/i.test(userAgent)
-  const memory = typeof navigator === 'undefined' ? 4 : (navigator as any).deviceMemory || 4
-  const cores = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency || 4
+  const nav = typeof navigator === 'undefined' ? undefined : navigator
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(nav?.userAgent ?? '')
+  const memory = (nav as (Navigator & { deviceMemory?: number }) | undefined)?.deviceMemory ?? 4
+  const cores = nav?.hardwareConcurrency ?? 4
   const isLowEnd = isMobile || memory < 4 || cores < 4
-  const devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
-
-  return {
-    isMobile,
-    memory,
-    cores,
-    isLowEnd,
-    pixelRatio: isLowEnd ? 1 : Math.min(devicePixelRatio, 2)
-  }
+  return { isMobile, memory, cores, isLowEnd, pixelRatio: isLowEnd ? 1 : Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, 2) }
 }
+export const BUILTIN_PRESETS = VIEWER_PRESETS
 
-/**
- * 6 大生产级预设配置定义
- */
-export const BUILTIN_PRESETS: Record<string, Partial<ViewerConfig>> = {
-  'minimal': {
-    presetName: 'minimal',
-    layout: { mode: 'sphere' },
-    particles: { enabled: false, types: [] },
-    effects: { bloom: { enabled: false }, fog: { enabled: false } },
-    interaction: { clickRipple: true, cursorTrail: false },
-    lighting: { timeOfDay: 'noon', autoColorAdapt: false }
-  },
-  'forest-dream': {
-    presetName: 'forest-dream',
-    layout: { mode: 'helix' },
-    particles: { enabled: true, types: ['sakura', 'fireflies'], density: 1.0 },
-    effects: {
-      bloom: { enabled: true, strength: 0.65, radius: 0.5, threshold: 0.2 },
-      fog: { enabled: true, color: '#163124', density: 0.0006 }
-    },
-    interaction: { clickRipple: true, cursorTrail: false },
-    lighting: { timeOfDay: 'sunrise', autoColorAdapt: true }
-  },
-  'starry-night': {
-    presetName: 'starry-night',
-    layout: { mode: 'sphere' },
-    particles: { enabled: true, types: ['stars', 'meteors'], density: 1.2 },
-    effects: {
-      bloom: { enabled: true, strength: 0.8, radius: 0.6, threshold: 0.15 },
-      fog: { enabled: false }
-    },
-    interaction: { clickRipple: true, cursorTrail: true },
-    lighting: { timeOfDay: 'night', autoColorAdapt: true }
-  },
-  'ocean-breeze': {
-    presetName: 'ocean-breeze',
-    layout: { mode: 'spiral' },
-    particles: { enabled: false, types: [] },
-    effects: {
-      bloom: { enabled: false },
-      fog: { enabled: true, color: '#0c4a6e', density: 0.0008 }
-    },
-    interaction: { clickRipple: true, cursorTrail: false },
-    lighting: { timeOfDay: 'noon', autoColorAdapt: true }
-  },
-  'sunset-glow': {
-    presetName: 'sunset-glow',
-    layout: { mode: 'grid' },
-    particles: { enabled: true, types: ['sakura'], density: 0.8 },
-    effects: {
-      bloom: { enabled: true, strength: 0.85, radius: 0.6, threshold: 0.2 },
-      fog: { enabled: true, color: '#7c2d12', density: 0.0005 }
-    },
-    interaction: { clickRipple: true, cursorTrail: true },
-    lighting: { timeOfDay: 'sunset', autoColorAdapt: true }
-  },
-  'romantic': {
-    presetName: 'romantic',
-    layout: { mode: 'spiral' },
-    particles: { enabled: true, types: ['hearts', 'fireflies'], density: 1.0 },
-    effects: {
-      bloom: { enabled: true, strength: 0.7, radius: 0.5, threshold: 0.25 },
-      fog: { enabled: false }
-    },
-    interaction: { clickRipple: true, cursorTrail: true },
-    lighting: { timeOfDay: 'night', autoColorAdapt: true }
-  }
-}
-
-/**
- * 默认配置
- */
-const DEFAULT_CONFIG: ViewerConfig = {
-  quality: 'auto',
-  layout: {
-    mode: 'sphere'
-  },
-  particles: {
-    enabled: true,
-    types: ['stars'],
-    density: 1.0
-  },
-  effects: {
-    bloom: {
-      enabled: true,
-      strength: 0.7,
-      radius: 0.5,
-      threshold: 0.2
-    },
-    fog: {
-      enabled: false,
-      color: '#0f172a',
-      density: 0.0008
-    },
-    photoFloat: true
-  },
-  camera: {
-    autoRotate: false,
-    introFlight: false
-  },
-  interaction: {
-    clickRipple: true,
-    cursorTrail: false
-  },
-  lighting: {
-    timeOfDay: 'auto',
-    autoColorAdapt: true
-  },
-  audio: {
-    bgm: {
-      enabled: false
-    },
-    sfx: {
-      enabled: true
-    }
-  }
-}
-
-/**
- * 配置管理器
- * 负责配置的加载、保存、合并和验证
- */
 export class ConfigManager {
   private config: ViewerConfig
-  private serverConfig: Partial<ViewerConfig> | null = null
+  private serverConfig: ViewerConfig | null = null
   private readonly publicApi = new PublicApiClient()
   private readonly STORAGE_KEY = 'vie-gallery-viewer-config'
   private readonly PREFERENCE_KEY = 'vie-gallery-viewer-preference'
-
-  constructor(initialConfig?: Partial<ViewerConfig>) {
-    this.config = this.deepMerge(
-      DEFAULT_CONFIG,
-      initialConfig || {}
-    )
+  readonly diagnostics: ConfigIssue[] = []
+  constructor(initialConfig?: Partial<ViewerConfig>) { this.config = this.legacy(initialConfig ?? {}) }
+  private legacy(input: unknown): ViewerConfig {
+    const result = normalizeViewerConfig(input, 'legacy')
+    this.diagnostics.push(...result.issues)
+    return result.config
   }
-
-  /**
-   * 从服务端加载配置（相册所有者设定的风格）
-   */
   async loadFromServer(slug: string): Promise<ViewerConfig> {
-    // Use the public client so HTTP and network failures retain their typed,
-    // non-sensitive error details. Only an empty 404 means no saved config.
-    const serverData = await this.publicApi.getViewerConfig(slug)
-    if (serverData?.configJson) {
-      const parsed = JSON.parse(serverData.configJson) as Partial<ViewerConfig>
-      this.serverConfig = parsed
-      this.config = this.deepMerge(
-        DEFAULT_CONFIG,
-        parsed,
-        this.loadPreferenceFromStorage()
-      )
+    const data = await this.publicApi.getViewerConfig(slug)
+    if (data?.configJson) {
+      const result = parseViewerConfig(data.configJson, data.schemaVersion ?? 1, 'legacy')
+      this.diagnostics.push(...result.issues)
+      this.serverConfig = result.config
+      this.config = mergeViewerConfig(result.config, this.loadPreferenceFromStorage())
     }
     return this.getConfig()
   }
-
-  /**
-   * 保存用户偏好
-   */
   savePreference(preference: Partial<ViewerConfig>): void {
-    try {
-      localStorage.setItem(
-        this.PREFERENCE_KEY,
-        JSON.stringify(preference)
-      )
-
-      this.config = this.deepMerge(
-        DEFAULT_CONFIG,
-        this.serverConfig || {},
-        preference
-      )
-    } catch (error) {
-      console.warn('Failed to save preference:', error)
-    }
+    const candidate = mergeViewerConfig(this.serverConfig ?? createDefaultViewerConfig(), preference)
+    try { localStorage.setItem(this.PREFERENCE_KEY, JSON.stringify(preference)) } catch { /* Storage is optional. */ }
+    this.config = candidate
   }
-
-  /**
-   * 获取用户偏好
-   */
   private loadPreferenceFromStorage(): Partial<ViewerConfig> {
     try {
       const saved = localStorage.getItem(this.PREFERENCE_KEY)
-      return saved ? JSON.parse(saved) : {}
-    } catch {
-      return {}
-    }
+      if (!saved) return {}
+      const raw: unknown = JSON.parse(saved)
+      mergeViewerConfig(createDefaultViewerConfig(), raw)
+      return raw as Partial<ViewerConfig>
+    } catch { return {} }
   }
-
-  /**
-   * 清除用户偏好
-   */
   clearPreference(): void {
-    try {
-      localStorage.removeItem(this.STORAGE_KEY)
-      localStorage.removeItem(this.PREFERENCE_KEY)
-      this.config = this.deepMerge(
-        DEFAULT_CONFIG,
-        this.serverConfig || {}
-      )
-    } catch (error) {
-      console.warn('Failed to clear preference:', error)
-    }
+    try { localStorage.removeItem(this.STORAGE_KEY); localStorage.removeItem(this.PREFERENCE_KEY) } catch { /* Storage is optional. */ }
+    this.config = structuredClone(this.serverConfig ?? createDefaultViewerConfig())
   }
-
-  /**
-   * 获取当前配置
-   */
-  getConfig(): ViewerConfig {
-    return this.deepClone(this.config)
-  }
-
-  /**
-   * 更新配置
-   */
+  getConfig(): ViewerConfig { return structuredClone(this.config) }
   updateConfig(updates: Partial<ViewerConfig>): ViewerConfig {
-    this.config = this.deepMerge(this.config, updates)
+    this.config = mergeViewerConfig(this.config, updates)
     return this.getConfig()
   }
-
-  /**
-   * 重置为默认配置
-   */
-  reset(): ViewerConfig {
-    this.config = this.deepClone(DEFAULT_CONFIG)
-    this.serverConfig = null
-    this.clearPreference()
-    return this.getConfig()
-  }
-
-  /**
-   * 加载预设配置
-   * 只返回合并后的候选配置，不直接提交到 this.config：
-   * 引擎的 applyConfig 会先读取真正的当前配置做插件增删对比，再经 updateConfig 合并。
-   * 若在这里替换 this.config，prev/next 对比就变成了"预设 vs 预设"，导致插件装不上/卸不掉。
-   */
-  async loadPreset(name: string): Promise<ViewerConfig> {
-    const builtin = BUILTIN_PRESETS[name]
-    if (builtin) {
-      return this.deepMerge(DEFAULT_CONFIG, builtin)
-    }
-
-    try {
-      const response = await fetch(`/presets/${name}.json`)
-      if (response.ok) {
-        const preset = await response.json()
-        return this.deepMerge(DEFAULT_CONFIG, preset)
-      }
-    } catch (error) {
-      console.error(`Error loading preset "${name}":`, error)
-    }
-    return this.getConfig()
-  }
-
-  /**
-   * 导出配置为 JSON
-   */
-  exportConfig(): string {
-    return JSON.stringify(this.config, null, 2)
-  }
-
-  /**
-   * 从 JSON 导入配置
-   */
+  reset(): ViewerConfig { this.serverConfig = null; this.clearPreference(); return this.getConfig() }
+  async loadPreset(name: string): Promise<ViewerConfig> { return isViewerPreset(name) ? applyViewerPreset(name, this.config) : this.getConfig() }
+  exportConfig(): string { return serializeViewerConfig(this.config) }
   importConfig(json: string): ViewerConfig {
-    try {
-      const imported = JSON.parse(json)
-      this.config = this.deepMerge(DEFAULT_CONFIG, imported)
-      return this.getConfig()
-    } catch (error) {
-      console.error('Error importing config:', error)
-      throw new Error('Invalid config JSON')
-    }
-  }
-
-  /**
-   * 自动检测设备并调整配置
-   */
-  autoAdjustForDevice(): ViewerConfig {
-    const profile = getDeviceProfile()
-
-    if (profile.isLowEnd) {
-      this.config = this.deepMerge(this.config, {
-        quality: 'low',
-        particles: {
-          enabled: false,
-          density: 0.5
-        },
-        effects: {
-          bloom: { enabled: false },
-          fog: { enabled: false }
-        }
-      })
-    } else {
-      this.config.quality = 'high'
-    }
-
+    const result = parseViewerConfig(json, 1, 'legacy')
+    if (result.issues.length) throw new ViewerConfigValidationError(result.issues)
+    this.config = result.config
     return this.getConfig()
   }
-
-  /**
-   * 从 URL 参数加载配置
-   */
+  autoAdjustForDevice(): ViewerConfig { return this.getConfig() }
   loadFromURL(): Partial<ViewerConfig> | null {
+    if (typeof window === 'undefined') return null
     const params = new URLSearchParams(window.location.search)
-    let baseConfig: any = {}
-
-    // 1. 优先解析预设 preset
     const preset = params.get('preset')
-    if (preset && BUILTIN_PRESETS[preset]) {
-      baseConfig = this.deepClone(BUILTIN_PRESETS[preset])
-    }
-
-    // 2. 覆盖单个参数
+    let candidate = preset && isViewerPreset(preset) ? applyViewerPreset(preset, this.config) : this.getConfig()
+    let changed = !!preset && isViewerPreset(preset)
     const layout = params.get('layout')
-    if (layout && ['sphere', 'carousel', 'helix', 'grid', 'spiral', 'random'].includes(layout)) {
-      baseConfig.layout = { mode: layout }
+    if (layout) {
+      try { candidate = mergeViewerConfig(candidate, { layout: { mode: layout } }); changed = true } catch { /* Ignore unsupported URL values. */ }
     }
-
     const particles = params.get('particles')
-    if (particles) {
-      const types = particles.split(',').filter(t =>
-        ['stars', 'hearts', 'sakura', 'snow', 'fireflies', 'meteors'].includes(t)
-      )
-      if (types.length > 0) {
-        baseConfig.particles = { enabled: true, types }
-      }
+    if (particles !== null) {
+      try { candidate = mergeViewerConfig(candidate, { particles: { enabled: !!particles, types: particles ? [...new Set(particles.split(','))] : [] } }); changed = true } catch { /* Ignore unsupported URL values. */ }
     }
-
-    return Object.keys(baseConfig).length > 0 ? baseConfig : null
-  }
-
-  /**
-   * 深度合并对象
-   */
-  private deepMerge(...objects: any[]): any {
-    const result: any = {}
-
-    for (const obj of objects) {
-      if (!obj || typeof obj !== 'object') continue
-
-      for (const key in obj) {
-        const value = obj[key]
-
-        if (value && typeof value === 'object' && !Array.isArray(value)) {
-          result[key] = this.deepMerge(result[key] || {}, value)
-        } else {
-          result[key] = value
-        }
-      }
-    }
-
-    return result
-  }
-
-  /**
-   * 深度克隆对象
-   */
-  private deepClone<T>(obj: T): T {
-    return JSON.parse(JSON.stringify(obj))
+    return changed ? candidate : null
   }
 }
