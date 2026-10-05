@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { mergeViewerConfig } from '@vie/gallery-contracts'
 import { FrameClock } from './FrameClock'
+import { PostProcessing } from './PostProcessing'
+import type { ViewerDiagnosticApi } from './types'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import type { ViewerContext, ViewerConfig, PhotoMesh } from './types'
@@ -66,6 +68,9 @@ export class ViewerEngine {
   private pendingConfig: ViewerConfig | null = null
   private inFlightConfig: ViewerConfig | null = null
   private configDrain: Promise<void> | null = null
+  private postProcessing: PostProcessing
+  private frozenTime: number | null = null
+  private diagnostics: ViewerDiagnosticApi | null = null
 
   // 性能 APM 探针
   private frameCount = 0
@@ -95,6 +100,7 @@ export class ViewerEngine {
     this.scene = new THREE.Scene()
     this.camera = this.createCamera()
     this.renderer = this.createRenderer()
+    this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
     this.clock = new FrameClock()
 
     // 初始化交互控制器 (OrbitControls)
@@ -152,6 +158,16 @@ export class ViewerEngine {
     // 6. 根据配置自动安装插件
     await this.installPluginsFromConfig()
 
+    if (this.disposed) return
+    if (import.meta.env.DEV || import.meta.env.VITE_VIEWER_DIAGNOSTICS === 'true') {
+      this.diagnostics = {
+        snapshot: () => ({ postProcessing: this.postProcessing.getState(), requestedConfig: this.getRequestedConfig(), effectiveConfig: structuredClone(this.pluginContext!.config) }),
+        requestConfig: patch => this.applyConfig(patch),
+        freezeTime: elapsed => { this.frozenTime = elapsed },
+        photoMeshIds: () => this.photos.map(photo => photo.uuid)
+      }
+      window.__VIE_VIEWER_DIAGNOSTICS__ = this.diagnostics
+    }
     this.eventBus.emit('ready')
   }
 
@@ -210,9 +226,9 @@ export class ViewerEngine {
     context.config = effective
     this.pluginManager.setContext(context)
     const wanted = new Map<string, boolean>([
-      ['Layout', true], ['Lighting', true], ['PhotoFade', true],
+      ['Layout', true], ['Lighting', true], ['PhotoFade', true], ['Background', true],
       ['Particles', effective.particles.enabled && effective.particles.types.length > 0 && (effective.particles.density ?? 1) > 0],
-      ['Bloom', !!effective.effects.bloom?.enabled], ['Fog', !!effective.effects.fog?.enabled],
+      ['Fog', !!effective.effects.fog?.enabled],
       ['ClickRipple', !!effective.interaction.clickRipple], ['CursorTrail', !!effective.interaction.cursorTrail]
     ])
     for (const [name, enabled] of wanted) {
@@ -220,8 +236,13 @@ export class ViewerEngine {
       else this.pluginManager.uninstall(name)
       if (this.disposed) return
     }
-    const bloom = this.pluginManager.get('Bloom') as { getComposer?: () => EffectComposer | null } | undefined
-    this.setComposer(this.pluginManager.isInstalled('Bloom') ? bloom?.getComposer?.() ?? null : null)
+    try {
+      this.postProcessing.apply(effective.effects)
+      this.resizePostProcessing()
+    } catch {
+      this.postProcessing.dispose()
+      this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
+    }
     if (this.controls) {
       this.controls.autoRotate = !!effective.camera?.autoRotate
       this.controls.autoRotateSpeed = effective.camera?.rotateSpeed ?? .5
@@ -557,6 +578,9 @@ export class ViewerEngine {
     })
     this.photos = []
 
+    this.postProcessing.dispose()
+    if (window.__VIE_VIEWER_DIAGNOSTICS__ === this.diagnostics) delete window.__VIE_VIEWER_DIAGNOSTICS__
+    this.diagnostics = null
     this.renderer.dispose()
 
     window.removeEventListener('resize', this.handleResize)
@@ -665,7 +689,7 @@ export class ViewerEngine {
         })
       },
 
-      now: () => this.clock.elapsed,
+      now: () => this.frozenTime ?? this.clock.elapsed,
       reducedMotion: () => this.motionQuery.matches,
       isMobile: () => /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent),
       getQuality: () => {
@@ -692,7 +716,9 @@ export class ViewerEngine {
       return
     }
 
-    const { delta, elapsed } = this.clock.tick(now)
+    const frame = this.clock.tick(now)
+    const delta = this.frozenTime === null ? frame.delta : 0
+    const elapsed = this.frozenTime ?? frame.elapsed
     const frameDuration = now - this.lastRenderTime
     this.lastRenderTime = now
 
@@ -707,8 +733,10 @@ export class ViewerEngine {
       // 动态分辨率自适应微调 (DRS)
       if (this.currentFps < 30 && this.basePixelRatio > 1.0) {
         this.renderer.setPixelRatio(1.0)
+        this.resizePostProcessing()
       } else if (this.currentFps >= 55 && this.renderer.getPixelRatio() < this.basePixelRatio) {
         this.renderer.setPixelRatio(this.basePixelRatio)
+        this.resizePostProcessing()
       }
 
       this.eventBus.emit('metrics:update', this.getMetrics())
@@ -723,12 +751,18 @@ export class ViewerEngine {
     // 更新所有插件 (粒子动画、天空盒跟随、布局缓动)
     this.pluginManager.update(delta, elapsed)
 
-    // 渲染画面
-    if (this.composer) {
-      this.composer.render()
-    } else {
+    try { this.postProcessing.render(delta) }
+    catch {
+      this.postProcessing.dispose()
       this.renderer.render(this.scene, this.camera)
+      this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
     }
+  }
+
+  private resizePostProcessing(): void {
+    const quality = this.pluginContext?.getQuality() ?? 'mid'
+    this.postProcessing.resize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight,
+      this.renderer.getPixelRatio(), { low: .5, mid: .75, high: 1 }[quality])
   }
 
   private handleResize = (): void => {
@@ -740,9 +774,7 @@ export class ViewerEngine {
 
     this.renderer.setSize(width, height)
 
-    if (this.composer) {
-      this.composer.setSize(width, height)
-    }
+    this.resizePostProcessing()
 
     this.pluginManager.onResize(width, height)
     this.eventBus.emit('resize', { width, height })

@@ -8,7 +8,8 @@
     "typecheck": "vue-tsc --noEmit",
     "build": "npm run typecheck && vite build",
     "verify": "npm run typecheck && npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@vie/gallery-contracts": "file:../../packages/gallery-contracts",
@@ -16,6 +17,7 @@
     "vue": "^3.5.12"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/three": "^0.185.4",
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "^5.6.3",

@@ -16,7 +16,7 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     const manager = new PluginManager(), context = createViewerContext(config), bus = new EventBus()
     const counts = new Map<string, number>()
     let finish!: () => void
-    for (const name of ['Layout', 'Lighting', 'PhotoFade', 'Bloom', 'Fog', 'ClickRipple', 'CursorTrail', 'Particles']) {
+    for (const name of ['Layout', 'Lighting', 'PhotoFade', 'Background', 'Fog', 'ClickRipple', 'CursorTrail', 'Particles']) {
       manager.register({ name, version: '1', install: () => {
         counts.set(name, (counts.get(name) ?? 0) + 1)
         if (name === 'Particles') return new Promise<void>(resolve => { finish = resolve })
@@ -26,7 +26,8 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     const engine = Object.create(ViewerEngine.prototype) as ViewerEngine
     Object.assign(engine, { pluginManager: manager, configManager: new ConfigManager(config), pluginContext: context,
       scene: context.scene, camera: context.camera, renderer: context.renderer, eventBus: bus, photos: [], clock: new FrameClock(), disposed: false,
-      pendingConfig: null, configDrain: null, composer: null, motionQuery: { matches: false }, controls: null })
+      pendingConfig: null, configDrain: null, composer: null, motionQuery: { matches: false }, controls: null,
+      postProcessing: { apply: () => {}, dispose: () => {} }, resizePostProcessing: () => {} })
     const a = engine.applyConfig({ particles: { enabled: true, types: ['stars'], density: .4 } })
     const b = engine.applyConfig({ particles: { density: .8 } } as never)
     for (let i = 0; i < 100 && !finish; i++) await Promise.resolve()
@@ -43,7 +44,7 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     assert.equal(counts.get('ClickRipple'), 0)
     await engine.applyConfig({ effects: { bloom: { enabled: true, strength: .4 } } })
     await engine.applyConfig({ effects: { bloom: { strength: .8 } } } as never)
-    assert.equal(counts.get('Bloom'), 1)
+    assert.equal(engine.getRequestedConfig().effects.bloom?.strength, .8)
     let removed = 0
     manager.register({ name: 'Fog', version: '1', install: () => { throw Error('expected fog failure') }, uninstall: () => removed++ })
     await assert.rejects(engine.applyConfig({ effects: { fog: { enabled: true } } }))

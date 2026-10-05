@@ -310,6 +310,9 @@ async function init3DEngine() {
     }
 
     engine = new ViewerEngine(canvasRef.value)
+    engine.getEventBus().on('effects:fallback', (data: { message: string }) => {
+      webglFallbackMessage.value = data.message
+    })
 
     // 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
     engine.setPhotos(buildPhotoMeshes(rawPhotos))

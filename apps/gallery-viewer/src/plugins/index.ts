@@ -7,7 +7,7 @@ export { CursorTrailPlugin } from './CursorTrailPlugin'
 
 // Visual effects plugins (from vie-mei)
 export { ParticlesPlugin } from './ParticlesPlugin'
-export { BloomPlugin } from './BloomPlugin'
+export { BackgroundPlugin } from './BackgroundPlugin'
 export { FogPlugin } from './FogPlugin'
 
 /**
@@ -35,7 +35,7 @@ export const pluginRegistry = {
 
   // Visual effects
   Particles: () => import('./ParticlesPlugin').then(m => new m.ParticlesPlugin()),
-  Bloom: () => import('./BloomPlugin').then(m => new m.BloomPlugin()),
+  Background: () => import('./BackgroundPlugin').then(m => new m.BackgroundPlugin()),
   Fog: () => import('./FogPlugin').then(m => new m.FogPlugin())
 }
 

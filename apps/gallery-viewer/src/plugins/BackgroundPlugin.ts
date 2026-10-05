@@ -1,0 +1,40 @@
+import * as THREE from 'three'
+import type { ViewerPlugin, ViewerContext } from '../core/types'
+export class BackgroundPlugin implements ViewerPlugin {
+  name = 'Background'
+  version = '1.0.0'
+  private context: ViewerContext | null = null
+  private texture: THREE.DataTexture | null = null
+  private signature = ''
+  install(context: ViewerContext): void { this.context = context; this.updateBackground(); context.on('config:update', this.updateBackground) }
+  uninstall(): void {
+    this.context?.off('config:update', this.updateBackground)
+    if (this.context) this.context.scene.background = null
+    this.texture?.dispose(); this.texture = null; this.context = null; this.signature = ''
+  }
+  private updateBackground = (): void => {
+    if (!this.context) return
+    const config = this.context.config.background
+    const signature = JSON.stringify(config)
+    if (signature === this.signature) return
+    this.signature = signature
+    if (!config || config.mode === 'solid') {
+      this.texture?.dispose(); this.texture = null
+      this.context.scene.background = new THREE.Color(config?.color ?? '#0f172a'); return
+    }
+    const size = 64, data = new Uint8Array(size * size * 4)
+    const first = new THREE.Color(config.color).convertLinearToSRGB()
+    const second = new THREE.Color(config.secondaryColor ?? config.color).convertLinearToSRGB()
+    const angle = (config.angle ?? 135) * Math.PI / 180
+    const dx = Math.sin(angle), dy = Math.cos(angle), range = Math.abs(dx) + Math.abs(dy)
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const t = THREE.MathUtils.clamp(.5 + ((x / (size - 1) - .5) * dx + (y / (size - 1) - .5) * dy) / Math.max(range, .001), 0, 1)
+      const color = first.clone().lerp(second, t), offset = (y * size + x) * 4
+      data[offset] = Math.round(color.r * 255); data[offset + 1] = Math.round(color.g * 255); data[offset + 2] = Math.round(color.b * 255); data[offset + 3] = 255
+    }
+    if (this.texture?.image.data) this.texture.image.data.set(data)
+    else this.texture = new THREE.DataTexture(data, size, size)
+    this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.needsUpdate = true
+    this.context.scene.background = this.texture
+  }
+}

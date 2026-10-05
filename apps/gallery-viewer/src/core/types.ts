@@ -1,5 +1,6 @@
 import type * as THREE from 'three'
 import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import type { PostProcessingState } from './PostProcessing'
 
 /**
  * 照片网格对象
@@ -111,3 +112,15 @@ export type ViewerEvent =
   | 'metrics:update'
   | 'resize'
   | 'destroy'
+
+export interface ViewerDiagnostics {
+  postProcessing: PostProcessingState
+  requestedConfig: ViewerConfig
+  effectiveConfig: ViewerConfig
+}
+export interface ViewerDiagnosticApi {
+  snapshot(): ViewerDiagnostics
+  requestConfig(patch: Partial<ViewerConfig>): Promise<void>
+  freezeTime(elapsed: number | null): void
+  photoMeshIds(): string[]
+}
