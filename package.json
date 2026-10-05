@@ -1,8 +1,14 @@
 {
   "name": "vie-gallery",
   "private": true,
-  "workspaces": ["apps/gallery-admin", "apps/gallery-viewer", "apps/gallery-site", "packages/*"],
+  "workspaces": [
+    "apps/gallery-admin",
+    "apps/gallery-viewer",
+    "apps/gallery-site",
+    "packages/*"
+  ],
   "scripts": {
+    "test:viewer:unit": "node scripts/test-viewer-unit.mjs",
     "dev:admin": "npm --workspace apps/gallery-admin run dev",
     "dev:viewer": "npm --workspace apps/gallery-viewer run dev",
     "check:docs": "node scripts/check-markdown-links.mjs",
@@ -10,5 +16,8 @@
     "build": "npm run build --workspaces --if-present",
     "verify": "npm run check:docs && npm run typecheck && npm run build",
     "verify:full": "npm run verify && mvn test"
+  },
+  "devDependencies": {
+    "esbuild": "0.21.5"
   }
 }

@@ -1,0 +1,14 @@
+[
+  {"name":"empty config","json":"{}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
+  {"name":"legacy layout","json":"{\"layout\":\"helix\"}","schemaVersion":1,"strictValid":false,"legacyValid":true,"issuePaths":["layout"]},
+  {"name":"zero density","json":"{\"particles\":{\"density\":0}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
+  {"name":"density outside range","json":"{\"particles\":{\"density\":3}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["particles.density"]},
+  {"name":"invalid color","json":"{\"background\":{\"color\":\"red\"}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["background.color"]},
+  {"name":"null layout","json":"{\"layout\":null}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["layout"]},
+  {"name":"array root","json":"[]","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["config"]},
+  {"name":"malformed JSON","json":"{broken","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["config"]},
+  {"name":"future version","json":"{}","schemaVersion":99,"strictValid":false,"legacyValid":false,"issuePaths":["schemaVersion"]},
+  {"name":"extension retained","json":"{\"extension\":{\"label\":\"x\"}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
+  {"name":"dangerous keys ignored","json":"{\"__proto__\":{\"polluted\":true},\"extension\":{\"constructor\":{},\"value\":1}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
+  {"name":"duplicate particles","json":"{\"particles\":{\"types\":[\"stars\",\"stars\"]}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["particles.types"]}
+]
