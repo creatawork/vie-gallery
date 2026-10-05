@@ -13,7 +13,7 @@ export type ViewerConfig = Extensible<{
   quality: ViewerQuality | 'auto'
   layout: Extensible<{ mode: LayoutMode; params?: LayoutParams; transition?: { duration?: number; style?: 'smooth' | 'burst' | 'none' } }>
   particles: Extensible<{ enabled: boolean; types: ParticleType[]; density?: number; speed?: number; size?: number; color?: string }>
-  background?: Extensible<{ mode: 'solid' | 'gradient'; color: string; secondaryColor?: string; angle?: number }>
+  background?: Extensible<{ mode: 'solid' | 'gradient' | 'image' | 'none'; color: string; secondaryColor?: string; angle?: number; image?: { url: string } }>
   effects: Extensible<{
     bloom?: { enabled: boolean; strength?: number; radius?: number; threshold?: number; preset?: 'fresh' | 'warm' | 'deep' | 'minimal' }
     fog?: { enabled: boolean; color?: string; density?: number; preset?: 'fresh' | 'warm' | 'deep' | 'minimal' }
@@ -46,7 +46,7 @@ export const VIEWER_CONFIG_RULES: Record<string, ConfigRule> = {
   'layout.transition': { kind: 'object' }, 'layout.transition.duration': number(.2, 3), 'layout.transition.style': enumeration('smooth', 'burst', 'none'),
   particles: { kind: 'object' }, 'particles.enabled': { kind: 'boolean' }, 'particles.types': { kind: 'particles' },
   'particles.density': number(0, 2), 'particles.speed': number(0, 2), 'particles.size': number(.5, 2), 'particles.color': { kind: 'color' },
-  background: { kind: 'object' }, 'background.mode': enumeration('solid', 'gradient'), 'background.color': { kind: 'color' }, 'background.secondaryColor': { kind: 'color' }, 'background.angle': number(0, 360),
+  background: { kind: 'object' }, 'background.mode': enumeration('solid', 'gradient', 'image', 'none'), 'background.color': { kind: 'color' }, 'background.secondaryColor': { kind: 'color' }, 'background.angle': number(0, 360), 'background.image': { kind: 'object' }, 'background.image.url': { kind: 'string' },
   effects: { kind: 'object' }, 'effects.bloom': { kind: 'object' }, 'effects.bloom.enabled': { kind: 'boolean' }, 'effects.bloom.strength': number(0, 2), 'effects.bloom.radius': number(0, 1), 'effects.bloom.threshold': number(0, 1), 'effects.bloom.preset': enumeration('fresh', 'warm', 'deep', 'minimal'),
   'effects.fog': { kind: 'object' }, 'effects.fog.enabled': { kind: 'boolean' }, 'effects.fog.color': { kind: 'color' }, 'effects.fog.density': number(0, .01), 'effects.fog.preset': enumeration('fresh', 'warm', 'deep', 'minimal'),
   'effects.postGrade': { kind: 'object' }, 'effects.postGrade.enabled': { kind: 'boolean' }, 'effects.postGrade.saturation': number(0, 2), 'effects.postGrade.brightness': number(.5, 1.5), 'effects.postGrade.contrast': number(.5, 1.5),

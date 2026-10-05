@@ -113,11 +113,11 @@ async function mockRoutes(page) {
     route.fulfill({ json: galleryAdmin() }))
 
   // 访客端（预览 iframe 加载自 5174）
-  await page.route(`**/api/g/${SLUG}/photos*`, route =>
+  await page.route(`**/api/public/g/${SLUG}/photos*`, route =>
     route.fulfill({ json: { items: [], total: 0, page: 0, pageSize: 50 } }))
-  await page.route(`**/api/g/${SLUG}/viewer-config`, route =>
+  await page.route(`**/api/public/g/${SLUG}/viewer-config`, route =>
     route.fulfill({ json: { configJson: draftJson } }))
-  await page.route(`**/api/g/${SLUG}`, route =>
+  await page.route(`**/api/public/g/${SLUG}`, route =>
     route.fulfill({ json: galleryPublic() }))
 }
 
@@ -142,12 +142,12 @@ async function main() {
   await page.waitForTimeout(300)
   await page.screenshot({ path: `${OUT}/02-atmosphere.png` })
 
-  // 空间背景与点缀色配置已移除：对应控件不应出现
-  const backgroundCards = await page.locator('.mode-card').count()
+  // 场景背景已恢复为八张缩略图，点缀色配置仍不显示
+  const backgroundCards = await page.locator('.preset-mini').count()
   const accentSwatches = await page.locator('.swatch[aria-label^="使用点缀色"]').count()
 
   // 雾化滑块 + 雾色色板
-  const fogSlider = page.locator('.side-block:has(h2:text-is("氛围")) input.range').nth(1)
+  const fogSlider = page.locator('.side-block:has(h2:text-is("光影与氛围")) input.range').nth(1)
   await fogSlider.fill('40')
   await page.waitForTimeout(300)
   const fogSwatches = await page.locator('.swatch-row:has(.swatch-label:text-is("雾色")) .swatch').count()
@@ -156,8 +156,8 @@ async function main() {
   await page.screenshot({ path: `${OUT}/03-fog.png` })
 
   // 光照时段：黄昏 + 星迹拖尾开关
-  const lightingChips = await page.locator('.side-block:has(h2:text-is("氛围")) .chip').count()
-  await page.click('.side-block:has(h2:text-is("氛围")) .chip:has-text("黄昏")')
+  const lightingChips = await page.locator('.side-block:has(h2:text-is("光影与氛围")) .chip').count()
+  await page.click('.side-block:has(h2:text-is("光影与氛围")) .chip:has-text("黄昏")')
   await page.click('.toggle-row:has-text("星迹拖尾") label.switch')
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${OUT}/04-lighting.png` })
@@ -216,13 +216,13 @@ async function main() {
     savedPhotoFloat: lastSave?.effects?.photoFloat
   }
   const failed = []
-  if (backgroundCards !== 0) failed.push('空间背景配置卡片未移除')
+  if (backgroundCards !== 8) failed.push('场景预设应包含八张背景卡片')
   if (accentSwatches !== 0) failed.push('点缀色色板未移除')
   if (!checks.fogSwatchesShown) failed.push('雾色色板未出现')
   if (!checks.lightingChipsShown) failed.push('光照时段选项未出现')
   if (!checks.meteorChipShown) failed.push('流星粒子选项未出现')
   if (!checks.historyCurrentLabel) failed.push('版本历史缺少“当前线上版本”标注')
-  if (checks.savedBackground !== undefined) failed.push('background 不应再写入配置')
+  if (checks.savedBackground?.image?.url !== '/g/backgrounds/starry-night.webp') failed.push('场景背景未持久化')
   if (checks.savedTheme !== undefined) failed.push('theme 不应再写入配置')
   if (checks.savedFogColor !== '#0c4a6e') failed.push('雾色未保存')
   if (!checks.savedFogEnabled) failed.push('雾效未随滑块启用')

@@ -1,3 +1,4 @@
+export * from './galleryMedia'
 export * from './brandSite'
 export * from './brandTokens'
 export * from './viewerConfig'

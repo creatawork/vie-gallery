@@ -93,8 +93,8 @@ const presets = [
   { name: 'sunset-glow', label: '日落余晖 · Sunset', icon: 'sparkles' },
   { name: 'romantic', label: '心动浪漫 · Hearts', icon: 'sparkles' },
   { name: 'minimal', label: '极简空间 · Minimal', icon: 'cube' },
-  { name: 'snowfall', label: '冬日雪境', icon: 'sparkles' },
-  { name: 'film', label: '胶片展厅', icon: 'cube' }
+  { name: 'winter-snow', label: '冬日雪境', icon: 'sparkles' },
+  { name: 'film-gallery', label: '胶片展厅', icon: 'cube' }
 ]
 
 onMounted(() => {

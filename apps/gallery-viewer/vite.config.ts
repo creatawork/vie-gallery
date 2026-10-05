@@ -12,6 +12,16 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5174,
       proxy: {
+        '/oss': {
+          target: 'https://vie-gallery.oss-cn-hangzhou.aliyuncs.com',
+          changeOrigin: true,
+          rewrite: path => path.replace(/^\/oss/, ''),
+          configure: proxy => proxy.on('proxyReq', req => {
+            req.removeHeader('cookie')
+            req.removeHeader('authorization')
+            req.setHeader('referer', 'https://gallery.vie-vibe.cn/')
+          })
+        },
         '/api': {
           target: apiTarget,
           changeOrigin: true

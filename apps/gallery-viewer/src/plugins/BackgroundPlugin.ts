@@ -4,7 +4,8 @@ export class BackgroundPlugin implements ViewerPlugin {
   name = 'Background'
   version = '1.0.0'
   private context: ViewerContext | null = null
-  private texture: THREE.DataTexture | null = null
+  private texture: THREE.Texture | null = null
+  private request = 0
   private signature = ''
   install(context: ViewerContext): void { this.context = context; this.updateBackground(); context.on('config:update', this.updateBackground) }
   uninstall(): void {
@@ -18,9 +19,19 @@ export class BackgroundPlugin implements ViewerPlugin {
     const signature = JSON.stringify(config)
     if (signature === this.signature) return
     this.signature = signature
-    if (!config || config.mode === 'solid') {
+    if (!config || config.mode === 'solid' || config.mode === 'none') {
       this.texture?.dispose(); this.texture = null
       this.context.scene.background = new THREE.Color(config?.color ?? '#0f172a'); return
+    }
+    if (config.mode === 'image' && config.image?.url) {
+      const request = ++this.request
+      new THREE.TextureLoader().load(config.image.url, texture => {
+        if (!this.context || request !== this.request || this.signature !== signature) { texture.dispose(); return }
+        this.texture?.dispose(); this.texture = texture
+        texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true
+        this.context.scene.background = texture
+      }, undefined, () => { if (request === this.request && this.context) this.context.scene.background = new THREE.Color(config.color ?? '#0f172a') })
+      return
     }
     const size = 64, data = new Uint8Array(size * size * 4)
     const first = new THREE.Color(config.color).convertLinearToSRGB()
@@ -32,7 +43,7 @@ export class BackgroundPlugin implements ViewerPlugin {
       const color = first.clone().lerp(second, t), offset = (y * size + x) * 4
       data[offset] = Math.round(color.r * 255); data[offset + 1] = Math.round(color.g * 255); data[offset + 2] = Math.round(color.b * 255); data[offset + 3] = 255
     }
-    if (this.texture?.image.data) this.texture.image.data.set(data)
+    if (this.texture instanceof THREE.DataTexture && this.texture.image.data) this.texture.image.data.set(data)
     else this.texture = new THREE.DataTexture(data, size, size)
     this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.needsUpdate = true
     this.context.scene.background = this.texture

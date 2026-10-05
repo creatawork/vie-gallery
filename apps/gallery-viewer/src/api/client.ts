@@ -1,3 +1,4 @@
+import { galleryMediaUrl } from '@vie/gallery-contracts'
 import type {
   ApiError,
   PublicGalleryResponse,
@@ -195,7 +196,14 @@ export class PublicApiClient {
       credentials: 'include'
     })
     if (!response.ok) throw await parseApiError(response, this.secrets())
-    return parseJsonResponse<PublicPhotoPage>(response, this.secrets())
+    const result = await parseJsonResponse<PublicPhotoPage>(response, this.secrets())
+    result.items = result.items.map(photo => ({
+      ...photo,
+      thumbnailUrl: photo.thumbnailUrl ? galleryMediaUrl(photo.thumbnailUrl) : null,
+      mediumUrl: photo.mediumUrl ? galleryMediaUrl(photo.mediumUrl) : photo.mediumUrl,
+      textureUrl: photo.textureUrl ? galleryMediaUrl(photo.textureUrl) : photo.textureUrl
+    }))
+    return result
   }
 
   /**

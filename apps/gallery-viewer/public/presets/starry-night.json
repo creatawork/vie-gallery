@@ -4,15 +4,16 @@
     "mode": "sphere"
   },
   "background": {
-    "type": "sky",
-    "sky": {
-      "theme": "starry",
-      "timeOfDay": "night"
+    "type": "image",
+    "image": {
+      "url": "/g/backgrounds/starry-night.webp"
     }
   },
   "particles": {
     "enabled": true,
-    "types": ["stars"],
+    "types": [
+      "stars"
+    ],
     "density": 1.5
   },
   "effects": {

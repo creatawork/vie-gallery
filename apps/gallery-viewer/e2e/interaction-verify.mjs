@@ -98,6 +98,8 @@ if (!await page.locator('.photo-card').first().count()) failed.push('刷新后�
 await page.evaluate(() => localStorage.removeItem('vie:view-mode'))
 await page.reload()
 await page.waitForSelector('canvas', { timeout: 20000 })
+// Canvas mounts before the engine finishes its asynchronous plugin installation.
+await page.getByTitle(/自动漫游|自动巡航/).waitFor({ timeout: 20000 })
 if (!await page.getByTitle(/自动漫游|自动巡航/).count()) failed.push('清除偏好后未默认回到 3D')
 
 if (errors.length) failed.push(`页面错误: ${errors.slice(0, 3).join(' | ')}`)
