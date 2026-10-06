@@ -39,6 +39,17 @@ class ViewerConfigValidatorTest {
         assertFalse(safe.get("extension").has("constructor"));
         assertEquals("kept", safe.get("extension").get("label").asText());
     }
+    @Test void backgroundModesAndProjection() {
+        var validator = new ViewerConfigValidator();
+        String builtin = "{\"background\":{\"mode\":\"image\",\"color\":\"#000000\",\"image\":{\"url\":\"/g/backgrounds/minimal.webp\",\"projection\":\"equirectangular\"}}}";
+        assertDoesNotThrow(() -> validator.validate(builtin, 1));
+        String custom = "{\"background\":{\"mode\":\"image\",\"color\":\"#000000\",\"image\":{\"url\":\"https://cdn.example.com/room.webp\"}}}";
+        assertDoesNotThrow(() -> validator.validate(custom, 1));
+        assertThrows(DomainException.class, () -> validator.validate("{\"background\":{\"mode\":\"image\",\"color\":\"#000000\",\"image\":{\"url\":\"/g/backgrounds/minimal.webp\",\"projection\":\"sphere\"}}}", 1));
+        assertDoesNotThrow(() -> validator.validate("{\"background\":{\"mode\":\"none\",\"color\":\"#000000\"}}", 1));
+        // Historical drafts stored background.type; the validator passes it through untouched.
+        assertDoesNotThrow(() -> validator.validate("{\"background\":{\"type\":\"image\",\"color\":\"#000000\"}}", 1));
+    }
     @Test void invalidGroupsAndNumericBoundaries() {
         var validator = new ViewerConfigValidator();
         assertThrows(DomainException.class, () -> validator.validate("{} {}", 1));

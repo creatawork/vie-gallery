@@ -1,8 +1,10 @@
 import { isConfigRecord, mergeConfigObjects, migrateLegacyConfig } from './viewerConfigLegacy'
+import { SCENE_PRESETS } from './galleryMedia'
 
 export type ViewerQuality = 'low' | 'mid' | 'high'
 export type ParticleType = 'stars' | 'hearts' | 'sakura' | 'snow' | 'fireflies' | 'meteors'
 export type LayoutMode = 'sphere' | 'carousel' | 'helix' | 'grid' | 'spiral' | 'random'
+export type BackgroundProjection = 'flat' | 'equirectangular'
 export interface LayoutParams {
   scale?: number; spacing?: number; radius?: number; columns?: number; height?: number; turns?: number
   [key: string]: unknown
@@ -13,7 +15,7 @@ export type ViewerConfig = Extensible<{
   quality: ViewerQuality | 'auto'
   layout: Extensible<{ mode: LayoutMode; params?: LayoutParams; transition?: { duration?: number; style?: 'smooth' | 'burst' | 'none' } }>
   particles: Extensible<{ enabled: boolean; types: ParticleType[]; density?: number; speed?: number; size?: number; color?: string }>
-  background?: Extensible<{ mode: 'solid' | 'gradient' | 'image' | 'none'; color: string; secondaryColor?: string; angle?: number; image?: { url: string } }>
+  background?: Extensible<{ mode: 'solid' | 'gradient' | 'image' | 'none'; color: string; secondaryColor?: string; angle?: number; image?: { url: string; projection?: BackgroundProjection } }>
   effects: Extensible<{
     bloom?: { enabled: boolean; strength?: number; radius?: number; threshold?: number; preset?: 'fresh' | 'warm' | 'deep' | 'minimal' }
     fog?: { enabled: boolean; color?: string; density?: number; preset?: 'fresh' | 'warm' | 'deep' | 'minimal' }
@@ -46,7 +48,7 @@ export const VIEWER_CONFIG_RULES: Record<string, ConfigRule> = {
   'layout.transition': { kind: 'object' }, 'layout.transition.duration': number(.2, 3), 'layout.transition.style': enumeration('smooth', 'burst', 'none'),
   particles: { kind: 'object' }, 'particles.enabled': { kind: 'boolean' }, 'particles.types': { kind: 'particles' },
   'particles.density': number(0, 2), 'particles.speed': number(0, 2), 'particles.size': number(.5, 2), 'particles.color': { kind: 'color' },
-  background: { kind: 'object' }, 'background.mode': enumeration('solid', 'gradient', 'image', 'none'), 'background.color': { kind: 'color' }, 'background.secondaryColor': { kind: 'color' }, 'background.angle': number(0, 360), 'background.image': { kind: 'object' }, 'background.image.url': { kind: 'string' },
+  background: { kind: 'object' }, 'background.mode': enumeration('solid', 'gradient', 'image', 'none'), 'background.color': { kind: 'color' }, 'background.secondaryColor': { kind: 'color' }, 'background.angle': number(0, 360), 'background.image': { kind: 'object' }, 'background.image.url': { kind: 'string' }, 'background.image.projection': enumeration('flat', 'equirectangular'),
   effects: { kind: 'object' }, 'effects.bloom': { kind: 'object' }, 'effects.bloom.enabled': { kind: 'boolean' }, 'effects.bloom.strength': number(0, 2), 'effects.bloom.radius': number(0, 1), 'effects.bloom.threshold': number(0, 1), 'effects.bloom.preset': enumeration('fresh', 'warm', 'deep', 'minimal'),
   'effects.fog': { kind: 'object' }, 'effects.fog.enabled': { kind: 'boolean' }, 'effects.fog.color': { kind: 'color' }, 'effects.fog.density': number(0, .01), 'effects.fog.preset': enumeration('fresh', 'warm', 'deep', 'minimal'),
   'effects.postGrade': { kind: 'object' }, 'effects.postGrade.enabled': { kind: 'boolean' }, 'effects.postGrade.saturation': number(0, 2), 'effects.postGrade.brightness': number(.5, 1.5), 'effects.postGrade.contrast': number(.5, 1.5),
@@ -102,6 +104,19 @@ function clean(value: unknown, path: string, depth: number, issues: ConfigIssue[
   issues.push({ path, message: `${path} 必须是 JSON 值` }); return undefined
 }
 
+const BUILTIN_BACKGROUND_NAMES = new Set<string>(SCENE_PRESETS.map(preset => preset.name))
+const BUILTIN_BACKGROUND_URL = /^\/g\/backgrounds\/([a-z0-9-]+)\.webp$/
+// Presets shipped before the projection field existed; their URLs are always equirectangular panoramas.
+// Custom uploads stay flat unless the owner explicitly opts in.
+function inferBackgroundProjection(config: ViewerConfig): ViewerConfig {
+  const image = config.background?.image
+  if (config.background?.mode === 'image' && image && image.projection === undefined) {
+    const name = BUILTIN_BACKGROUND_URL.exec(image.url)?.[1]
+    if (name && BUILTIN_BACKGROUND_NAMES.has(name)) image.projection = 'equirectangular'
+  }
+  return config
+}
+
 export function normalizeViewerConfig(input: unknown, mode: 'strict' | 'legacy' = 'strict'): ConfigResult {
   const defaults = createDefaultViewerConfig()
   if (!isConfigRecord(input)) return { config: defaults, issues: [{ path: 'config', message: '配置必须是对象' }] }
@@ -111,7 +126,7 @@ export function normalizeViewerConfig(input: unknown, mode: 'strict' | 'legacy' 
     const raw = mode === 'legacy' && typeof input.layout === 'string' ? { ...input, layout: { mode: input.layout } } : input
     const safe = clean(raw, '', 0, issues) as Record<string, unknown>
     const migrated = mode === 'legacy' ? migrateLegacyConfig(safe) : safe
-    return { config: mergeConfigObjects(defaults, migrated) as ViewerConfig, issues }
+    return { config: inferBackgroundProjection(mergeConfigObjects(defaults, migrated) as ViewerConfig), issues }
   } catch {
     return { config: defaults, issues: [{ path: 'config', message: '配置嵌套深度不能超过 8 层' }] }
   }

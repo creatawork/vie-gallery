@@ -28,6 +28,10 @@ export class BackgroundPlugin implements ViewerPlugin {
       new THREE.TextureLoader().load(config.image.url, texture => {
         if (!this.context || request !== this.request || this.signature !== signature) { texture.dispose(); return }
         this.texture?.dispose(); this.texture = texture
+        // Equirectangular backgrounds rotate with the camera; undeclared custom images stay flat.
+        texture.mapping = config.image?.projection === 'equirectangular'
+          ? THREE.EquirectangularReflectionMapping
+          : THREE.UVMapping
         texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true
         this.context.scene.background = texture
       }, undefined, () => { if (request === this.request && this.context) this.context.scene.background = new THREE.Color(config.color ?? '#0f172a') })

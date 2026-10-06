@@ -27,6 +27,14 @@ export function migrateLegacyConfig(input: Record<string, unknown>): Record<stri
   const name = typeof input.presetName === 'string' ? input.presetName : ''
   const config = mergeConfigObjects(LEGACY_PRESETS[name] ?? {}, input)
   if (typeof config.layout === 'string') config.layout = { mode: config.layout }
+  if (isConfigRecord(config.background)) {
+    const background = config.background
+    // Pre-upgrade drafts stored background.type; map it onto the current mode field.
+    if (typeof background.type === 'string' && background.mode === undefined) background.mode = background.type
+    // 'none' must win over any image URL left behind by an earlier image draft.
+    if (background.mode === 'none') delete background.image
+    delete background.type
+  }
   if (isConfigRecord(config.layout) && isConfigRecord(config.layout.params)) {
     const params = config.layout.params
     if (params.columns === undefined && params.cols !== undefined) params.columns = params.cols

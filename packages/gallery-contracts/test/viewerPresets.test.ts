@@ -39,6 +39,12 @@ test('scene switch and restore preserve access, quality, audio and nested extens
   assert.equal(minimal.layout.params?.radius, undefined)
   assert.equal(minimal.layout.params?.extension, 'kept')
 })
+test('scene presets declare equirectangular image backgrounds', () => {
+  for (const [name, scene] of Object.entries(VIEWER_PRESETS)) {
+    assert.equal(scene.background?.mode, 'image', name)
+    assert.equal(scene.background?.image?.projection, 'equirectangular', name)
+  }
+})
 test('historical preset-only config stays historical until a card is applied', () => {
   const old = normalizeViewerConfig({ presetName: 'minimal' }, 'legacy').config
   assert.equal(old.layout.mode, 'sphere')

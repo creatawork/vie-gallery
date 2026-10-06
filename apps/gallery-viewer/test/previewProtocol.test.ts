@@ -37,7 +37,7 @@ test('editor keeps extensions, invalid inputs and edits made during an in-flight
     return Response.json({ configJson: JSON.stringify({ quality: 'high', visitorAllowDownload: true, extension: { future: 42 }, audio: { bgm: { enabled: true } } }) })
   } })
   await editor.load()
-  editor.preset('film'); assert.equal(editor.config.value.quality, 'high')
+  editor.preset('film-gallery'); assert.equal(editor.config.value.quality, 'high')
   assert.deepEqual(editor.config.value.extension, { future: 42 })
   editor.patch({ layout: { params: { spacing: 1.5 } } }); assert.equal(editor.config.value.customized, true)
   editor.patch({ background: { color: 'red' } }); assert.equal(editor.issues.value[0].path, 'background.color')

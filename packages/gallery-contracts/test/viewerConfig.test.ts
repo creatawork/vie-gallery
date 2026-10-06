@@ -57,6 +57,24 @@ test('legacy bloom gains explicit old grading while neutral new config does not'
   assert.equal(parseViewerConfig('{}').config.effects.postGrade?.enabled, false)
   assert.equal(parseViewerConfig('{"effects":{"bloom":{"enabled":false}}}', 1, 'legacy').config.effects.postGrade?.enabled, false)
 })
+test('background image projection validates and builtin URLs gain equirectangular', () => {
+  const builtin = normalizeViewerConfig({ background: { mode: 'image', color: '#000000', image: { url: '/g/backgrounds/minimal.webp' } } }).config
+  assert.equal(builtin.background?.image?.projection, 'equirectangular')
+  const custom = normalizeViewerConfig({ background: { mode: 'image', color: '#000000', image: { url: 'https://cdn.example.com/room.webp' } } }).config
+  assert.equal(custom.background?.image?.projection, undefined)
+  const explicit = normalizeViewerConfig({ background: { mode: 'image', color: '#000000', image: { url: '/g/backgrounds/minimal.webp', projection: 'flat' } } }).config
+  assert.equal(explicit.background?.image?.projection, 'flat')
+  const invalid = normalizeViewerConfig({ background: { mode: 'image', color: '#000000', image: { url: '/g/backgrounds/minimal.webp', projection: 'sphere' } } })
+  assert.ok(invalid.issues.some(issue => issue.path === 'background.image.projection'))
+})
+test('legacy background type maps to mode and none wins over image fallback', () => {
+  const legacy = normalizeViewerConfig({ background: { type: 'image', color: '#000000', image: { url: '/g/backgrounds/minimal.webp' } } }, 'legacy').config
+  assert.equal(legacy.background?.mode, 'image')
+  assert.equal(legacy.background?.image?.projection, 'equirectangular')
+  const none = normalizeViewerConfig({ background: { type: 'none', color: '#000000', image: { url: '/g/backgrounds/minimal.webp' } } }, 'legacy').config
+  assert.equal(none.background?.mode, 'none')
+  assert.equal(none.background?.image, undefined)
+})
 test('all exposed numeric boundaries reject wrong types and out of range', () => {
   const boundaries = [
     ['layout.params.scale', .5, 2], ['layout.params.spacing', .5, 3], ['layout.params.radius', 100, 1500],
