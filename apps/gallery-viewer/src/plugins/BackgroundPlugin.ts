@@ -10,6 +10,7 @@ export class BackgroundPlugin implements ViewerPlugin {
   install(context: ViewerContext): void { this.context = context; this.updateBackground(); context.on('config:update', this.updateBackground) }
   uninstall(): void {
     this.context?.off('config:update', this.updateBackground)
+    this.request++
     if (this.context) this.context.scene.background = null
     this.texture?.dispose(); this.texture = null; this.context = null; this.signature = ''
   }
@@ -19,12 +20,13 @@ export class BackgroundPlugin implements ViewerPlugin {
     const signature = JSON.stringify(config)
     if (signature === this.signature) return
     this.signature = signature
+    // Every applied state change invalidates any in-flight image load.
+    const request = ++this.request
     if (!config || config.mode === 'solid' || config.mode === 'none') {
       this.texture?.dispose(); this.texture = null
       this.context.scene.background = new THREE.Color(config?.color ?? '#0f172a'); return
     }
     if (config.mode === 'image' && config.image?.url) {
-      const request = ++this.request
       new THREE.TextureLoader().load(config.image.url, texture => {
         if (!this.context || request !== this.request || this.signature !== signature) { texture.dispose(); return }
         this.texture?.dispose(); this.texture = texture
@@ -34,7 +36,13 @@ export class BackgroundPlugin implements ViewerPlugin {
           : THREE.UVMapping
         texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true
         this.context.scene.background = texture
-      }, undefined, () => { if (request === this.request && this.context) this.context.scene.background = new THREE.Color(config.color ?? '#0f172a') })
+      }, undefined, () => {
+        if (!this.context || request !== this.request || this.signature !== signature) return
+        this.texture?.dispose(); this.texture = null
+        this.context.scene.background = new THREE.Color(config.color ?? '#0f172a')
+        // Clear the signature so an identical config can retry the failed URL.
+        this.signature = ''
+      })
       return
     }
     const size = 64, data = new Uint8Array(size * size * 4)
@@ -48,7 +56,11 @@ export class BackgroundPlugin implements ViewerPlugin {
       data[offset] = Math.round(color.r * 255); data[offset + 1] = Math.round(color.g * 255); data[offset + 2] = Math.round(color.b * 255); data[offset + 3] = 255
     }
     if (this.texture instanceof THREE.DataTexture && this.texture.image.data) this.texture.image.data.set(data)
-    else this.texture = new THREE.DataTexture(data, size, size)
+    else {
+      // An image texture left over from the previous state must not be silently overwritten.
+      this.texture?.dispose()
+      this.texture = new THREE.DataTexture(data, size, size)
+    }
     this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.needsUpdate = true
     this.context.scene.background = this.texture
   }
