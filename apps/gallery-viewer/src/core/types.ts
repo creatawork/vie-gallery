@@ -18,6 +18,7 @@ export interface PhotoMesh extends THREE.Mesh {
     title?: string
     entranceOffsetY?: number
     layoutScale?: number
+    inView?: boolean
     textureState?: 'placeholder' | 'ready' | 'failed'
   }
 }

@@ -40,7 +40,7 @@ function markFailed(url: string) {
           :loading="props.prioritizeFirstPhotos && index < 2 ? 'eager' : 'lazy'"
           :fetchpriority="props.prioritizeFirstPhotos && index === 0 ? 'high' : 'auto'"
           decoding="async"
-          @load="reportFirstPhoto(index)"
+          @load="reportFirstPhoto"
           @error="markFailed(photo.thumbnailUrl)"
         />
         <span v-else class="photo-placeholder">预览暂不可用 · 点击查看</span>

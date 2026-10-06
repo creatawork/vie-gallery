@@ -341,13 +341,15 @@ function bindCanvasInteractions() {
 
   canvasPointerMoveHandler = (e) => {
     // Touch pointers are reserved for OrbitControls gestures; hover is mouse-only.
-    if (e.pointerType !== 'mouse' || !engine) return
+    const activeRaycaster = raycaster
+    const activeMousePos = mousePos
+    if (e.pointerType !== 'mouse' || !engine || !activeRaycaster || !activeMousePos) return
     const rect = canvas.getBoundingClientRect()
-    mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
-    mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+    activeMousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
-    raycaster!.setFromCamera(mousePos!, engine.getCamera())
-    const intersects = raycaster!.intersectObjects(engine.getPhotos())
+    activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
+    const intersects = activeRaycaster.intersectObjects(engine.getPhotos())
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh
@@ -381,13 +383,15 @@ function bindCanvasInteractions() {
     const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y)
     if (dist > 6) return
 
-    if (!engine) return
+    const activeRaycaster = raycaster
+    const activeMousePos = mousePos
+    if (!engine || !activeRaycaster || !activeMousePos) return
     const rect = canvas.getBoundingClientRect()
-    mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
-    mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+    activeMousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
-    raycaster!.setFromCamera(mousePos!, engine.getCamera())
-    const intersects = raycaster!.intersectObjects(engine.getPhotos())
+    activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
+    const intersects = activeRaycaster.intersectObjects(engine.getPhotos())
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh

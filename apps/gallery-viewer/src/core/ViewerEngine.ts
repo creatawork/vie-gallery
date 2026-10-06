@@ -81,7 +81,7 @@ export class ViewerEngine {
   private photoScene: PhotoScene
   private postProcessing: PostProcessing | null = null
   private frozenTime: number | null = null
-  private diagnostics: ViewerDiagnosticApi | null = null
+  private diagnostics: ViewerDiagnosticApi | undefined
   private effectiveQuality: Quality = 'mid'
   private qualityRequest: ViewerConfig['quality'] = 'auto'
   private qualityController: QualityController
@@ -636,7 +636,7 @@ export class ViewerEngine {
     this.postProcessing?.dispose()
     this.postProcessing = null
     if (window.__VIE_VIEWER_DIAGNOSTICS__ === this.diagnostics) delete window.__VIE_VIEWER_DIAGNOSTICS__
-    this.diagnostics = null
+    this.diagnostics = undefined
     this.frames = []
     this.renderer.dispose()
 
@@ -872,11 +872,15 @@ export class ViewerEngine {
   }
   private getDiagnostics() {
     const requested = this.getRequestedConfig(), metrics = this.getMetrics()
+    const postProcessing = this.postProcessing?.getState() ?? {
+      bloom: false, grading: false, vignette: false, width: 1, height: 1,
+      uniforms: { brightness: 1, contrast: 1, saturation: 1, vignette: 0 }
+    }
     const particles = this.pluginManager.get('Particles') as ParticlesPlugin | undefined
     const background = this.pluginManager.get('Background') as { getInfo?: () => { url: string | null; width: number; height: number; bytes: number; projection: 'flat' | 'equirectangular' | 'none' } } | undefined
     const direction = new THREE.Vector3()
     this.camera.getWorldDirection(direction)
-    return { postProcessing: this.postProcessing?.getState() ?? null, requestedConfig: requested, requested,
+    return { postProcessing, requestedConfig: requested, requested,
       effectiveConfig: structuredClone(this.pluginContext!.config), effectiveQuality: this.effectiveQuality, reason: this.qualityReason,
       elapsed: this.frozenTime ?? this.clock.elapsed, meshCount: this.photos.length,
       particleCounts: particles?.getParticleCounts() ?? { stars: 0, hearts: 0, sakura: 0, snow: 0, fireflies: 0, meteors: 0 },
