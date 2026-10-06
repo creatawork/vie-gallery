@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { ViewerPlugin, ViewerContext } from '../core/types'
+import { backgroundTextureUrl, type BackgroundProjection } from '@vie/gallery-contracts'
 export class BackgroundPlugin implements ViewerPlugin {
   name = 'Background'
   version = '1.0.0'
@@ -7,13 +8,18 @@ export class BackgroundPlugin implements ViewerPlugin {
   private texture: THREE.Texture | null = null
   private request = 0
   private signature = ''
+  private info: { url: string | null; width: number; height: number; bytes: number; projection: BackgroundProjection | 'none' } =
+    { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
   install(context: ViewerContext): void { this.context = context; this.updateBackground(); context.on('config:update', this.updateBackground) }
   uninstall(): void {
     this.context?.off('config:update', this.updateBackground)
     this.request++
     if (this.context) this.context.scene.background = null
     this.texture?.dispose(); this.texture = null; this.context = null; this.signature = ''
+    this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
   }
+  /** Texture footprint for diagnostics; bytes approximates GPU memory for the resident texture. */
+  getInfo() { return { ...this.info } }
   private updateBackground = (): void => {
     if (!this.context) return
     const config = this.context.config.background
@@ -24,10 +30,12 @@ export class BackgroundPlugin implements ViewerPlugin {
     const request = ++this.request
     if (!config || config.mode === 'solid' || config.mode === 'none') {
       this.texture?.dispose(); this.texture = null
+      this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
       this.context.scene.background = new THREE.Color(config?.color ?? '#0f172a'); return
     }
     if (config.mode === 'image' && config.image?.url) {
-      new THREE.TextureLoader().load(config.image.url, texture => {
+      const url = backgroundTextureUrl(config.image.url, this.context.getQuality())
+      new THREE.TextureLoader().load(url, texture => {
         if (!this.context || request !== this.request || this.signature !== signature) { texture.dispose(); return }
         this.texture?.dispose(); this.texture = texture
         // Equirectangular backgrounds rotate with the camera; undeclared custom images stay flat.
@@ -35,10 +43,17 @@ export class BackgroundPlugin implements ViewerPlugin {
           ? THREE.EquirectangularReflectionMapping
           : THREE.UVMapping
         texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true
+        const image = texture.image as { width?: number; height?: number } | undefined
+        this.info = {
+          url, width: image?.width ?? 0, height: image?.height ?? 0,
+          bytes: (image?.width ?? 0) * (image?.height ?? 0) * 4,
+          projection: config.image?.projection === 'equirectangular' ? 'equirectangular' : 'flat'
+        }
         this.context.scene.background = texture
       }, undefined, () => {
         if (!this.context || request !== this.request || this.signature !== signature) return
         this.texture?.dispose(); this.texture = null
+        this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
         this.context.scene.background = new THREE.Color(config.color ?? '#0f172a')
         // Clear the signature so an identical config can retry the failed URL.
         this.signature = ''
@@ -62,6 +77,7 @@ export class BackgroundPlugin implements ViewerPlugin {
       this.texture = new THREE.DataTexture(data, size, size)
     }
     this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.needsUpdate = true
+    this.info = { url: null, width: size, height: size, bytes: size * size * 4, projection: 'none' }
     this.context.scene.background = this.texture
   }
 }

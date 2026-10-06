@@ -1,4 +1,5 @@
 import { createDefaultViewerConfig, mergeViewerConfig, VIEWER_CONFIG_RULES, type ViewerConfig } from './viewerConfig'
+import { sceneBackgroundUrl } from './galleryMedia'
 
 export type PresetName = 'minimal' | 'forest-dream' | 'starry-night' | 'ocean-breeze' | 'sunset-glow' | 'romantic' | 'winter-snow' | 'film-gallery'
 function scene(name: PresetName, patch: unknown): ViewerConfig {
@@ -14,7 +15,7 @@ function scene(name: PresetName, patch: unknown): ViewerConfig {
   return mergeViewerConfig(base, patch)
 }
 function background(name: PresetName, color: string, secondaryColor = color) {
-  return { mode: 'image' as const, color, secondaryColor, angle: 135, image: { url: `/g/backgrounds/${name}.webp`, projection: 'equirectangular' as const } }
+  return { mode: 'image' as const, color, secondaryColor, angle: 135, image: { url: sceneBackgroundUrl(name)!, projection: 'equirectangular' as const } }
 }
 function bloom(strength: number) { return { enabled: true, strength } }
 function particles(types: string[], density: number, speed: number) { return { enabled: true, types, density, speed } }

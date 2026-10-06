@@ -105,7 +105,7 @@ function clean(value: unknown, path: string, depth: number, issues: ConfigIssue[
 }
 
 const BUILTIN_BACKGROUND_NAMES = new Set<string>(SCENE_PRESETS.map(preset => preset.name))
-const BUILTIN_BACKGROUND_URL = /^\/g\/backgrounds\/([a-z0-9-]+)\.webp$/
+const BUILTIN_BACKGROUND_URL = /^\/g\/backgrounds\/([a-z0-9-]+)\.webp(?:\?.*)?$/
 // Presets shipped before the projection field existed; their URLs are always equirectangular panoramas.
 // Custom uploads stay flat unless the owner explicitly opts in.
 function inferBackgroundProjection(config: ViewerConfig): ViewerConfig {

@@ -2,6 +2,20 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { VIEWER_PRESETS, applyViewerPreset, restoreViewerPreset } from '../src/viewerPresets'
 import { normalizeViewerConfig, serializeViewerConfig } from '../src/viewerConfig'
+import { SCENE_BACKGROUND_VERSION, backgroundTextureUrl, sceneBackgroundThumbUrl, sceneBackgroundUrl } from '../src/galleryMedia'
+
+test('scene background urls are versioned, thumbnailed and tiered by quality', () => {
+  assert.equal(sceneBackgroundUrl('minimal'), `/g/backgrounds/minimal.webp?v=${SCENE_BACKGROUND_VERSION}`)
+  assert.equal(sceneBackgroundThumbUrl('minimal'), `/g/backgrounds/thumbs/minimal.webp?v=${SCENE_BACKGROUND_VERSION}`)
+  assert.equal(sceneBackgroundThumbUrl('not-a-scene'), undefined)
+  assert.equal(backgroundTextureUrl(sceneBackgroundUrl('minimal'), 'low'), `/g/backgrounds/minimal-low.webp?v=${SCENE_BACKGROUND_VERSION}`)
+  assert.equal(backgroundTextureUrl(sceneBackgroundUrl('minimal'), 'mid'), sceneBackgroundUrl('minimal'))
+  assert.equal(backgroundTextureUrl(sceneBackgroundUrl('minimal'), 'high'), sceneBackgroundUrl('minimal'))
+  const custom = 'https://cdn.example.com/room.webp'
+  assert.equal(backgroundTextureUrl(custom, 'low'), custom)
+  const unknownScene = '/g/backgrounds/not-a-scene.webp?v=1'
+  assert.equal(backgroundTextureUrl(unknownScene, 'low'), unknownScene)
+})
 
 test('eight complete scenes are distinct, valid and clear previous scene effects', () => {
   const fingerprints = new Set<string>()
@@ -43,6 +57,7 @@ test('scene presets declare equirectangular image backgrounds', () => {
   for (const [name, scene] of Object.entries(VIEWER_PRESETS)) {
     assert.equal(scene.background?.mode, 'image', name)
     assert.equal(scene.background?.image?.projection, 'equirectangular', name)
+    assert.equal(scene.background?.image?.url, sceneBackgroundUrl(name), name)
   }
 })
 test('historical preset-only config stays historical until a card is applied', () => {

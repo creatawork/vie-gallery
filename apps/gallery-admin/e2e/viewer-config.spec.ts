@@ -53,6 +53,10 @@ test('config side panel matches the designed look', async ({ page }) => {
   await expect(page.getByLabel('背景副色')).toHaveCount(0)
   await page.getByLabel('背景类型').selectOption('gradient')
   await expect(page.getByLabel('渐变角度')).toBeVisible()
+  // 预设应用后，iframe 内的实时预览应加载全景背景并按等距柱状投影渲染。
+  await page.locator('.preset-card').filter({ hasText: '极简空间' }).click()
+  const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+  await expect.poll(() => frame.locator('canvas.webgl-canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().background.projection)).toBe('equirectangular')
   for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await page.waitForTimeout(300)

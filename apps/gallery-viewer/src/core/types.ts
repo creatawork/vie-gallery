@@ -122,6 +122,8 @@ export interface ViewerDiagnostics {
   requestedConfig: ViewerConfig
   effectiveConfig: ViewerConfig
   textures: { resident: number; bytes: number; pending: number; active: number; failed: number; budget: TextureBudget }
+  background: { url: string | null; width: number; height: number; bytes: number; projection: 'flat' | 'equirectangular' | 'none' }
+  cameraDirection: [number, number, number]
   requested: ViewerConfig
   effectiveQuality: Quality
   reason: string | null

@@ -797,11 +797,16 @@ export class ViewerEngine {
   private getDiagnostics() {
     const requested = this.getRequestedConfig(), metrics = this.getMetrics()
     const particles = this.pluginManager.get('Particles') as ParticlesPlugin | undefined
+    const background = this.pluginManager.get('Background') as { getInfo?: () => { url: string | null; width: number; height: number; bytes: number; projection: 'flat' | 'equirectangular' | 'none' } } | undefined
+    const direction = new THREE.Vector3()
+    this.camera.getWorldDirection(direction)
     return { postProcessing: this.postProcessing.getState(), requestedConfig: requested, requested,
       effectiveConfig: structuredClone(this.pluginContext!.config), effectiveQuality: this.effectiveQuality, reason: this.qualityReason,
       elapsed: this.frozenTime ?? this.clock.elapsed, meshCount: this.photos.length,
       particleCounts: particles?.getParticleCounts() ?? { stars: 0, hearts: 0, sakura: 0, snow: 0, fireflies: 0, meteors: 0 },
       textures: { ...this.texturePool.getMetrics(), failed: metrics.failedTextures ?? 0, budget: this.texturePool.getBudget() },
+      background: background?.getInfo?.() ?? { url: null, width: 0, height: 0, bytes: 0, projection: 'none' },
+      cameraDirection: [direction.x, direction.y, direction.z] as [number, number, number],
       geometryCount: metrics.geometries, drawCalls: metrics.drawCalls, fps: metrics.fps, frameIntervalMs: this.currentFrameTime, cpuRenderMs: this.cpuRenderMs }
   }
   private drainFrames() {

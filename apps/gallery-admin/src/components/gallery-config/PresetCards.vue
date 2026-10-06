@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { SCENE_PRESETS, VIEWER_PRESETS, isViewerPreset, sceneBackgroundUrl, type ViewerConfig, type PresetName } from '@vie/gallery-contracts'
+import { SCENE_PRESETS, VIEWER_PRESETS, isViewerPreset, sceneBackgroundThumbUrl, type ViewerConfig, type PresetName } from '@vie/gallery-contracts'
 defineProps<{ config: ViewerConfig; disabled: boolean }>()
 const emit = defineEmits<{ preset: [name: PresetName]; reset: [] }>()
 const labels: Record<PresetName, string> = Object.fromEntries(SCENE_PRESETS.map(item => [item.name, item.label])) as Record<PresetName, string>
 </script>
 <template><section class="side-block"><h2>场景预设</h2><p role="status">{{ config.presetName && isViewerPreset(config.presetName) ? labels[config.presetName] : '自定义场景' }}{{ config.customized ? ' · 已自定义' : '' }}</p>
-  <div class="preset-cards"><button v-for="(_preset, name) in VIEWER_PRESETS" :key="name" class="preset-card" type="button" :disabled="disabled" :aria-pressed="config.presetName === name" @click="emit('preset', name)"><span class="preset-image"><img :src="sceneBackgroundUrl(name)" :alt="`${labels[name]}背景`" loading="lazy"></span><span class="preset-copy"><strong>{{ labels[name] }}</strong><small>{{ SCENE_PRESETS.find(item => item.name === name)?.hint }}</small></span><span v-if="config.presetName === name" class="preset-check" aria-hidden="true">✓</span></button></div>
+  <div class="preset-cards"><button v-for="(_preset, name) in VIEWER_PRESETS" :key="name" class="preset-card" type="button" :disabled="disabled" :aria-pressed="config.presetName === name" @click="emit('preset', name)"><span class="preset-image"><img :src="sceneBackgroundThumbUrl(name)" :alt="`${labels[name]}背景`" loading="lazy"></span><span class="preset-copy"><strong>{{ labels[name] }}</strong><small>{{ SCENE_PRESETS.find(item => item.name === name)?.hint }}</small></span><span v-if="config.presetName === name" class="preset-check" aria-hidden="true">✓</span></button></div>
   <button class="restore-preset" type="button" :disabled="disabled || !config.presetName || !isViewerPreset(config.presetName)" @click="emit('reset')">恢复当前预设</button>
 </section></template>
 <style scoped>

@@ -33,3 +33,10 @@ Use case: stylized-concept. Asset type: immersive 3D photo gallery environment b
 ### 胶片展厅 (`film-gallery.webp`)
 
 Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 胶片展厅. An elegant dark warm analog film photography gallery, charcoal walls, amber indirect lights and subtle walnut architecture, empty walls. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
+
+## 派生产物与缓存版本
+
+- `thumbs/<name>.webp`（320×160）：配置面板卡片缩略图，避免卡片加载高分辨率全景。
+- `<name>-low.webp`（887×444）：low 画质设备加载的半分辨率全景变体（`backgroundTextureUrl`）。
+- 契约 `SCENE_BACKGROUND_VERSION` 会以 `?v=` 追加到以上 URL；替换任何同名素材时必须同步递增该版本，否则缓存会继续返回旧图。
+- 每张素材上线前须按等距柱状投影检查 0/90/180/270 度视角、左右接缝与极点；2:1 宽幅构图本身不等于合格全景。

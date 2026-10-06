@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
-import { normalizeViewerConfig, mergeViewerConfig } from '@vie/gallery-contracts'
+import { normalizeViewerConfig, mergeViewerConfig, SCENE_BACKGROUND_VERSION } from '@vie/gallery-contracts'
 import { BackgroundPlugin } from '../src/plugins/BackgroundPlugin'
 import { createViewerContext } from './helpers/viewerContext'
 
@@ -34,6 +34,18 @@ function trackDisposals(texture: THREE.Texture) {
   return () => state.count
 }
 
+test('low quality devices load the lower resolution panorama variant', () => {
+  const context = createViewerContext(normalizeViewerConfig({ quality: 'low', background: { mode: 'image', color: '#0f172a', image: { url: `/g/backgrounds/minimal.webp?v=${SCENE_BACKGROUND_VERSION}` } } }).config)
+  const loader = controlTextureLoader()
+  const plugin = new BackgroundPlugin(); plugin.install(context)
+  assert.equal(loader.calls[0].url, `/g/backgrounds/minimal-low.webp?v=${SCENE_BACKGROUND_VERSION}`)
+  loader.succeed(0)
+  assert.equal((context.scene.background as THREE.Texture).mapping, THREE.EquirectangularReflectionMapping)
+  const info = plugin.getInfo()
+  assert.equal(info.projection, 'equirectangular')
+  assert.equal(info.width, 2048)
+  plugin.uninstall(); loader.restore()
+})
 test('builtin background textures use equirectangular mapping', () => {
   const context = createViewerContext(normalizeViewerConfig({ background: { mode: 'image', color: '#0f172a', image: { url: '/g/backgrounds/minimal.webp' } } }).config)
   const loader = controlTextureLoader()

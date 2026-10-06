@@ -16,5 +16,24 @@ export const SCENE_PRESETS = [
 ] as const
 
 export function sceneBackgroundUrl(name?: string | null): string | undefined {
-  return SCENE_PRESETS.some(p => p.name === name) ? '/g/backgrounds/' + name + '.webp' : undefined
+  return SCENE_PRESETS.some(p => p.name === name) ? `/g/backgrounds/${name}.webp?v=${SCENE_BACKGROUND_VERSION}` : undefined
+}
+
+/** Bump when any builtin panorama asset is replaced so caches never serve the stale image. */
+export const SCENE_BACKGROUND_VERSION = '2026-10-06'
+
+/** Configuration cards load these small thumbs instead of the high resolution panoramas. */
+export function sceneBackgroundThumbUrl(name?: string | null): string | undefined {
+  return SCENE_PRESETS.some(p => p.name === name) ? `/g/backgrounds/thumbs/${name}.webp?v=${SCENE_BACKGROUND_VERSION}` : undefined
+}
+
+/**
+ * Builtin panoramas ship a half-resolution variant for low quality devices;
+ * custom uploads and unknown names always load as-is.
+ */
+export function backgroundTextureUrl(url: string, quality: 'low' | 'mid' | 'high'): string {
+  if (quality !== 'low') return url
+  const match = /^\/g\/backgrounds\/([a-z0-9-]+)\.webp(?:\?.*)?$/.exec(url)
+  if (!match || !SCENE_PRESETS.some(p => p.name === match[1])) return url
+  return `/g/backgrounds/${match[1]}-low.webp?v=${SCENE_BACKGROUND_VERSION}`
 }
