@@ -36,6 +36,11 @@ export class ConfigManager {
     }
     return this.getConfig()
   }
+  adoptServerSnapshot(config: ViewerConfig | null): ViewerConfig {
+    this.serverConfig = config ? normalizeViewerConfig(config).config : null
+    this.config = mergeViewerConfig(this.serverConfig ?? createDefaultViewerConfig(), this.loadPreferenceFromStorage())
+    return this.getConfig()
+  }
   savePreference(preference: Partial<ViewerConfig>): void {
     const candidate = mergeViewerConfig(this.serverConfig ?? createDefaultViewerConfig(), preference)
     try { localStorage.setItem(this.PREFERENCE_KEY, JSON.stringify(preference)) } catch { /* Storage is optional. */ }

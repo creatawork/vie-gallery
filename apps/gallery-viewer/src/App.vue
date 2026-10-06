@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import * as THREE from 'three'
+import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import type * as Three from 'three'
 import { isTrustedPreviewMessage, normalizeViewerConfig, serializeViewerConfig, ViewerConfigValidationError } from '@vie/gallery-contracts'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
-import { ViewerEngine, WebGLUnavailableError, type EngineMetrics } from './core/ViewerEngine'
+import type { EngineMetrics, ViewerEngine } from './core/ViewerEngine'
 import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
 import ErrorState from './components/ErrorState.vue'
-import LightboxModal from './components/LightboxModal.vue'
 import PhotoWall from './components/PhotoWall.vue'
-import VisitorShareModal from './components/VisitorShareModal.vue'
 import Icon from './components/Icon.vue'
+
+const LightboxModal = defineAsyncComponent(() => import('./components/LightboxModal.vue'))
+const VisitorShareModal = defineAsyncComponent(() => import('./components/VisitorShareModal.vue'))
 
 // 从 URL 获取 slug。生产环境没有 slug 时不回退 demo 内容。
 const slug = location.pathname.split('/').filter(Boolean).pop() || ''
@@ -49,6 +50,14 @@ watch(viewMode, (mode) => {
     // 隐私模式下写入会失败，忽略即可
   }
 })
+watch(
+  () => [viewer.isReady.value, viewMode.value],
+  async ([isReady, mode]) => {
+    if (!isReady || mode !== '2d') return
+    await nextTick()
+    performance.mark('viewer:interactive')
+  }
+)
 const webglFallbackMessage = ref('')
 
 // WebGL Engine
@@ -57,6 +66,24 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 // HUD 的挂载状态必须依赖 ref 才能在引擎创建/销毁后正确刷新。
 const engineReady = ref(false)
 let engine: ViewerEngine | null = null
+let engineInitVersion = 0
+let threeRuntime: typeof import('three') | null = null
+let viewerEngineModule: typeof import('./core/ViewerEngine') | null = null
+let viewer3dModules: Promise<[typeof import('three'), typeof import('./core/ViewerEngine')]> | null = null
+function loadViewer3dModules() {
+  if (!viewer3dModules) {
+    viewer3dModules = Promise.all([import('three'), import('./core/ViewerEngine')]).then(modules => {
+      threeRuntime = modules[0]
+      viewerEngineModule = modules[1]
+      performance.mark('viewer:engine-module-ready')
+      return modules
+    }).catch(error => {
+      viewer3dModules = null
+      throw error
+    })
+  }
+  return viewer3dModules
+}
 let canvasPointerDownHandler: ((event: PointerEvent) => void) | null = null
 let canvasPointerMoveHandler: ((event: PointerEvent) => void) | null = null
 let canvasClickHandler: ((event: MouseEvent) => void) | null = null
@@ -82,9 +109,9 @@ const apmMetrics = ref<EngineMetrics | null>(null)
 const gyroEnabled = ref(false)
 
 // Raycaster
-const raycaster = new THREE.Raycaster()
-const mousePos = new THREE.Vector2()
-let lastHoveredMesh: THREE.Mesh | null = null
+let raycaster: Three.Raycaster | null = null
+let mousePos: Three.Vector2 | null = null
+let lastHoveredMesh: Three.Mesh | null = null
 
 const presets = [
   { name: 'starry-night', label: '星空夜曲 · Cosmic', icon: 'sparkles' },
@@ -178,6 +205,12 @@ function toggleFullscreen() {
 // "加载更多"追加照片时只增量刷新场景，不重建引擎（保留相机与特效状态）。
 let scenePhotoCount = 0
 watch(
+  () => [viewer.gallery.value?.accessState, viewMode.value],
+  ([accessState, mode]) => {
+    if (accessState === 'READY' && mode === '3d') void loadViewer3dModules().catch(() => {})
+  }
+)
+watch(
   () => [viewer.isReady.value, viewer.isEmpty.value, viewer.state.value, viewMode.value, viewer.photos.value.length],
   async ([isReady, isEmpty, state, mode]) => {
     const embedReady = isEmbedPreview() && state !== 'loading' && state !== 'password_prompt'
@@ -213,53 +246,76 @@ function refresh3DPhotos() {
 async function init3DEngine() {
   if (!canvasRef.value) return
   destroy3DEngine()
+  const initVersion = engineInitVersion
   webglFallbackMessage.value = ''
+  let initializingEngine: ViewerEngine | null = null
 
   try {
+    const [three, engineModule] = await loadViewer3dModules()
+    if (initVersion !== engineInitVersion || viewMode.value !== '3d' || !canvasRef.value) return
+    const canvas = canvasRef.value
+    if (!canvas) return
+    threeRuntime = three
+    viewerEngineModule = engineModule
+    raycaster = new three.Raycaster()
+    mousePos = new three.Vector2()
     const rawPhotos = viewer.photos.value
     if (!rawPhotos || rawPhotos.length === 0) {
       if (!isDevDemo() && !isEmbedPreview()) return
     }
 
-    engine = new ViewerEngine(canvasRef.value)
-    engine.getEventBus().on('effects:fallback', (data: { message: string }) => {
+    const activeEngine = new engineModule.ViewerEngine(canvas)
+    initializingEngine = activeEngine
+    engine = activeEngine
+    activeEngine.getEventBus().on('effects:fallback', (data: { message: string }) => {
       webglFallbackMessage.value = data.message
     })
-    engine.getEventBus().on('quality:changed', () => { webglFallbackMessage.value = '已优化显示效果' })
-    engine.getEventBus().on('quality:fallback', (data: { message: string }) => fallbackTo2D(data.message))
+    activeEngine.getEventBus().on('quality:changed', () => { webglFallbackMessage.value = '已优化显示效果' })
+    activeEngine.getEventBus().on('quality:fallback', (data: { message: string }) => fallbackTo2D(data.message))
 
     // 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
-    engine.syncPhotos(scenePhotos())
+    activeEngine.syncPhotos(scenePhotos())
     scenePhotoCount = viewer.photos.value.length
 
     try {
-      await engine.init(slug)
+      await activeEngine.init(slug, viewer.state.value === 'ready' || viewer.state.value === 'empty' ? viewer.viewerConfig.value : undefined)
     } catch (err) {
       if (!isEmbedPreview()) throw err
-      await engine.init()
+      await activeEngine.init()
     }
-    engine.start()
-    engineReady.value = true
-    notifyParentReady()
+    if (initVersion !== engineInitVersion) {
+      initializingEngine.dispose()
+      if (engine === initializingEngine) engine = null
+      return
+    }
 
     // 初始相机行为跟随已发布配置
-    const initialConfig = engine.getConfigManager().getConfig() as Record<string, any>
+    const initialConfig = activeEngine.getConfigManager().getConfig() as Record<string, any>
     applyAutoTour(initialConfig?.camera?.autoRotate === true)
 
     // 监听 APM 探针
-    engine.getEventBus().on('metrics:update', (metrics: EngineMetrics) => {
+    activeEngine.getEventBus().on('metrics:update', (metrics: EngineMetrics) => {
       apmMetrics.value = metrics
     })
 
     webglLostHandler = () => fallbackTo2D('3D 渲染连接中断，已切换到经典画廊，照片仍可正常浏览。')
-    engine.getEventBus().on('webgl:lost', webglLostHandler)
+    activeEngine.getEventBus().on('webgl:lost', webglLostHandler)
 
     // 绑定 3D 悬停与交互
     bindCanvasInteractions()
+    activeEngine.start()
+    engineReady.value = true
+    performance.mark('viewer:interactive')
+    notifyParentReady()
   } catch (err) {
+    if (initVersion !== engineInitVersion) {
+      initializingEngine?.dispose()
+      if (engine === initializingEngine) engine = null
+      return
+    }
     console.error('Failed to init 3D engine:', err)
     fallbackTo2D(
-      err instanceof WebGLUnavailableError
+      viewerEngineModule !== null && err instanceof viewerEngineModule.WebGLUnavailableError
         ? '当前设备无法使用 3D，已切换到经典画廊，照片仍可正常浏览。'
         : '3D 画廊暂时无法启动，已切换到经典画廊，照片仍可正常浏览。'
     )
@@ -290,11 +346,11 @@ function bindCanvasInteractions() {
     mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
     mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
-    raycaster.setFromCamera(mousePos, engine.getCamera())
-    const intersects = raycaster.intersectObjects(engine.getPhotos())
+    raycaster!.setFromCamera(mousePos!, engine.getCamera())
+    const intersects = raycaster!.intersectObjects(engine.getPhotos())
 
     if (intersects.length > 0) {
-      const hit = intersects[0].object as THREE.Mesh
+      const hit = intersects[0].object as Three.Mesh
       canvas.style.cursor = 'pointer'
 
       if (lastHoveredMesh !== hit) {
@@ -330,11 +386,11 @@ function bindCanvasInteractions() {
     mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
     mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
-    raycaster.setFromCamera(mousePos, engine.getCamera())
-    const intersects = raycaster.intersectObjects(engine.getPhotos())
+    raycaster!.setFromCamera(mousePos!, engine.getCamera())
+    const intersects = raycaster!.intersectObjects(engine.getPhotos())
 
     if (intersects.length > 0) {
-      const hit = intersects[0].object as THREE.Mesh
+      const hit = intersects[0].object as Three.Mesh
       const idx = hit.userData.index
       
       // 触发照片点击事件，让光照系统响应
@@ -355,11 +411,11 @@ function bindCanvasInteractions() {
  * 电影级相机平滑飞行聚焦 (Cinematic Smooth Flight)
  * 使用 Quartic Ease-Out 曲线，提供更流畅的电影感
  */
-function flyToPhotoAndFocus(mesh: THREE.Mesh, onComplete?: () => void) {
+function flyToPhotoAndFocus(mesh: Three.Mesh, onComplete?: () => void) {
   if (!engine) return
-  const target = new THREE.Vector3()
+  const target = new threeRuntime!.Vector3()
   mesh.getWorldPosition(target)
-  const normal = new THREE.Vector3(0, 0, 1).applyEuler(mesh.rotation)
+  const normal = new threeRuntime!.Vector3(0, 0, 1).applyEuler(mesh.rotation)
   const position = target.clone().add(normal.multiplyScalar(220))
   position.y += 15
   engine.getEventBus().emit('photo:focus', { photo: mesh })
@@ -428,6 +484,7 @@ function createDemoFallbackPhotos() {
 }
 
 function destroy3DEngine() {
+  engineInitVersion++
   const canvas = canvasRef.value
   if (canvas) {
     if (canvasPointerDownHandler) canvas.removeEventListener('pointerdown', canvasPointerDownHandler)
@@ -453,6 +510,8 @@ function destroy3DEngine() {
     engine = null
   }
   engineReady.value = false
+  raycaster = null
+  mousePos = null
 }
 
 async function handleUnlock(password: string) {
@@ -465,6 +524,10 @@ async function handleUnlock(password: string) {
 function openLightbox(index: number) {
   lightboxIndex.value = index
   showLightbox.value = true
+}
+
+function markPhotoWallReady() {
+  if (viewMode.value === '2d') performance.mark('viewer:first-photo-rendered')
 }
 
 // 照片数量与视图模式共同决定 HUD 装载：
@@ -524,7 +587,7 @@ async function selectPreset(presetName: string) {
         <button type="button" @click="webglFallbackMessage = ''">知道了</button>
       </div>
       <main class="editorial-main embed-fallback-main">
-        <PhotoWall :photos="viewer.photos.value" fit="cover" @select="openLightbox" />
+        <PhotoWall :photos="viewer.photos.value" fit="cover" :prioritize-first-photos="true" @select="openLightbox" @first-photo-rendered="markPhotoWallReady" />
       </main>
       <LightboxModal
         :show="showLightbox"
@@ -768,7 +831,7 @@ async function selectPreset(presetName: string) {
           <p class="hero-meta">{{ viewer.total.value }} PHOTOGRAPHS · HIGH FIDELITY GALLERY</p>
         </div>
 
-        <PhotoWall :photos="viewer.photos.value" fit="cover" @select="openLightbox" />
+        <PhotoWall :photos="viewer.photos.value" fit="cover" :prioritize-first-photos="viewMode === '2d'" @select="openLightbox" @first-photo-rendered="markPhotoWallReady" />
         <button
           v-if="viewer.hasMore.value"
           class="load-more-btn"

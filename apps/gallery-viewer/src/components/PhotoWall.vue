@@ -2,9 +2,18 @@
 import { ref } from 'vue'
 import type { PublicPhoto } from '../types/api'
 
-defineProps<{ photos: PublicPhoto[]; fit: 'contain' | 'cover' }>()
-const emit = defineEmits<{ select: [index: number] }>()
+const props = withDefaults(defineProps<{ photos: PublicPhoto[]; fit: 'contain' | 'cover'; prioritizeFirstPhotos?: boolean }>(), {
+  prioritizeFirstPhotos: false
+})
+const emit = defineEmits<{ select: [index: number]; firstPhotoRendered: [] }>()
 const failedImages = ref(new Set<string>())
+let firstPhotoReported = false
+
+function reportFirstPhoto() {
+  if (firstPhotoReported) return
+  firstPhotoReported = true
+  requestAnimationFrame(() => emit('firstPhotoRendered'))
+}
 
 function markFailed(url: string) {
   failedImages.value = new Set([...failedImages.value, url])
@@ -28,8 +37,10 @@ function markFailed(url: string) {
           :alt="photo.title || `照片 ${index + 1}`"
           :width="photo.width || undefined"
           :height="photo.height || undefined"
-          loading="lazy"
+          :loading="props.prioritizeFirstPhotos && index < 2 ? 'eager' : 'lazy'"
+          :fetchpriority="props.prioritizeFirstPhotos && index === 0 ? 'high' : 'auto'"
           decoding="async"
+          @load="reportFirstPhoto(index)"
           @error="markFailed(photo.thumbnailUrl)"
         />
         <span v-else class="photo-placeholder">预览暂不可用 · 点击查看</span>

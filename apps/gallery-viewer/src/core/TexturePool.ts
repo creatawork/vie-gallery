@@ -204,6 +204,7 @@ export async function loadPhotoTexture(url: string, maxEdge: number, signal: Abo
     if (!context) throw new Error('Texture resize unavailable')
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
     const texture = new THREE.CanvasTexture(canvas)
+    texture.userData.sourceUrl = url
     texture.colorSpace = THREE.SRGBColorSpace
     texture.addEventListener('dispose', () => { canvas.width = 1; canvas.height = 1 })
     return { texture, bytes: Math.ceil(canvas.width * canvas.height * 4 * 4 / 3) }

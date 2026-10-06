@@ -25,18 +25,7 @@ export { FogPlugin } from './FogPlugin'
  * ])
  * ```
  */
-export const pluginRegistry = {
-  // Core
-  Layout: () => import('./LayoutPlugin').then(m => new m.LayoutPlugin()),
-  ClickRipple: () => import('./ClickRipplePlugin').then(m => new m.ClickRipplePlugin()),
-  Lighting: () => import('./LightingPlugin').then(m => new m.LightingPlugin()),
-  PhotoFade: () => import('./PhotoFadePlugin').then(m => new m.PhotoFadePlugin()),
-  CursorTrail: () => import('./CursorTrailPlugin').then(m => new m.CursorTrailPlugin()),
-
-  // Visual effects
-  Particles: () => import('./ParticlesPlugin').then(m => new m.ParticlesPlugin()),
-  Background: () => import('./BackgroundPlugin').then(m => new m.BackgroundPlugin()),
-  Fog: () => import('./FogPlugin').then(m => new m.FogPlugin())
-}
+import { pluginRegistry } from './registry'
+export { pluginRegistry }
 
 export type PluginName = keyof typeof pluginRegistry

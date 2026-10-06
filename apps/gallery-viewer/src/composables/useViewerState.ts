@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { parseViewerConfig } from '@vie/gallery-contracts'
+import { parseViewerConfig, type ViewerConfig } from '@vie/gallery-contracts'
 import { PublicApiClient, PublicApiError } from '../api/client'
 import type { PublicGalleryResponse, PublicPhoto, PublicPhotoPage } from '../types/api'
 
@@ -11,6 +11,10 @@ export type ViewerState =
   | 'empty'
   | 'not_found'
   | 'error'
+
+function markStartupStage(stage: string) {
+  if (typeof performance !== 'undefined') performance.mark(`viewer:${stage}`)
+}
 
 function userMessage(error: PublicApiError, fallback: string) {
   if (error.isNotFound) return '找不到这个相册空间，可能已被移除或链接有误。'
@@ -26,6 +30,7 @@ function userMessage(error: PublicApiError, fallback: string) {
 
 export function useViewerState(slug: string) {
   const client = new PublicApiClient()
+  markStartupStage('entry')
   const state = ref<ViewerState>('loading')
   const gallery = ref<PublicGalleryResponse | null>(null)
   const photos = ref<PublicPhoto[]>([])
@@ -35,7 +40,7 @@ export function useViewerState(slug: string) {
   const pageSize = ref(50)
   const total = ref(0)
   const loadingMore = ref(false)
-  const viewerConfig = ref<Record<string, unknown> | null>(null)
+  const viewerConfig = ref<ViewerConfig | null>(null)
   let requestVersion = 0
 
   const isReady = computed(() => state.value === 'ready')
@@ -49,16 +54,34 @@ export function useViewerState(slug: string) {
   const hasMore = computed(() => photos.value.length < total.value)
   const allowDownload = computed(() => viewerConfig.value?.visitorAllowDownload === true)
 
-  async function loadConfig(version = requestVersion) {
+  async function loadConfig(version = requestVersion): Promise<ViewerConfig | null> {
     try {
       const cfg = await client.getViewerConfig(slug)
-      if (version !== requestVersion) return
-      viewerConfig.value = cfg?.configJson ? parseViewerConfig(cfg.configJson, cfg.schemaVersion ?? 1, 'legacy').config : null
+      markStartupStage('config-ready')
+      if (version !== requestVersion) return null
+      return cfg?.configJson ? parseViewerConfig(cfg.configJson, cfg.schemaVersion ?? 1, 'legacy').config : null
     } catch (cause) {
-      if (version !== requestVersion) return
-      viewerConfig.value = null
+      markStartupStage('config-ready')
+      if (version !== requestVersion) return null
       if (cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403)) throw cause
+      return null
     }
+  }
+  async function loadFirstPage(version: number) {
+    const [config, response] = await Promise.all([
+      loadConfig(version),
+      client.getPhotos(slug, 0, pageSize.value).then(result => {
+        markStartupStage('photos-ready')
+        return result
+      })
+    ])
+    if (version !== requestVersion) return
+    viewerConfig.value = config
+    photos.value = response.items
+    currentPage.value = response.page
+    pageSize.value = response.pageSize
+    total.value = response.total
+    state.value = response.total === 0 ? 'empty' : 'ready'
   }
   function clearAccess() { viewerConfig.value = null; photos.value = []; total.value = 0; gallery.value = null }
 
@@ -75,12 +98,11 @@ export function useViewerState(slug: string) {
       const nextGallery = await client.getGallery(slug)
       if (version !== requestVersion) return
       gallery.value = nextGallery
+      markStartupStage('access-ready')
 
       switch (nextGallery.accessState) {
         case 'READY':
-          await loadConfig(version)
-          if (version !== requestVersion) return
-          await loadPhotos(0, pageSize.value, version)
+          await loadFirstPage(version)
           break
         case 'PASSWORD_REQUIRED':
           state.value = 'password_prompt'
@@ -90,7 +112,7 @@ export function useViewerState(slug: string) {
           error.value = '此空间需要有效的分享链接才能访问。'
           break
         case 'EMPTY':
-          await loadConfig(version)
+          viewerConfig.value = await loadConfig(version)
           if (version !== requestVersion) return
           state.value = 'empty'
           break
@@ -115,9 +137,16 @@ export function useViewerState(slug: string) {
       const nextGallery = await client.getGallery(slug)
       if (version !== requestVersion) return false
       gallery.value = nextGallery
-      await loadConfig(version)
-      if (version !== requestVersion) return false
-      await loadPhotos(0, pageSize.value, version)
+      markStartupStage('access-ready')
+      if (nextGallery.accessState === 'READY') {
+        await loadFirstPage(version)
+      } else if (nextGallery.accessState === 'EMPTY') {
+        viewerConfig.value = await loadConfig(version)
+        if (version !== requestVersion) return false
+        state.value = 'empty'
+      } else {
+        state.value = nextGallery.accessState === 'PASSWORD_REQUIRED' ? 'password_prompt' : 'share_required'
+      }
       return state.value === 'ready' || state.value === 'empty'
     } catch (cause) {
       if (version !== requestVersion) return false

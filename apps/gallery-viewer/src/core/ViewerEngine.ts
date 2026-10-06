@@ -5,7 +5,7 @@ import { TexturePool, loadPhotoTexture } from './TexturePool'
 import { FrameClock } from './FrameClock'
 import { QualityController, QUALITY_BUDGETS, initialQuality, type Quality, type QualitySample, type QualityDecision } from './QualityController'
 import type { ParticlesPlugin } from '../plugins/ParticlesPlugin'
-import { PostProcessing } from './PostProcessing'
+import type { PostProcessing } from './PostProcessing'
 import type { ViewerDiagnosticApi } from './types'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
@@ -58,6 +58,10 @@ export class ViewerEngine {
   private animationId: number | null = null
   private isRunning = false
   private isContextLost = false
+  private firstPhotoRendered = false
+  private effectsStarted = false
+  private effectsReadyEmitted = false
+  private effectsDeadlineTimer: number | null = null
   // dispose 后必须拦截仍在途的异步初始化/插件安装，否则会在销毁后的画布上继续装配
   private disposed = false
 
@@ -75,7 +79,7 @@ export class ViewerEngine {
   private configDrain: Promise<void> | null = null
   private texturePool: TexturePool
   private photoScene: PhotoScene
-  private postProcessing: PostProcessing
+  private postProcessing: PostProcessing | null = null
   private frozenTime: number | null = null
   private diagnostics: ViewerDiagnosticApi | null = null
   private effectiveQuality: Quality = 'mid'
@@ -117,7 +121,6 @@ export class ViewerEngine {
     this.scene = new THREE.Scene()
     this.camera = this.createCamera()
     this.renderer = this.createRenderer()
-    this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
     this.clock = new FrameClock()
     this.texturePool = new TexturePool(QUALITY_BUDGETS[this.effectiveQuality], loadPhotoTexture)
     this.photoScene = new PhotoScene(this.scene, this.texturePool, mesh => this.eventBus.emit('photo:texture-ready', mesh))
@@ -145,17 +148,19 @@ export class ViewerEngine {
    * 初始化
    * @param slug 相册标识（可选），如果提供则从服务端加载配置
    */
-  async init(slug?: string): Promise<void> {
+  async init(slug?: string, serverConfigSnapshot?: ViewerConfig | null): Promise<void> {
     if (this.disposed) return
     this.eventBus.emit('init')
 
     // 1. 设置插件注册表
-    const { pluginRegistry } = await import('../plugins')
+    const { pluginRegistry } = await import('../plugins/registry')
     if (this.disposed) return
     this.pluginManager.setRegistry(pluginRegistry)
 
     // 2. 如果提供了 slug，从服务端加载配置
-    if (slug) {
+    if (serverConfigSnapshot !== undefined) {
+      this.configManager.adoptServerSnapshot(serverConfigSnapshot)
+    } else if (slug) {
       await this.configManager.loadFromServer(slug)
       if (this.disposed) return
     }
@@ -175,9 +180,10 @@ export class ViewerEngine {
     this.pluginManager.setContext(this.createContext())
 
     // 6. 根据配置自动安装插件
-    await this.installPluginsFromConfig()
+    await this.reconcilePlugins(this.configManager.getConfig(), true)
 
     if (this.disposed) return
+    this.photoScene.updateVisibility(this.camera)
     if (import.meta.env.DEV || import.meta.env.VITE_VIEWER_DIAGNOSTICS === 'true') {
       this.diagnostics = {
         snapshot: () => this.getDiagnostics(),
@@ -190,6 +196,7 @@ export class ViewerEngine {
       window.__VIE_VIEWER_DIAGNOSTICS__ = this.diagnostics
     }
     this.eventBus.emit('ready')
+    performance.mark('viewer:base-scene-ready')
   }
 
   /**
@@ -203,6 +210,7 @@ export class ViewerEngine {
 
   applyConfig(patch: Partial<ViewerConfig>): Promise<void> {
     if (this.disposed) return Promise.resolve()
+    this.enableEffects()
     try { this.pendingConfig = mergeViewerConfig(this.pendingConfig ?? this.inFlightConfig ?? this.configManager.getConfig(), patch) }
     catch (error) { return Promise.reject(error) }
     if (!this.configDrain) this.configDrain = this.drainConfigs().finally(() => { this.configDrain = null })
@@ -211,6 +219,7 @@ export class ViewerEngine {
 
   replaceConfig(config: ViewerConfig): Promise<void> {
     if (this.disposed) return Promise.resolve()
+    this.enableEffects()
     const result = normalizeViewerConfig(config)
     if (result.issues.length) return Promise.reject(new ViewerConfigValidationError(result.issues))
     this.pendingConfig = result.config
@@ -240,9 +249,25 @@ export class ViewerEngine {
         this.inFlightConfig = null
       }
     }
+    this.markEffectsReady()
   }
 
-  private async reconcilePlugins(candidate: ViewerConfig): Promise<void> {
+  private enableEffects(): void {
+    this.effectsStarted = true
+    if (this.effectsDeadlineTimer !== null) {
+      window.clearTimeout(this.effectsDeadlineTimer)
+      this.effectsDeadlineTimer = null
+    }
+  }
+
+  private markEffectsReady(): void {
+    if (!this.effectsStarted || this.effectsReadyEmitted || this.disposed) return
+    this.effectsReadyEmitted = true
+    performance.mark('viewer:effects-ready')
+    this.eventBus.emit('startup:effects-ready')
+  }
+
+  private async reconcilePlugins(candidate: ViewerConfig, deferEffects = false): Promise<void> {
     if (this.disposed) return
     if (candidate.quality !== this.qualityRequest) {
       this.qualityRequest = candidate.quality
@@ -272,16 +297,25 @@ export class ViewerEngine {
       ['ClickRipple', !!effective.interaction.clickRipple], ['CursorTrail', !!effective.interaction.cursorTrail]
     ])
     for (const [name, enabled] of wanted) {
+      if (deferEffects && ['Background', 'Particles', 'Fog', 'ClickRipple', 'CursorTrail'].includes(name)) continue
       if (enabled) await this.pluginManager.install(name)
       else this.pluginManager.uninstall(name)
       if (this.disposed) return
     }
-    try {
-      this.postProcessing.apply(effective.effects)
-      this.resizePostProcessing()
-    } catch {
-      this.postProcessing.dispose()
-      this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
+    if (!deferEffects) {
+      if (!this.postProcessing) {
+        const { PostProcessing } = await import('./PostProcessing')
+        if (this.disposed) return
+        this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera)
+      }
+      try {
+        this.postProcessing.apply(effective.effects)
+        this.resizePostProcessing()
+      } catch {
+        this.postProcessing?.dispose()
+        this.postProcessing = null
+        this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
+      }
     }
     if (this.controls) {
       this.controls.autoRotate = !!effective.camera?.autoRotate
@@ -437,6 +471,9 @@ export class ViewerEngine {
     if (this.isRunning || this.disposed || document.hidden || this.isContextLost) return
 
     this.isRunning = true
+    if (!this.effectsStarted && this.effectsDeadlineTimer === null) {
+      this.effectsDeadlineTimer = window.setTimeout(() => { void this.initializeEffects() }, 2000)
+    }
     this.clock.resume(performance.now())
     this.lastRenderTime = performance.now()
     this.lastFpsUpdateTime = this.lastRenderTime
@@ -596,7 +633,8 @@ export class ViewerEngine {
     this.texturePool.dispose()
     this.photos = []
 
-    this.postProcessing.dispose()
+    this.postProcessing?.dispose()
+    this.postProcessing = null
     if (window.__VIE_VIEWER_DIAGNOSTICS__ === this.diagnostics) delete window.__VIE_VIEWER_DIAGNOSTICS__
     this.diagnostics = null
     this.frames = []
@@ -761,11 +799,21 @@ export class ViewerEngine {
     this.pluginManager.update(delta, elapsed)
     this.photoScene.updateVisibility(this.camera)
 
-    try { this.postProcessing.render(delta) }
+    try {
+      if (this.postProcessing) this.postProcessing.render(delta)
+      else this.renderer.render(this.scene, this.camera)
+    }
     catch {
-      this.postProcessing.dispose()
+      this.postProcessing?.dispose()
+      this.postProcessing = null
       this.renderer.render(this.scene, this.camera)
       this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
+    }
+    if (!this.firstPhotoRendered && this.photos.some(photo => photo.userData.inView && photo.userData.textureState === 'ready')) {
+      this.firstPhotoRendered = true
+      performance.mark('viewer:first-photo-rendered')
+      this.eventBus.emit('startup:first-photo-rendered')
+      this.scheduleEffects()
     }
     this.cpuRenderMs = performance.now() - cpuStart
     if (this.diagnostics) {
@@ -776,9 +824,37 @@ export class ViewerEngine {
     if (metricsDue) this.eventBus.emit('metrics:update', this.getMetrics())
   }
 
+  private scheduleEffects(): void {
+    if (this.effectsStarted || this.disposed) return
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options: { timeout: number }) => number }
+    if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(() => { void this.initializeEffects() }, { timeout: 1200 })
+    else window.setTimeout(() => { void this.initializeEffects() }, 100)
+  }
+
+  private async initializeEffects(): Promise<void> {
+    if (this.effectsStarted || this.disposed) return
+    this.effectsStarted = true
+    try {
+      const config = this.configManager.getConfig()
+      await Promise.all([
+        import('./PostProcessing'),
+        import('../plugins/registry').then(({ preloadVisualEffects }) => preloadVisualEffects({
+          particles: config.particles.enabled && config.particles.types.length > 0 && (config.particles.density ?? 1) > 0,
+          fog: !!config.effects.fog?.enabled,
+          clickRipple: !!config.interaction.clickRipple,
+          cursorTrail: !!config.interaction.cursorTrail
+        }))
+      ])
+      if (this.disposed) return
+      await this.applyConfig({})
+    } catch {
+      if (!this.disposed) this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
+    }
+  }
+
   private resizePostProcessing(): void {
     const quality = this.effectiveQuality
-    this.postProcessing.resize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight,
+    this.postProcessing?.resize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight,
       this.renderer.getPixelRatio(), QUALITY_BUDGETS[quality].postScale)
   }
 
@@ -800,7 +876,7 @@ export class ViewerEngine {
     const background = this.pluginManager.get('Background') as { getInfo?: () => { url: string | null; width: number; height: number; bytes: number; projection: 'flat' | 'equirectangular' | 'none' } } | undefined
     const direction = new THREE.Vector3()
     this.camera.getWorldDirection(direction)
-    return { postProcessing: this.postProcessing.getState(), requestedConfig: requested, requested,
+    return { postProcessing: this.postProcessing?.getState() ?? null, requestedConfig: requested, requested,
       effectiveConfig: structuredClone(this.pluginContext!.config), effectiveQuality: this.effectiveQuality, reason: this.qualityReason,
       elapsed: this.frozenTime ?? this.clock.elapsed, meshCount: this.photos.length,
       particleCounts: particles?.getParticleCounts() ?? { stars: 0, hearts: 0, sakura: 0, snow: 0, fireflies: 0, meteors: 0 },
