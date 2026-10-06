@@ -112,6 +112,16 @@ function formatHistoryTime(value?: string) {
 
 function getCleanConfig() { return config.value }
 function canonicalConfig(json: string): string { return serializeViewerConfig(parseViewerConfig(json, 1, 'legacy').config) }
+// 历史版本可能携带当前解析器拒绝的旧 schema（如 background.type 形态），
+// 规范化失败只影响"是否已同步"的比对，不能让整个配置面板挂掉。
+function tryCanonicalConfig(json: string | null | undefined): string | null {
+  if (!json) return null
+  try {
+    return canonicalConfig(json)
+  } catch {
+    return null
+  }
+}
 let previewChannel: ReturnType<typeof createViewerPreviewChannel> | null = null
 function refreshLivePreview() {
   if (issues.value.length) return
@@ -201,7 +211,7 @@ async function loadVersions() {
   const data = await response.json()
   versions.value = Array.isArray(data.items) ? data.items : []
   const published = versions.value.find(version => version.id === publishedVersionId.value)
-  if (published?.configJson) publishedConfigJson.value = canonicalConfig(published.configJson)
+  if (published?.configJson) publishedConfigJson.value = tryCanonicalConfig(published.configJson)
 }
 
 async function loadGalleryAndConfig() {
@@ -245,7 +255,7 @@ async function loadGalleryAndConfig() {
         }
         publishedVersionId.value = data.publishedVersionId || null
         lastPublishedAt.value = data.lastPublishedAt || null
-        publishedConfigJson.value = data.publishedConfigJson ? canonicalConfig(data.publishedConfigJson) : (data.publishedVersionId ? null : serializeViewerConfig(getCleanConfig()))
+        publishedConfigJson.value = tryCanonicalConfig(data.publishedConfigJson) ?? (data.publishedVersionId ? null : serializeViewerConfig(getCleanConfig()))
       }
       savedDraftJson.value = serializeViewerConfig(getCleanConfig())
       lastSavedLabel.value = formatClock(new Date())
