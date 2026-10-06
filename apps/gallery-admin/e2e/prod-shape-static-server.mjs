@@ -38,6 +38,10 @@ function serveFrom(dist, pathname) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
+  if (url.pathname === '/' || url.pathname === '/app') {
+    res.writeHead(302, { Location: '/app/' }).end()
+    return
+  }
   const app = APPS.find(a => url.pathname.startsWith(a.prefix))
   if (!app) {
     res.writeHead(404).end('not found')

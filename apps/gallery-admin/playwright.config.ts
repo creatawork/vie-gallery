@@ -12,10 +12,12 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure'
   },
+  // e2e 需要同域双应用（/app/ 管理端 + /g/ 访客预览 iframe），
+  // viewer dist 须以 VITE_VIEWER_DIAGNOSTICS=true 构建，见 quality.yml admin-smoke。
   webServer: process.env.CI
     ? {
-        command: 'npm run preview -- --port 4173 --host 127.0.0.1',
-        url: 'http://127.0.0.1:4173',
+        command: 'node e2e/prod-shape-static-server.mjs 4173',
+        url: 'http://127.0.0.1:4173/app/',
         reuseExistingServer: false,
         timeout: 120_000
       }

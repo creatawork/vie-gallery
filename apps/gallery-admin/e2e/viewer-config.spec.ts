@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { VIEWER_PRESETS } from '@vie/gallery-contracts'
 import { mockGallery } from '../../gallery-viewer/e2e/helpers/mockGallery'
 async function fixture(page: Page) {
-  let draft = JSON.stringify({ ...VIEWER_PRESETS.film, quality: 'high', visitorAllowDownload: true, extension: { future: 42 } }), saves = 0
+  let draft = JSON.stringify({ ...VIEWER_PRESETS['film-gallery'], quality: 'high', visitorAllowDownload: true, extension: { future: 42 } }), saves = 0
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
   await mockGallery(page, { config: JSON.parse(draft) })
   await page.route('**/api/me', route => route.fulfill({ json: { role: 'OWNER', capabilities: ['GALLERY_READ', 'CONFIG_READ', 'CONFIG_WRITE'], user: { displayName: '测试策展人' }, tenant: { name: '配置验收' } } }))
@@ -37,6 +37,28 @@ test('complete parameters save, reload and apply to the real viewer iframe witho
   await page.getByRole('tab', { name: '高级', exact: true }).click()
   await expect(page.getByLabel('画质上限')).toHaveValue('mid')
   expect(data.errors).toEqual([])
+})
+test('config side panel matches the designed look', async ({ page }) => {
+  await fixture(page)
+  await page.goto('/app/galleries/config-fixture/config')
+  await expect(page.locator('.side-heading')).toBeVisible()
+  await expect(page.locator('.config-side')).toHaveCSS('background-color', 'rgb(247, 249, 248)')
+  await page.getByRole('tab', { name: '氛围', exact: true }).click()
+  await expect(page.locator('.preset-card')).toHaveCount(8)
+  const selected = page.locator('.preset-card[aria-pressed="true"]')
+  await expect(selected).toHaveCount(1)
+  await expect(selected).toContainText('胶片展厅')
+  await page.getByLabel('背景类型').selectOption('image')
+  await expect(page.getByLabel('渐变角度')).toHaveCount(0)
+  await expect(page.getByLabel('背景副色')).toHaveCount(0)
+  await page.getByLabel('背景类型').selectOption('gradient')
+  await expect(page.getByLabel('渐变角度')).toBeVisible()
+  for (const width of [1440, 1024, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.waitForTimeout(300)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: `e2e/shots/config-panel-${width}.png`, fullPage: true })
+  }
 })
 test('invalid color blocks writes and preset reset preserves quality, downloads and extensions', async ({ page }) => {
   const data = await fixture(page)

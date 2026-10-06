@@ -58,6 +58,13 @@ jobs:
       - name: Build Admin
         run: npm run build --workspace apps/gallery-admin
 
+      # e2e 的 iframe 实时预览需要同域 /g/ 访客端产物；
+      # 诊断全局仅在 VITE_VIEWER_DIAGNOSTICS=true 构建中暴露，仅用于 e2e。
+      - name: Build Viewer for embedded preview
+        run: npm run build --workspace apps/gallery-viewer
+        env:
+          VITE_VIEWER_DIAGNOSTICS: 'true'
+
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
         working-directory: apps/gallery-admin

@@ -9,10 +9,23 @@ const labels: Record<PresetName, string> = Object.fromEntries(SCENE_PRESETS.map(
   <button class="restore-preset" type="button" :disabled="disabled || !config.presetName || !isViewerPreset(config.presetName)" @click="emit('reset')">恢复当前预设</button>
 </section></template>
 <style scoped>
-.preset-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .625rem; }
-button { border: 1px solid #d7e1e9; border-radius: .75rem; background: #fff; color: #17212b; font: inherit; cursor: pointer; overflow: hidden; text-align: left; transition: border-color .2s, transform .2s, box-shadow .2s; }
-button:hover:not(:disabled) { border-color: #2a9274; transform: translateY(-1px); box-shadow: 0 6px 16px rgb(20 99 72 / 12%); }
-button[aria-pressed=true] { border-color: #168260; box-shadow: 0 0 0 2px rgb(22 130 96 / 14%); }button:focus-visible { outline: 2px solid #146348; outline-offset: 2px; }button:disabled { opacity: .5; cursor: default; }
-.preset-image { display: block; aspect-ratio: 1.8; background: #dce7e1; }.preset-image img { display: block; width: 100%; height: 100%; object-fit: cover; }.preset-copy { display: grid; gap: .2rem; padding: .55rem .65rem .65rem; }.preset-copy strong { font-size: .82rem; }.preset-copy small { color: #64748b; font-size: .68rem; }.preset-card { position: relative; }.preset-check { position: absolute; right: .45rem; top: .45rem; display: grid; width: 1.35rem; height: 1.35rem; place-items: center; border-radius: 50%; background: #168260; color: #fff; font-size: .75rem; }
-.restore-preset { margin-top: .75rem; width: 100%; }p { color: #475569; font-size: .8125rem; }
+.preset-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.preset-card { position: relative; border: 1px solid #d7e1e9; border-radius: 14px; background: #fff; color: #17212b; font: inherit; cursor: pointer; overflow: hidden; text-align: left; transition: border-color .2s, transform .2s, box-shadow .2s; }
+.preset-card:hover:not(:disabled) { border-color: #75ab91; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(20, 99, 72, .12); }
+.preset-card[aria-pressed="true"] { border-color: #168260; box-shadow: 0 0 0 2px rgba(22, 130, 96, .14); }
+.preset-card:focus-visible { outline: 2px solid #146348; outline-offset: 2px; }
+.preset-card:disabled { opacity: .5; cursor: default; }
+.preset-image { position: relative; display: block; height: 72px; background: #dce7df; overflow: hidden; }
+.preset-image img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s; }
+.preset-card:hover:not(:disabled) .preset-image img { transform: scale(1.05); }
+.preset-copy { display: grid; gap: .2rem; padding: 9px; }
+.preset-copy strong { display: block; font-size: 12.5px; color: #111827; }
+.preset-copy small { color: #6a7c71; font-size: 11px; }
+.preset-check { position: absolute; top: 7px; right: 7px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #146e4e; border: 1px solid rgba(255, 255, 255, .69); color: #fff; font-size: 12px; }
+.restore-preset { margin-top: .75rem; width: 100%; min-height: 36px; border: 1px solid #d7e1e9; border-radius: 10px; background: #fff; color: #334f42; font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; transition: border-color .2s; }
+.restore-preset:hover:not(:disabled) { border-color: #75ab91; }
+.restore-preset:focus-visible { outline: 2px solid #146348; outline-offset: 2px; }
+.restore-preset:disabled { opacity: .5; cursor: default; }
+p { color: #475569; font-size: .8125rem; }
+@media (prefers-reduced-motion: reduce) { .preset-image img { transition: none; } }
 </style>

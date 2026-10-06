@@ -533,6 +533,7 @@ onUnmounted(() => {
 
     <div v-else class="config-split">
       <aside class="config-side">
+        <div class="side-heading"><span class="side-eyebrow">展厅设计</span><strong>让作品拥有自己的空间</strong><span>选择场景，细调每一束光</span></div>
         <div class="side-tabs" role="tablist" aria-label="配置分区">
           <button
             v-for="tab in CONFIG_TABS"
@@ -644,8 +645,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.config-side :deep(.side-block) { padding: 1.25rem; border-bottom: 1px solid rgba(15,23,42,.1); }
-.config-side :deep(h2) { font-size: .9375rem; margin: 0 0 .75rem; }
+.config-side :deep(.side-block) { padding: 16px 12px; border: 1px solid #e6ece8; border-radius: 14px; background: #fff; }
+.config-side :deep(.side-block h2) { font-size: .9375rem; margin: 0 0 .75rem; }
+.config-side :deep(.side-block + .side-block) { margin-top: 14px; }
+.config-side button:focus-visible, .config-side :deep(button:focus-visible),
+.config-side select:focus-visible, .config-side :deep(select:focus-visible),
+.config-side input:focus-visible, .config-side :deep(input:focus-visible) { outline: 2px solid #19815c; outline-offset: 3px; }
+.config-side :deep(button:disabled) { cursor: not-allowed; opacity: .65; }
 .config-errors { color: #b91c1c; padding: 1rem; }
 .preview-status { color: #fff; background: rgba(15,23,42,.9); border-radius: .5rem; padding: .75rem; max-width: 25rem; font-size: .8125rem; }
 
@@ -800,49 +806,61 @@ onUnmounted(() => {
   height: calc(100dvh - 110px);
 }
 
+.side-heading { display: flex; flex-direction: column; gap: 5px; padding: 0 4px; }
+.side-eyebrow { color: #27805b; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
+.side-heading strong { color: #18372a; font-size: 17px; font-weight: 700; letter-spacing: -.4px; }
+.side-heading > span:last-child { color: #6a7c71; font-size: 11px; }
+
 .config-side {
   overflow: auto;
-  padding: 18px 16px 22px;
-  background: #fff;
+  padding: 22px 16px;
+  background: #f7f9f8;
+  border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 20px;
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+  scrollbar-width: thin;
+  scrollbar-color: #bccdc4 transparent;
+  box-shadow: 0 12px 36px rgba(15, 40, 28, 0.09);
 }
 
 .side-tabs {
+  position: sticky;
+  top: -22px;
+  z-index: 2;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: 3px;
+  padding: 5px;
+  margin: 18px 0;
+  border: 1px solid #e3eae6;
+  border-radius: 13px;
+  background: #edf2ef;
 }
 
 .side-tab {
-  padding: 8px 6px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  min-height: 36px;
+  padding: 8px 4px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
   font-size: 12px;
   font-weight: 650;
-  color: #6b7280;
+  color: #5b6b63;
+  transition: background .15s, color .15s;
 }
 
 .side-tab.active {
-  color: #047857;
-  border-color: #00b88f;
-  background: #ecfdf5;
-}
-
-.side-block + .side-block {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid #f3f4f6;
+  color: #126547;
+  border-color: #dde7e1;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(23, 62, 36, 0.06);
 }
 
 .side-block h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
-  color: #111827;
+  margin: 0 0 14px;
+  color: #18372a;
   font-size: 14px;
   font-weight: 750;
 }
@@ -872,75 +890,6 @@ onUnmounted(() => {
   border-color: #00b88f;
   color: #047857;
   box-shadow: 0 0 0 1px #00b88f;
-}
-
-.preset-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.download-toggle-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #eef0f2;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.download-toggle-card:hover {
-  background: #f1f5f9;
-}
-
-.toggle-info strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.toggle-info p {
-  margin: 3px 0 0;
-  font-size: 11.5px;
-  color: #64748b;
-  line-height: 1.35;
-}
-
-.download-checkbox {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--brand-accent, #10b981);
-  cursor: pointer;
-}
-
-.preset-mini {
-  text-align: left;
-  padding: 10px 10px 8px;
-  border-radius: 12px;
-  border: 1px solid #eef0f2;
-  background: #f8fafc;
-}
-
-.preset-mini.active {
-  background: #ecfdf5;
-  border-color: #00b88f;
-  box-shadow: 0 0 0 1px #00b88f;
-}
-
-.preset-mini strong {
-  display: block;
-  font-size: 12px;
-  color: #111827;
-}
-
-.preset-mini small {
-  color: #9ca3af;
-  font-size: 11px;
 }
 
 .chip-row {
