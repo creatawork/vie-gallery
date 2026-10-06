@@ -48,9 +48,7 @@ public class SecurityConfig {
                 .securityContext(security -> security.securityContextRepository(securityContextRepository))
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository)
-                        .csrfTokenRequestHandler(csrfHandler)
-                        // 品牌站公开端点为匿名访客接口（无会话写风险），CSRF 校验豁免；校验/限流由端点自身承担
-                        .ignoringRequestMatchers("/api/public/sites/**"))
+                        .csrfTokenRequestHandler(csrfHandler))
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                         .sessionFixation(fixation -> fixation.changeSessionId()))
@@ -58,7 +56,6 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/api/auth/csrf", "/api/auth/register", "/api/auth/login",
                                 "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password",
                                 "/api/public/g/**",
-                                "/api/public/sites/**",
                                 "/s/**",
                                 "/error").permitAll()
                         .anyRequest().authenticated())

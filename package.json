@@ -4,7 +4,6 @@
   "workspaces": [
     "apps/gallery-admin",
     "apps/gallery-viewer",
-    "apps/gallery-site",
     "packages/*"
   ],
   "scripts": {

@@ -1,3 +1,0 @@
-const http=require('http'),fs=require('fs'),path=require('path');
-const root=__dirname;
-http.createServer((req,res)=>{let p=decodeURIComponent(req.url.split('?')[0]);if(p.endsWith('/'))p+='index.html';const f=path.join(root,p);fs.readFile(f,(e,d)=>{if(e){res.writeHead(404);res.end('nf');return}const ext=path.extname(f).toLowerCase();const m={'.html':'text/html','.jpg':'image/jpeg','.png':'image/png','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml','.woff2':'font/woff2'};res.writeHead(200,{'Content-Type':m[ext]||'application/octet-stream'});res.end(d)})}).listen(8791,'127.0.0.1',()=>console.log('up'));

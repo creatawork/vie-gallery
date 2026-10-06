@@ -527,10 +527,6 @@ async function handleDeleteGallery() {
           <Icon name="home" :size="16" />
           <span>我的空间</span>
         </RouterLink>
-        <RouterLink to="/site" class="space-tab">
-          <Icon name="globe" :size="16" />
-          <span>品牌站</span>
-        </RouterLink>
         <RouterLink v-if="isOwner" to="/members" class="space-tab">
           <Icon name="users" :size="16" />
           <span>成员管理</span>

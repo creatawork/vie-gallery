@@ -24,7 +24,6 @@ const ownsOwnChrome = computed(() =>
   route.name === 'overview' ||
   route.name === 'gallery-workspace' ||
   route.name === 'gallery-config' ||
-  route.name === 'brand-site' ||
   route.name === 'members'
 )
 const showAppChrome = computed(() => isAuthenticated.value && !ownsOwnChrome.value)
@@ -65,10 +64,6 @@ onMounted(() => {
             <RouterLink to="/" class="nav-tab" :class="{ active: route.path === '/' }">
               <Icon name="gallery" :size="16" />
               <span>相册空间</span>
-            </RouterLink>
-            <RouterLink to="/site" class="nav-tab" :class="{ active: route.path === '/site' }">
-              <Icon name="globe" :size="16" />
-              <span>品牌站</span>
             </RouterLink>
             <RouterLink v-if="isOwner" to="/members" class="nav-tab" :class="{ active: route.path === '/members' }">
               <Icon name="users" :size="16" />

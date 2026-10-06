@@ -61,7 +61,6 @@ POST /api/galleries/{id}/preview-token
 apps/
 ├── gallery-api/       # Spring Boot 多模块 API
 ├── gallery-admin/     # Vue 3 + TypeScript 创作者工作台
-├── gallery-site/      # Vue 3 品牌站渲染端（5 套站点模板，部署于 /site/）
 └── gallery-viewer/    # Vue 3 + Three.js 公开展示端
 packages/
 └── gallery-contracts/ # 前后端共享 TypeScript 契约
@@ -109,23 +108,6 @@ GET  /api/public/g/{slug}/viewer-config
 ```
 
 公开端可通过 `X-Preview-Token` 或 `?preview=` 携带创作者预览令牌。有效令牌可读取对应草稿馆的照片和当前配置草稿；过期、错馆或缺失令牌时，未发布相册仍按不存在处理。公开照片和 `photoCount` 只包含 `READY` 且未软删除的照片。新分享链接统一使用 query Token；Viewer 暂时兼容旧的 `token` 参数和 `#s=` 格式。
-
-品牌站（设计见 [`docs/brand-site-templates-design.md`](docs/brand-site-templates-design.md)）：
-
-```text
-GET    /api/brand-site                          # 读取当前租户品牌站（首访自动开通，T0 素笺落点）
-PUT    /api/brand-site/config                   # 保存草稿
-PATCH  /api/brand-site/settings                 # 子域名 / 启停 / 状态（TRIAL/ACTIVE/EXPIRED）
-POST   /api/brand-site/publish                  # 发布配置版本快照
-GET    /api/brand-site/versions                 # 版本历史分页
-POST   /api/brand-site/rollback                 # 回滚到指定版本
-POST   /api/brand-site/logo                     # 品牌 Logo 上传（≤256KB）
-GET    /api/public/sites/{subdomain}            # 公开读取已发布站点（含图片/相册 slug 资产解析）
-POST   /api/public/sites/{subdomain}/inquiries  # 站内留言表单（转化必备区块）
-POST   /api/public/sites/{subdomain}/events     # 转化埋点接收端（WP-13 通道接缝）
-```
-
-品牌站访客页位于 `/site/`（泛子域名基建上线前的过渡路径）：`/site/?site={subdomain}` 渲染已发布站点；`?template={id}` 以 demo 内容预览 5 套模板。管理端入口 `/app/site`（模板画廊 → 内容编辑 → 品牌定制 → 发布中心 + iframe 实时预览，握手消息 `BS_*`）。
 
 ## 本地启动
 

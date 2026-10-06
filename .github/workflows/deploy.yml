@@ -48,12 +48,6 @@ jobs:
           npm install
           npm run build
 
-      - name: Build Site UI
-        run: |
-          cd apps/gallery-site
-          npm install
-          npm run build
-
       - name: Build API
         run: |
           cd apps/gallery-api
@@ -85,10 +79,6 @@ jobs:
       - name: Transfer Viewer UI
         run: |
           rsync -avz --delete apps/gallery-viewer/dist/ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/viewer/
-
-      - name: Transfer Site UI
-        run: |
-          rsync -avz --delete apps/gallery-site/dist/ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/vie-gallery/site/
 
       - name: Transfer Infrastructure configs
         run: |

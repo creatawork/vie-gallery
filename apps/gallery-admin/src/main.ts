@@ -26,11 +26,6 @@ const router = createRouter({
       component: () => import('./views/GalleryWorkspaceView.vue')
     },
     {
-      path: '/site',
-      name: 'brand-site',
-      component: () => import('./views/BrandSiteView.vue')
-    },
-    {
       path: '/members',
       name: 'members',
       component: () => import('./views/MembersView.vue')
