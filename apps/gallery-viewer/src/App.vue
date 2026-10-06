@@ -125,9 +125,10 @@ const presets = [
 ]
 
 onMounted(() => {
+  window.addEventListener('message', handlePostMessage)
+  if (isEmbedPreview()) window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_REQUEST' }, adminEmbedOrigin())
   viewer.initialize()
   document.addEventListener('fullscreenchange', handleFullscreenChange)
-  window.addEventListener('message', handlePostMessage)
 })
 
 onUnmounted(() => {
@@ -165,6 +166,14 @@ let previewSequence = 0
 async function handlePostMessage(event: MessageEvent) {
   const origin = adminEmbedOrigin()
   if (!isEmbedPreview() || !isTrustedPreviewMessage(event, window.parent, origin)) return
+  if (event.data?.type === 'VIE_PREVIEW_BOOTSTRAP' && Number.isSafeInteger(event.data.sequence)) {
+    const result = normalizeViewerConfig(event.data.config)
+    if (result.issues.length) return
+    if (viewer.setConfigSnapshot(result.config)) {
+      window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_APPLIED', sequence: event.data.sequence }, origin)
+    }
+    return
+  }
   if (event.data?.type !== 'VIE_CONFIG_UPDATE' || !Number.isSafeInteger(event.data.sequence) || event.data.sequence <= previewSequence) return
   const sequence: number = event.data.sequence
   previewSequence = sequence

@@ -53,8 +53,15 @@ export function useViewerState(slug: string) {
   const hasError = computed(() => state.value === 'error' || state.value === 'not_found')
   const hasMore = computed(() => photos.value.length < total.value)
   const allowDownload = computed(() => viewerConfig.value?.visitorAllowDownload === true)
+  let configSnapshot: ViewerConfig | null | undefined
+  let configLoadStarted = false
 
   async function loadConfig(version = requestVersion): Promise<ViewerConfig | null> {
+    configLoadStarted = true
+    if (configSnapshot !== undefined) {
+      markStartupStage('config-ready')
+      return configSnapshot ? structuredClone(configSnapshot) : null
+    }
     try {
       const cfg = await client.getViewerConfig(slug)
       markStartupStage('config-ready')
@@ -66,6 +73,11 @@ export function useViewerState(slug: string) {
       if (cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403)) throw cause
       return null
     }
+  }
+  function setConfigSnapshot(config: ViewerConfig): boolean {
+    if (configLoadStarted) return false
+    configSnapshot = structuredClone(config)
+    return true
   }
   async function loadFirstPage(version: number) {
     const [config, response] = await Promise.all([
@@ -239,6 +251,7 @@ export function useViewerState(slug: string) {
     hasError,
     hasMore,
     viewerConfig,
+    setConfigSnapshot,
     allowDownload,
     initialize,
     unlock,

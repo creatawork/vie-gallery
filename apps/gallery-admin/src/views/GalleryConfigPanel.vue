@@ -36,6 +36,7 @@ interface ConfigVersionItem {
 
 
 const loading = ref(true)
+const configLoaded = ref(false)
 const editor = useViewerConfigEditor(galleryId, { canWrite: () => canConfigWrite.value })
 const { config, issues, saving, savedJson: savedDraftJson } = editor
 const previewStatus = ref('尚未应用')
@@ -135,8 +136,13 @@ watch(previewIframeRef, iframe => {
     previewStatus.value = message.error ? '预览应用失败，请重试' : '已应用'
       + ' · 有效画质 ' + ({ low: '低', mid: '中', high: '高' }[message.effectiveQuality])
       + (message.reason ? ' · ' + message.reason : '')
-  }, () => { clearHandshakeTimer(); embedTimedOut.value = false; previewLive.value = true })
-  refreshLivePreview()
+  }, bootstrapped => {
+    clearHandshakeTimer()
+    embedTimedOut.value = false
+    previewLive.value = true
+    previewStatus.value = bootstrapped ? '已应用' : '正在应用…'
+  })
+  if (configLoaded.value) refreshLivePreview()
 }, { flush: 'post' })
 
 async function retryEmbedPreview() {
@@ -216,13 +222,21 @@ async function loadVersions() {
 
 async function loadGalleryAndConfig() {
   loading.value = true
+  configLoaded.value = false
   loadError.value = ''
   previewLive.value = false
   embedTimedOut.value = false
   lastSavedLabel.value = ''
   lastSaveFailed.value = false
   try {
-    const gallRes = await apiFetch(`/api/galleries/${galleryId}`)
+    // These requests do not depend on each other. Start them together so the
+    // preview can begin booting while the editor config is still in flight.
+    const galleryRequest = apiFetch(`/api/galleries/${galleryId}`)
+    const configRequest = apiFetch(`/api/galleries/${galleryId}/viewer-config`)
+      .then(response => ({ response }), cause => ({ cause }))
+    const previewTokenRequest = issuePreviewToken(galleryId)
+      .then(result => ({ result }), cause => ({ cause }))
+    const gallRes = await galleryRequest
     if (!gallRes.ok) {
       if (gallRes.status === 401) {
         loadError.value = '登录已失效，请重新登录。'
@@ -238,14 +252,21 @@ async function loadGalleryAndConfig() {
     }
     galleryInfo.value = await gallRes.json() as Gallery
     previewIssueError.value = ''
-    try {
-      previewToken.value = (await issuePreviewToken(galleryId)).token
-    } catch (cause) {
+    const tokenResult = await previewTokenRequest
+    if ('result' in tokenResult) {
+      previewToken.value = tokenResult.result.token
+      previewKey.value += 1
+    } else {
       previewToken.value = ''
-      previewIssueError.value = cause instanceof Error ? cause.message : '暂时无法打开内部预览，请稍后重试。'
+      previewIssueError.value = tokenResult.cause instanceof Error ? tokenResult.cause.message : '暂时无法打开内部预览，请稍后重试。'
     }
+    // The configuration controls remain disabled until their server snapshot
+    // arrives, while the iframe starts loading independently.
+    loading.value = false
 
-    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`)
+    const configResult = await configRequest
+    if (!('response' in configResult)) throw configResult.cause
+    const response = configResult.response
     if (response.ok) {
       const data = await response.json()
       if (data) {
@@ -259,9 +280,13 @@ async function loadGalleryAndConfig() {
       }
       savedDraftJson.value = serializeViewerConfig(getCleanConfig())
       lastSavedLabel.value = formatClock(new Date())
-      await loadVersions()
+      configLoaded.value = true
+      previewChannel?.send(config.value)
+      void loadVersions().catch(() => { versions.value = [] })
     } else if (response.status === 404) {
       editor.replace('{}', true)
+      configLoaded.value = true
+      previewChannel?.send(config.value)
     } else {
       loadError.value = '展厅配置加载失败，请稍后重试。'
     }
@@ -269,7 +294,6 @@ async function loadGalleryAndConfig() {
     loadError.value = '网络连接失败，请稍后重试。'
   } finally {
     loading.value = false
-    if (galleryInfo.value?.slug) previewKey.value += 1
   }
 }
 
@@ -506,7 +530,7 @@ onUnmounted(() => {
           <Icon name="undo" :size="14" />
           <span>回滚</span>
         </button>
-        <button v-if="canConfigWrite" class="btn ghost" type="button" :disabled="!config.presetName || !isViewerPreset(config.presetName)" @click="showResetConfirm = true">
+        <button v-if="canConfigWrite" class="btn ghost" type="button" :disabled="!configLoaded || !config.presetName || !isViewerPreset(config.presetName)" @click="showResetConfirm = true">
           <Icon name="refresh" :size="14" />
           <span>重置</span>
         </button>
@@ -514,13 +538,13 @@ onUnmounted(() => {
           v-if="canConfigWrite && lastSaveFailed"
           class="btn outline"
           type="button"
-          :disabled="saving"
+          :disabled="!configLoaded || saving"
           @click="save()"
         >
           <span>{{ saving ? '保存中…' : '重试保存' }}</span>
         </button>
-        <button v-if="canConfigWrite" class="btn outline" type="button" :disabled="saving || !!issues.length" @click="save()">{{ saving ? '保存中…' : '保存草稿' }}</button>
-        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="publishing || saving || hasDraftChanges || lastSaveFailed || !!issues.length" @click="showPublishConfirm = true">
+        <button v-if="canConfigWrite" class="btn outline" type="button" :disabled="!configLoaded || saving || !!issues.length" @click="save()">{{ saving ? '保存中…' : '保存草稿' }}</button>
+        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="!configLoaded || publishing || saving || hasDraftChanges || lastSaveFailed || !!issues.length" @click="showPublishConfirm = true">
           <Icon name="send" :size="14" />
           <span>{{ publishing ? '同步中…' : '同步到访客端' }}</span>
         </button>
@@ -555,12 +579,12 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite" @patch="patchConfig" /></div>
+        <div v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
         <div v-show="configTab === 'atmosphere'">
-          <PresetCards :config="config" :disabled="!canConfigWrite" @preset="applyPreset" @reset="resetPreset" />
-          <AtmosphereControls :config="config" :issues="issues" :disabled="!canConfigWrite" @patch="patchConfig" />
+          <PresetCards :config="config" :disabled="!canConfigWrite || !configLoaded" @preset="applyPreset" @reset="resetPreset" />
+          <AtmosphereControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
         </div>
-        <div v-show="configTab === 'advanced'"><MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite" @patch="patchConfig" /></div>
+        <div v-show="configTab === 'advanced'"><MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
         <p v-if="issues.length" class="config-errors" role="alert">有 {{ issues.length }} 项配置错误，请修正后保存。</p>
 
         <section v-show="configTab === 'history'" class="side-block">
