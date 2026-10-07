@@ -579,11 +579,14 @@ onUnmounted(() => {
         </div>
 
         <div v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
-        <div v-show="configTab === 'atmosphere'">
+        <div v-if="configTab === 'atmosphere'">
           <PresetCards :config="config" :disabled="!canConfigWrite || !configLoaded" @preset="applyPreset" @reset="resetPreset" />
+          <p class="atmosphere-hint">选好场景即可发布；粒子、辉光、雾效等微调已收入「高级」。</p>
+        </div>
+        <div v-if="configTab === 'advanced'">
+          <MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
           <AtmosphereControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
         </div>
-        <div v-show="configTab === 'advanced'"><MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
         <p v-if="issues.length" class="config-errors" role="alert">有 {{ issues.length }} 项配置错误，请修正后保存。</p>
 
         <section v-show="configTab === 'history'" class="side-block">
@@ -1299,4 +1302,6 @@ onUnmounted(() => {
   color: #10b981;
   border-color: #10b981;
 }
+
+.atmosphere-hint { margin: 10px 2px 0; color: #6a7c71; font-size: .8125rem; }
 </style>
