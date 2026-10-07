@@ -1,7 +1,7 @@
 import { isTrustedPreviewMessage, serializeViewerConfig, type ViewerConfig, type PreviewApplied } from '@vie/gallery-contracts'
 export { isTrustedPreviewMessage }
 let nextSequence = 0
-export function createViewerPreviewChannel(iframe: HTMLIFrameElement, onApplied: (message: PreviewApplied) => void, onReady?: (bootstrapped: boolean) => void) {
+export function createViewerPreviewChannel(iframe: HTMLIFrameElement, onApplied: (message: PreviewApplied) => void, onReady?: (bootstrapped: boolean) => void, onConnecting?: () => void) {
   const source = iframe.contentWindow, origin = new URL(iframe.src).origin
   let disposed = false, ready = false, sequence = 0, sentSequence = 0
   let bootstrapRequested = false, bootstrapSequence = -1, bootstrapAppliedSequence = -1
@@ -32,7 +32,15 @@ export function createViewerPreviewChannel(iframe: HTMLIFrameElement, onApplied:
       if (timer !== null) clearTimeout(timer)
       flush()
     } else if (event.data?.type === 'VIE_PREVIEW_BOOTSTRAP_REQUEST') {
+      // A new document keeps the same WindowProxy. Give it a fresh sequence so
+      // old bootstrap/config receipts cannot acknowledge this document's draft.
+      if (bootstrapRequested && latest) sequence = ++nextSequence
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      ready = false; sentSequence = 0
+      bootstrapSequence = -1; bootstrapAppliedSequence = -1
       bootstrapRequested = true
+      onConnecting?.()
       sendBootstrap()
     } else if (event.data?.type === 'VIE_PREVIEW_BOOTSTRAP_APPLIED' && event.data.sequence === bootstrapSequence) {
       bootstrapAppliedSequence = bootstrapSequence

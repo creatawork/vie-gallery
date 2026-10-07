@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, toRaw } from 'vue'
 import { parseViewerConfig, type ViewerConfig } from '@vie/gallery-contracts'
 import { PublicApiClient, PublicApiError } from '../api/client'
 import type { PublicGalleryResponse, PublicPhoto, PublicPhotoPage } from '../types/api'
@@ -53,14 +53,24 @@ export function useViewerState(slug: string) {
   const hasError = computed(() => state.value === 'error' || state.value === 'not_found')
   const hasMore = computed(() => photos.value.length < total.value)
   const allowDownload = computed(() => viewerConfig.value?.visitorAllowDownload === true)
-  let configSnapshot: ViewerConfig | null | undefined
+  let latestPreviewConfig: ViewerConfig | undefined
+  let configSnapshot: ViewerConfig | undefined
   let configLoadStarted = false
+
+  function beginLoad() {
+    // Public entries still read the server on every load. Preview cycles seed
+    // their own snapshot from the latest draft, before access state is cleared.
+    if (latestPreviewConfig && viewerConfig.value) latestPreviewConfig = structuredClone(toRaw(viewerConfig.value))
+    configSnapshot = latestPreviewConfig ? structuredClone(latestPreviewConfig) : undefined
+    configLoadStarted = false
+    return ++requestVersion
+  }
 
   async function loadConfig(version = requestVersion): Promise<ViewerConfig | null> {
     configLoadStarted = true
     if (configSnapshot !== undefined) {
       markStartupStage('config-ready')
-      return configSnapshot ? structuredClone(configSnapshot) : null
+      return structuredClone(configSnapshot)
     }
     try {
       const cfg = await client.getViewerConfig(slug)
@@ -77,7 +87,12 @@ export function useViewerState(slug: string) {
   function setConfigSnapshot(config: ViewerConfig): boolean {
     if (configLoadStarted) return false
     configSnapshot = structuredClone(config)
+    latestPreviewConfig = structuredClone(config)
     return true
+  }
+  function setAppliedConfigSnapshot(config: ViewerConfig) {
+    latestPreviewConfig = structuredClone(config)
+    viewerConfig.value = structuredClone(config)
   }
   async function loadFirstPage(version: number) {
     const [config, response] = await Promise.all([
@@ -97,8 +112,15 @@ export function useViewerState(slug: string) {
   }
   function clearAccess() { viewerConfig.value = null; photos.value = []; total.value = 0; gallery.value = null }
 
+  async function loadEmptyGallery(version: number) {
+    const config = await loadConfig(version)
+    if (version !== requestVersion) return
+    viewerConfig.value = config
+    state.value = 'empty'
+  }
+
   async function initialize() {
-    const version = ++requestVersion
+    const version = beginLoad()
     clearAccess()
     state.value = 'loading'
     error.value = null
@@ -124,9 +146,7 @@ export function useViewerState(slug: string) {
           error.value = '此空间需要有效的分享链接才能访问。'
           break
         case 'EMPTY':
-          viewerConfig.value = await loadConfig(version)
-          if (version !== requestVersion) return
-          state.value = 'empty'
+          await loadEmptyGallery(version)
           break
         default:
           state.value = 'error'
@@ -140,7 +160,7 @@ export function useViewerState(slug: string) {
 
   async function unlock(password: string): Promise<boolean> {
     if (unlocking.value) return false
-    const version = ++requestVersion
+    const version = beginLoad()
     viewerConfig.value = null
     unlocking.value = true
     error.value = null
@@ -153,9 +173,8 @@ export function useViewerState(slug: string) {
       if (nextGallery.accessState === 'READY') {
         await loadFirstPage(version)
       } else if (nextGallery.accessState === 'EMPTY') {
-        viewerConfig.value = await loadConfig(version)
+        await loadEmptyGallery(version)
         if (version !== requestVersion) return false
-        state.value = 'empty'
       } else {
         state.value = nextGallery.accessState === 'PASSWORD_REQUIRED' ? 'password_prompt' : 'share_required'
       }
@@ -252,6 +271,7 @@ export function useViewerState(slug: string) {
     hasMore,
     viewerConfig,
     setConfigSnapshot,
+    setAppliedConfigSnapshot,
     allowDownload,
     initialize,
     unlock,

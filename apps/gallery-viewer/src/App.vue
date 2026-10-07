@@ -185,7 +185,7 @@ async function handlePostMessage(event: MessageEvent) {
     if (!activeEngine) throw new Error('预览尚未就绪，请重试。')
     await activeEngine.replaceConfig(result.config)
     if (sequence !== previewSequence || activeEngine !== engine) return
-    viewer.viewerConfig.value = result.config
+    viewer.setAppliedConfigSnapshot(result.config)
     applyAutoTour(result.config.camera?.autoRotate === true)
     window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence, effectiveQuality: activeEngine.getEffectiveQuality(), reason: activeEngine.getQualityReason() }, origin)
   } catch (cause) {

@@ -64,6 +64,32 @@ test('config side panel matches the designed look', async ({ page }) => {
     await page.screenshot({ path: `e2e/shots/config-panel-${width}.png`, fullPage: true })
   }
 })
+
+test('iframe reload restores the latest editor draft while its save is still in flight', async ({ page }) => {
+  const data = await fixture(page)
+  const serverDraft = data.draft()
+  let releaseSave!: () => void
+  const saveAllowed = new Promise<void>(resolve => releaseSave = resolve)
+  await page.route('**/api/galleries/config-fixture/viewer-config', async route => {
+    if (route.request().method() === 'PUT') await saveAllowed
+    await route.fulfill({ json: { configJson: JSON.stringify(serverDraft), schemaVersion: 1 } })
+  })
+  try {
+    await page.goto('/app/galleries/config-fixture/config')
+    await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+    await page.getByLabel('照片间距').fill('2')
+    const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+    const spacing = () => frame.locator('canvas.webgl-canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.layout.params?.spacing)
+    await expect.poll(spacing).toBe(2)
+    const viewerFrame = page.frames().find(candidate => candidate.url().includes('/g/effects-fixture'))!
+    await viewerFrame.goto(viewerFrame.url())
+    await expect.poll(spacing).toBe(2)
+    await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+    await expect(page.getByLabel('照片间距')).toHaveValue('2')
+    expect(data.saves()).toBe(0)
+    expect(data.errors).toEqual([])
+  } finally { releaseSave() }
+})
 test('invalid color blocks writes and preset reset preserves quality, downloads and extensions', async ({ page }) => {
   const data = await fixture(page)
   await page.goto('/app/galleries/config-fixture/config')

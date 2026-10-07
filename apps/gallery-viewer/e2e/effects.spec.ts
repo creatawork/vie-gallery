@@ -2,6 +2,33 @@ import { test, expect } from '@playwright/test'
 import { VIEWER_PRESETS } from '@vie/gallery-contracts'
 import { mockGallery } from './helpers/mockGallery'
 
+test('first photo is reported only after its entrance opacity becomes visible', async ({ page }) => {
+  const { errors } = await mockGallery(page, { config: {
+    quality: 'mid', layout: { mode: 'grid', transition: { style: 'none' } },
+    camera: { autoRotate: false, introFlight: false }, particles: { enabled: false },
+    effects: { photoEntrance: 'fade', entranceDuration: .5, photoFloat: false }
+  } })
+  let releasePhotos!: () => void
+  const photosAllowed = new Promise<void>(resolve => releasePhotos = resolve)
+  await page.route('**/fixtures/photo-*', async route => {
+    await photosAllowed
+    await route.fallback()
+  })
+  try {
+    await page.goto('/g/effects-fixture', { waitUntil: 'domcontentloaded' })
+    await expect.poll(() => page.evaluate(() => !!window.__VIE_VIEWER_DIAGNOSTICS__)).toBe(true)
+    await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.freezeTime(0))
+    releasePhotos()
+    await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().textures.resident)).toBeGreaterThan(0)
+    // Render multiple frames while the photo entrance stays at opacity zero.
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    expect(await page.evaluate(() => performance.getEntriesByName('viewer:first-photo-rendered').length)).toBe(0)
+    await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.freezeTime(1))
+    await expect.poll(() => page.evaluate(() => performance.getEntriesByName('viewer:first-photo-rendered').length)).toBe(1)
+    expect(errors).toEqual([])
+  } finally { releasePhotos() }
+})
+
 test('grading and vignette render independently with neutral disabled uniforms', async ({ page }, info) => {
   const { errors } = await mockGallery(page, { config: { quality: 'mid', layout: { mode: 'grid' }, particles: { enabled: false }, effects: { bloom: { enabled: false }, photoFloat: false, photoEntrance: 'none', postGrade: { enabled: true, saturation: 0 } } } })
   await page.goto('/g/effects-fixture')

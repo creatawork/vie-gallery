@@ -50,3 +50,34 @@ test('editor keeps extensions, invalid inputs and edits made during an in-flight
   assert.equal(editor.config.value.audio.bgm?.enabled, true)
   assert.equal(editor.config.value.customized, false)
 })
+
+test('iframe document reload reboots the latest draft and rejects receipts from the old document', async () => {
+  const sent: any[] = [], applied: any[] = [], ready: boolean[] = []
+  const source = { postMessage: (message: unknown) => sent.push(message) } as unknown as Window
+  const iframe = { src: 'http://localhost:15174/g/test', contentWindow: source } as HTMLIFrameElement
+  const channel = createViewerPreviewChannel(iframe, message => applied.push(message), value => ready.push(value))
+  const event = (type: string, sequence = 0) => ({ source, origin: 'http://localhost:15174', data: { type, sequence, effectiveQuality: 'mid', reason: null } }) as MessageEvent
+  try {
+    const initial = channel.send(createDefaultViewerConfig())
+    channel.accept(event('VIE_PREVIEW_BOOTSTRAP_REQUEST'))
+    channel.accept(event('VIE_PREVIEW_BOOTSTRAP_APPLIED', initial))
+    channel.accept(event('VIE_PREVIEW_READY'))
+    const edited = channel.send({ ...createDefaultViewerConfig(), quality: 'low' })
+    // Navigation preserves the iframe's WindowProxy. The pending edit belongs to
+    // the old document, but its draft must survive into the new handshake.
+    channel.accept(event('VIE_PREVIEW_BOOTSTRAP_REQUEST'))
+    const bootstrap = sent.at(-1)
+    assert.equal(bootstrap.type, 'VIE_PREVIEW_BOOTSTRAP')
+    assert.equal(bootstrap.config.quality, 'low')
+    assert.ok(bootstrap.sequence > edited)
+    channel.accept(event('VIE_CONFIG_APPLIED', edited))
+    channel.accept(event('VIE_PREVIEW_BOOTSTRAP_APPLIED', initial))
+    channel.accept(event('VIE_PREVIEW_READY'))
+    assert.equal(ready.at(-1), false)
+    assert.equal(sent.at(-1).type, 'VIE_CONFIG_UPDATE')
+    channel.accept(event('VIE_CONFIG_APPLIED', bootstrap.sequence))
+    assert.equal(applied.length, 1)
+    await new Promise(resolve => setTimeout(resolve, 160))
+    assert.equal(sent.length, 3)
+  } finally { channel.dispose() }
+})

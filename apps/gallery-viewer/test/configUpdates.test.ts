@@ -29,6 +29,7 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     Object.assign(engine, { pluginManager: manager, configManager: new ConfigManager(config), pluginContext: context,
       scene: context.scene, camera: context.camera, eventBus: bus, photos: [], clock: new FrameClock(), disposed: false,
       pendingConfig: null, configDrain: null, composer: null, motionQuery: { matches: false }, controls: null,
+      effectsStarted: false, effectsReadyEmitted: false, effectsDeadlineTimer: null,
       postProcessing: { apply: () => {}, dispose: () => {} }, resizePostProcessing: () => {},
       effectiveQuality: 'mid', qualityRequest: 'auto', qualityController: new QualityController('mid', 'high', 0),
       texturePool: { setBudget: () => {} }, renderer: { setPixelRatio: () => {} } })

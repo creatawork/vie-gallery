@@ -809,7 +809,12 @@ export class ViewerEngine {
       this.renderer.render(this.scene, this.camera)
       this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
     }
-    if (!this.firstPhotoRendered && this.photos.some(photo => photo.userData.inView && photo.userData.textureState === 'ready')) {
+    const visiblePhotoRendered = !this.firstPhotoRendered && this.photos.some(photo =>
+      photo.visible && photo.userData.inView && photo.userData.textureState === 'ready'
+      && (Array.isArray(photo.material) ? photo.material : [photo.material])
+        .some(material => material.visible && material.opacity > 0)
+    )
+    if (visiblePhotoRendered) {
       this.firstPhotoRendered = true
       performance.mark('viewer:first-photo-rendered')
       this.eventBus.emit('startup:first-photo-rendered')

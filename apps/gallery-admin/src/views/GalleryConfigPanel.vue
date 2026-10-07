@@ -141,6 +141,10 @@ watch(previewIframeRef, iframe => {
     embedTimedOut.value = false
     previewLive.value = true
     previewStatus.value = bootstrapped ? '已应用' : '正在应用…'
+  }, () => {
+    previewLive.value = false
+    previewStatus.value = '正在连接…'
+    startHandshakeTimer()
   })
   if (configLoaded.value) refreshLivePreview()
 }, { flush: 'post' })
