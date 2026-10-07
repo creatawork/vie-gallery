@@ -105,3 +105,42 @@ test('publishing a never-configured gallery auto-creates the recommended scene d
   expect(saved.presetName).toBe('starry-night')
   expect(saved.configJson).toContain('/g/backgrounds/starry-night.webp')
 })
+
+test('publish nudge appears ready after upload, hides without publish capability, never misleads while processing', async ({ page }) => {
+  const data = await mockWorkspace(page, { hasConfigDraft: false, gallery: draftGallery })
+  await page.goto(`/app/galleries/${GALLERY_ID}`)
+  // ready 态：照片就绪 + 推荐场景文案 + 三个动作
+  const nudge = page.locator('.publish-nudge.is-ready')
+  await expect(nudge).toBeVisible()
+  await expect(nudge).toContainText('星空夜曲')
+  await expect(nudge.getByRole('button', { name: '发布展厅' })).toBeVisible()
+  await expect(nudge.getByRole('button', { name: '先预览' })).toBeVisible()
+  await expect(nudge.getByRole('button', { name: '调整场景' })).toBeVisible()
+  // 点击“发布展厅”走 Task 6 的完整链路
+  await nudge.getByRole('button', { name: '发布展厅' }).click()
+  await expect(page.getByText('展厅及配置已成功发布至访客端！')).toBeVisible()
+  expect(data.calls()).toEqual(['put-config', 'config-publish', 'gallery-publish'])
+  await expect(page.locator('.publish-nudge')).toHaveCount(0)
+})
+
+test('publish nudge shows processing and failed states without a publish button', async ({ page }) => {
+  await mockWorkspace(page, { hasConfigDraft: false, gallery: { ...draftGallery, processingCount: 2 } })
+  await page.goto(`/app/galleries/${GALLERY_ID}`)
+  const processing = page.locator('.publish-nudge.is-processing')
+  await expect(processing).toBeVisible()
+  await expect(processing).toContainText('照片处理中')
+  await expect(processing.getByRole('button', { name: '发布展厅' })).toHaveCount(0)
+
+  await mockWorkspace(page, { hasConfigDraft: false, gallery: { ...draftGallery, failedPhotoCount: 1 } })
+  await page.goto(`/app/galleries/${GALLERY_ID}`)
+  const failed = page.locator('.publish-nudge.is-failed')
+  await expect(failed).toBeVisible()
+  await expect(failed).toContainText('处理失败')
+  await expect(failed.getByRole('button', { name: '发布展厅' })).toHaveCount(0)
+})
+
+test('publish nudge is hidden for users without PUBLISH capability', async ({ page }) => {
+  await mockWorkspace(page, { hasConfigDraft: false, gallery: draftGallery, capabilities: ['GALLERY_READ', 'PHOTO_READ', 'PHOTO_WRITE', 'CONFIG_READ', 'CONFIG_WRITE'] })
+  await page.goto(`/app/galleries/${GALLERY_ID}`)
+  await expect(page.locator('.publish-nudge')).toHaveCount(0)
+})

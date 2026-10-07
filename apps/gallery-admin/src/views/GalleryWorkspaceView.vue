@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ShareLinkStatus } from '@vie/gallery-contracts'
+import { RECOMMENDED_SCENE_PRESET, SCENE_PRESETS } from '@vie/gallery-contracts'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
@@ -80,6 +81,30 @@ const workflowStep = computed(() => {
   if (gallery.status === 'PUBLISHED') return 4
   if (workspace.photos.value.length > 0) return 3
   return 1
+})
+
+const recommendedSceneLabel = SCENE_PRESETS.find(item => item.name === RECOMMENDED_SCENE_PRESET)?.label ?? '星空夜曲'
+const DISMISS_KEY = computed(() => `vie-publish-nudge-dismissed:${galleryId.value}`)
+const dismissedPublishNudge = ref(false)
+try { dismissedPublishNudge.value = !!sessionStorage.getItem(DISMISS_KEY.value) } catch { dismissedPublishNudge.value = false }
+
+function dismissPublishNudge() {
+  dismissedPublishNudge.value = true
+  try { sessionStorage.setItem(DISMISS_KEY.value, '1') } catch { /* Storage is optional. */ }
+}
+
+type PublishNudge =
+  | { kind: 'processing' }
+  | { kind: 'failed'; count: number }
+  | { kind: 'ready' }
+
+const publishNudge = computed<PublishNudge | null>(() => {
+  const gallery = workspace.gallery.value
+  if (!gallery || gallery.status === 'PUBLISHED' || !canPublish.value || dismissedPublishNudge.value) return null
+  if (gallery.photoCount === 0) return null
+  if ((gallery.processingCount ?? 0) > 0) return { kind: 'processing' }
+  if ((gallery.failedPhotoCount ?? 0) > 0) return { kind: 'failed', count: gallery.failedPhotoCount ?? 0 }
+  return { kind: 'ready' }
 })
 
 function formatCreatedAt(value?: string | null) {
@@ -612,6 +637,30 @@ async function openShareModal() {
               <span>分享</span>
             </button>
           </div>
+        </section>
+
+        <section v-if="publishNudge" class="publish-nudge" :class="`is-${publishNudge.kind}`" role="status">
+          <template v-if="publishNudge.kind === 'processing'">
+            <span>照片处理中，全部就绪后即可发布展厅。</span>
+          </template>
+          <template v-else-if="publishNudge.kind === 'failed'">
+            <span>有 {{ publishNudge.count }} 张照片处理失败，重试成功后即可发布。可在下方任务中心重试。</span>
+          </template>
+          <template v-else>
+            <div class="nudge-copy">
+              <strong>照片已就绪，推荐场景「{{ recommendedSceneLabel }}」已就位</strong>
+              <span>可直接发布展厅，或先预览效果；想换场景、调参数，去展厅配置。</span>
+            </div>
+            <div class="nudge-actions">
+              <button class="btn solid" type="button" :disabled="workspace.publishing.value" @click="handlePublish">
+                <Icon name="send" :size="15" />
+                <span>{{ workspace.publishing.value ? '发布中…' : '发布展厅' }}</span>
+              </button>
+              <button class="btn outline" type="button" :disabled="previewOpening" @click="openViewer">先预览</button>
+              <button v-if="canConfig" class="btn ghost" type="button" @click="goToConfig">调整场景</button>
+            </div>
+          </template>
+          <button class="nudge-close" type="button" aria-label="暂不发布，关闭提示" @click="dismissPublishNudge">×</button>
         </section>
 
         <div class="hall-split">
@@ -1229,6 +1278,29 @@ async function openShareModal() {
   font-size: 13px;
   font-weight: 700;
 }
+
+.btn.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.publish-nudge { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 16px; padding: 14px 44px 14px 18px; border: 1px solid #cfe3d8; border-radius: 14px; background: #f2faf6; color: #14322a; }
+.publish-nudge.is-processing { border-color: #dbe7f5; background: #f0f6fd; color: #274a73; }
+.publish-nudge.is-failed { border-color: #f2ddc9; background: #fdf6ee; color: #7c4a12; }
+.publish-nudge.is-ready .nudge-copy { display: grid; gap: 2px; }
+.publish-nudge.is-ready .nudge-copy strong { font-size: 14.5px; }
+.publish-nudge.is-ready .nudge-copy span { font-size: 12.5px; color: #52736a; }
+.nudge-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.nudge-close { position: absolute; top: 8px; right: 10px; width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; color: #6a7c71; font-size: 16px; cursor: pointer; }
+.nudge-close:hover { background: rgba(20, 110, 78, .08); }
 
 .hall-split {
   display: grid;
