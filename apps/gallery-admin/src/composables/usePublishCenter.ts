@@ -1,6 +1,24 @@
 import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
-import type { PublishReadinessResponse } from '@vie/gallery-contracts'
+import { createRecommendedViewerConfig, RECOMMENDED_SCENE_PRESET, serializeViewerConfig, type PublishReadinessResponse } from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
+
+/** 首次发布时后端可能还没有草稿配置行（publishConfig 会 404 CONFIG_NOT_FOUND）。
+ *  发布前先静默写入推荐场景草稿，保证“上传完直接发布”一条路走通。 */
+async function ensureConfigDraft(galleryId: string): Promise<void> {
+  const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config`)
+  if (response.ok) return
+  if (response.status !== 404) throw new Error('获取展厅配置失败')
+  const save = await apiFetch(`/api/galleries/${galleryId}/viewer-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      configJson: serializeViewerConfig(createRecommendedViewerConfig()),
+      presetName: RECOMMENDED_SCENE_PRESET,
+      schemaVersion: 1
+    })
+  })
+  if (!save.ok) throw new Error('初始化展厅场景失败，请重试')
+}
 
 export function usePublishCenter(
   galleryId: MaybeRefOrGetter<string>,
@@ -45,6 +63,7 @@ export function usePublishCenter(
     try {
       // 1. If config draft has changed, publish config first
       if (readiness.value?.configDraftChanged) {
+        await ensureConfigDraft(galleryIdValue)
         const configResp = await apiFetch(`/api/galleries/${galleryIdValue}/viewer-config/publish`, {
           method: 'POST'
         })
