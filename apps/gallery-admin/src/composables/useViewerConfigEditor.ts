@@ -1,9 +1,9 @@
 import { computed, ref } from 'vue'
 import { apiFetch } from '../api'
-import { applyViewerPreset, createDefaultViewerConfig, mergeViewerConfig, parseViewerConfig, restoreViewerPreset, serializeViewerConfig, ViewerConfigValidationError, type ConfigIssue, type PresetName } from '@vie/gallery-contracts'
+import { applyViewerPreset, createRecommendedViewerConfig, mergeViewerConfig, parseViewerConfig, restoreViewerPreset, serializeViewerConfig, ViewerConfigValidationError, type ConfigIssue, type PresetName } from '@vie/gallery-contracts'
 export function useViewerConfigEditor(galleryId: string, options: { request?: typeof apiFetch; canWrite?: () => boolean } = {}) {
   const request = options.request ?? apiFetch
-  const config = ref(createDefaultViewerConfig()), issues = ref<ConfigIssue[]>([]), savedJson = ref(''), saving = ref(false), error = ref('')
+  const config = ref(createRecommendedViewerConfig()), issues = ref<ConfigIssue[]>([]), savedJson = ref(''), saving = ref(false), error = ref('')
   const dirty = computed(() => serializeViewerConfig(config.value) !== savedJson.value)
   let loadVersion = 0
   function replace(json: string, markSaved = false, schemaVersion = 1) {
@@ -15,7 +15,7 @@ export function useViewerConfigEditor(galleryId: string, options: { request?: ty
     const version = ++loadVersion
     const response = await request(`/api/galleries/${encodeURIComponent(galleryId)}/viewer-config`)
     if (version !== loadVersion) return
-    if (response.status === 404) { replace('{}', true); return }
+    if (response.status === 404) { replace(serializeViewerConfig(createRecommendedViewerConfig()), true); return }
     if (!response.ok) throw new Error('展厅配置加载失败，请重试。')
     const data = await response.json()
     if (version === loadVersion) replace(data.configJson ?? '{}', true, data.schemaVersion ?? 1)

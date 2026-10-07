@@ -6,7 +6,7 @@ import type { Gallery } from '@vie/gallery-contracts'
 import { useToast } from '../composables/useToast'
 import { useViewerConfigEditor } from '../composables/useViewerConfigEditor'
 import { createViewerPreviewChannel } from '../lib/viewerPreviewChannel'
-import { isViewerPreset, parseViewerConfig, serializeViewerConfig, type PresetName } from '@vie/gallery-contracts'
+import { createRecommendedViewerConfig, isViewerPreset, parseViewerConfig, serializeViewerConfig, type PresetName } from '@vie/gallery-contracts'
 import LayoutControls from '../components/gallery-config/LayoutControls.vue'
 import AtmosphereControls from '../components/gallery-config/AtmosphereControls.vue'
 import MotionQualityControls from '../components/gallery-config/MotionQualityControls.vue'
@@ -282,7 +282,8 @@ async function loadGalleryAndConfig() {
       previewChannel?.send(config.value)
       void loadVersions().catch(() => { versions.value = [] })
     } else if (response.status === 404) {
-      editor.replace('{}', true)
+      // 新相册还没有配置行：直接以推荐场景（星空夜曲）作为草稿与预览起点。
+      editor.replace(serializeViewerConfig(createRecommendedViewerConfig()), true)
       configLoaded.value = true
       previewChannel?.send(config.value)
     } else {
