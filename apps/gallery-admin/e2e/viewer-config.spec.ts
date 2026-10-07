@@ -112,3 +112,39 @@ test('invalid color blocks writes and preset reset preserves quality, downloads 
   expect(data.draft().extension).toEqual({ future: 42 }); expect(data.draft().customized).toBe(false)
   expect(data.errors).toEqual([])
 })
+test('draft and publish states are explicit, and a draft gallery can go live in one click from config', async ({ page }) => {
+  let draft = JSON.stringify({ ...VIEWER_PRESETS['film-gallery'] })
+  const calls: string[] = []
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await mockGallery(page, { config: JSON.parse(draft) })
+  await page.route('**/api/me', route => route.fulfill({ json: { role: 'OWNER', capabilities: ['GALLERY_READ', 'CONFIG_READ', 'CONFIG_WRITE', 'PUBLISH'], user: { displayName: '测试策展人' }, tenant: { name: '配置验收' } } }))
+  await page.route('**/api/auth/csrf', route => route.fulfill({ json: { token: 'fixture-csrf' } }))
+  await page.route('**/api/galleries/config-fixture', route => route.fulfill({ json: { id: 'config-fixture', slug: 'effects-fixture', name: '配置验收', visibility: 'PUBLIC', status: 'DRAFT', createdAt: '2026-10-05T00:00:00Z' } }))
+  await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ json: { token: 'test-only-preview', expiresAt: '2099-01-01T00:00:00Z' } }))
+  await page.route('**/api/galleries/config-fixture/viewer-config', async route => {
+    if (route.request().method() === 'PUT') { draft = route.request().postDataJSON().configJson; calls.push('save-draft') }
+    await route.fulfill({ json: { configJson: draft, schemaVersion: 1 } })
+  })
+  await page.route('**/api/galleries/config-fixture/viewer-config/versions**', route => route.fulfill({ json: { items: [{ id: 'version-1', versionNumber: 1, title: '历史版本 v1', createdAt: '2026-10-07T00:00:00Z' }] } }))
+  // 注意：Playwright 后注册的路由优先匹配，publish 路由必须注册在 viewer-config 之后
+  await page.route('**/api/galleries/config-fixture/viewer-config/publish', async route => {
+    calls.push('config-publish')
+    await route.fulfill({ json: { id: 'version-1', versionNumber: 1, createdAt: '2026-10-07T00:00:00Z' } })
+  })
+  await page.route(new RegExp('/api/galleries/config-fixture/publish$'), async route => {
+    calls.push('gallery-publish')
+    await route.fulfill({ json: { id: 'config-fixture', status: 'PUBLISHED' } })
+  })
+  await page.goto('/app/galleries/config-fixture/config')
+  await expect(page.getByText('尚未发布')).toBeVisible()
+  const publishButton = page.getByRole('button', { name: '发布展厅' })
+  await expect(publishButton).toBeVisible()
+  await publishButton.click()
+  await page.getByRole('button', { name: '确认发布' }).click()
+  await expect(page.getByText(/已发布 v1/)).toBeVisible()
+  // 按钮切回“同步到访客端”意味着画廊发布（第二步）也已完成，避免在配置同步与画廊发布之间断言 calls
+  await expect(page.getByRole('button', { name: '同步到访客端' })).toBeVisible()
+  expect(calls).toEqual(['config-publish', 'gallery-publish'])
+  expect(errors).toEqual([])
+})

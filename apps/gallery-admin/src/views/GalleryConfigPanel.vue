@@ -44,6 +44,7 @@ const showResetConfirm = ref(false)
 const showPublishConfirm = ref(false)
 const showRollbackConfirm = ref(false)
 const publishing = ref(false)
+const hasServerDraft = ref(false) // 服务端是否已有草稿配置行（决定发布前是否需要强制保存）
 const rollingBack = ref(false)
 const rollbackVersionId = ref<string | null>(null)
 const versions = ref<ConfigVersionItem[]>([])
@@ -160,17 +161,25 @@ async function retryEmbedPreview() {
 
 const hasDraftChanges = editor.dirty
 const hasUnpublishedDraft = computed(() => !publishedVersionId.value || publishedConfigJson.value !== savedDraftJson.value)
-const syncStatus = computed(() => {
-  if (saving.value) return '正在保存草稿…'
-  if (issues.value.length) return '请先修正配置错误'
-  if (lastSaveFailed.value) return '草稿保存失败，请重试'
-  if (hasDraftChanges.value) return '有未保存的更改'
-  if (hasUnpublishedDraft.value) {
-    return lastSavedLabel.value ? `草稿已保存 ${lastSavedLabel.value} · 尚未同步` : '草稿尚未同步到访客端'
-  }
-  if (lastSavedLabel.value) return `已同步到访客端`
-  return '尚未保存过配置'
+const publishedVersionNumber = computed(() => versions.value.find(version => version.id === publishedVersionId.value)?.versionNumber ?? null)
+const draftStatus = computed(() => {
+  if (saving.value) return { tone: 'busy', text: '正在保存草稿…' }
+  if (issues.value.length) return { tone: 'warn', text: `有 ${issues.value.length} 项配置错误` }
+  if (lastSaveFailed.value) return { tone: 'warn', text: '草稿保存失败，请重试' }
+  if (hasDraftChanges.value) return { tone: 'warn', text: '有未保存的更改' }
+  if (hasServerDraft.value) return { tone: 'ok', text: `草稿已保存 ${lastSavedLabel.value}`.trim() }
+  return { tone: 'idle', text: '尚未保存到服务器' }
 })
+const publishStatus = computed(() => {
+  if (!publishedVersionId.value) return { tone: 'idle', text: '尚未发布' }
+  if (hasUnpublishedDraft.value) return { tone: 'warn', text: `线上是 v${publishedVersionNumber.value ?? '?'} · 草稿待同步` }
+  return { tone: 'ok', text: `已发布 v${publishedVersionNumber.value ?? '?'}` }
+})
+const isGalleryPublished = computed(() => galleryInfo.value?.status === 'PUBLISHED')
+
+const publishConfirmMessage = computed(() => isGalleryPublished.value
+  ? '确定将当前展厅配置同步到访客端吗？访客将立即看到最新的空间布局与氛围。'
+  : '将保存当前草稿、把配置同步为线上版本，并正式发布展厅。发布后可随时撤回。')
 
 const displayVersions = computed(() => {
   return versions.value.slice(0, 10).map((version) => {
@@ -277,6 +286,7 @@ async function loadGalleryAndConfig() {
         publishedConfigJson.value = tryCanonicalConfig(data.publishedConfigJson) ?? (data.publishedVersionId ? null : serializeViewerConfig(getCleanConfig()))
       }
       savedDraftJson.value = serializeViewerConfig(getCleanConfig())
+      hasServerDraft.value = true
       lastSavedLabel.value = formatClock(new Date())
       configLoaded.value = true
       previewChannel?.send(config.value)
@@ -331,6 +341,7 @@ async function doSave(options?: { silent?: boolean }): Promise<boolean> {
   const success = await editor.save()
   lastSaveFailed.value = !success
   if (success) {
+    hasServerDraft.value = true
     lastSavedLabel.value = formatClock(new Date())
     refreshLivePreview()
     if (!options?.silent) toast.success('草稿已保存。')
@@ -340,21 +351,21 @@ async function doSave(options?: { silent?: boolean }): Promise<boolean> {
 
 async function publishDraft() {
   if (!canConfigWrite.value || issues.value.length || publishing.value) return
-  // 发布前确保草稿已落库，避免把内存里的最新更改遗留在上一版草稿上
-  if (hasDraftChanges.value || lastSaveFailed.value) {
+  // 发布前确保草稿已落库：草稿有改动、上次保存失败、或服务端从未有过草稿行时都先保存，
+  // 否则 viewer-config/publish 会在后端因 CONFIG_NOT_FOUND 返回 404。
+  if (hasDraftChanges.value || lastSaveFailed.value || !hasServerDraft.value) {
     const saved = await save({ silent: true })
     if (!saved) {
       showPublishConfirm.value = false
-      toast.error('草稿尚未保存成功，请先重试保存再同步。')
+      toast.error('草稿尚未保存成功，请先重试保存再发布。')
       return
     }
   }
   if (hasDraftChanges.value) {
-    toast.info('保存期间有新更改，请先保存最新草稿后再同步。')
+    toast.info('保存期间有新更改，请再次点击发布。')
     showPublishConfirm.value = false
     return
   }
-  const publishedSnapshot = savedDraftJson.value
   publishing.value = true
   try {
     const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
@@ -362,16 +373,21 @@ async function publishDraft() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schemaVersion: 1 })
     })
-    if (!response.ok) {
-      throw new Error('发布失败，请稍后重试。')
-    }
+    if (!response.ok) throw new Error('配置同步失败，请稍后重试。')
     const version = await response.json()
     publishedVersionId.value = version.id || null
-    publishedConfigJson.value = publishedSnapshot
+    publishedConfigJson.value = savedDraftJson.value
     lastPublishedAt.value = version.createdAt || new Date().toISOString()
     await loadVersions()
+    if (!isGalleryPublished.value) {
+      const publishResponse = await apiFetch(`/api/galleries/${galleryId}/publish`, { method: 'POST' })
+      if (!publishResponse.ok) throw new Error('配置已同步，但展厅发布失败，请到展厅工作区重试。')
+      if (galleryInfo.value) galleryInfo.value = { ...galleryInfo.value, status: 'PUBLISHED' }
+      toast.success('展厅已发布！去展厅工作区获取分享链接。')
+    } else {
+      toast.success('配置已同步到访客端。')
+    }
     showPublishConfirm.value = false
-    toast.success('配置已同步到访客端。')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '发布失败，请稍后重试')
   } finally {
@@ -521,10 +537,8 @@ onUnmounted(() => {
       </nav>
 
       <div class="nav-actions">
-        <p role="status" class="autosave" :class="{ 'is-warn': lastSaveFailed || hasDraftChanges }">
-          <Icon :name="lastSaveFailed || hasDraftChanges ? 'alert-circle' : 'check-circle'" :size="15" />
-          <span>{{ syncStatus }}</span>
-        </p>
+        <p role="status" class="status-chip" :class="`is-${draftStatus.tone}`"><span>{{ draftStatus.text }}</span></p>
+        <p role="status" class="status-chip" :class="`is-${publishStatus.tone}`"><span>{{ publishStatus.text }}</span></p>
         <button v-if="canConfigWrite" class="btn ghost" type="button" @click="requestHeaderRollback">
           <Icon name="undo" :size="14" />
           <span>回滚</span>
@@ -545,7 +559,7 @@ onUnmounted(() => {
         <button v-if="canConfigWrite" class="btn outline" type="button" :disabled="!configLoaded || saving || !!issues.length" @click="save()">{{ saving ? '保存中…' : '保存草稿' }}</button>
         <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="!configLoaded || publishing || saving || hasDraftChanges || lastSaveFailed || !!issues.length" @click="showPublishConfirm = true">
           <Icon name="send" :size="14" />
-          <span>{{ publishing ? '同步中…' : '同步到访客端' }}</span>
+          <span>{{ publishing ? (isGalleryPublished ? '同步中…' : '发布中…') : (isGalleryPublished ? '同步到访客端' : '发布展厅') }}</span>
         </button>
       </div>
     </header>
@@ -645,9 +659,9 @@ onUnmounted(() => {
 
     <ConfirmModal
       :show="showPublishConfirm"
-      title="同步到访客端"
-      message="确定将当前展厅配置同步到访客端吗？访客将立即看到最新的空间布局与氛围。"
-      confirm-text="确认同步"
+      :title="isGalleryPublished ? '同步到访客端' : '发布展厅'"
+      :message="publishConfirmMessage"
+      :confirm-text="isGalleryPublished ? '确认同步' : '确认发布'"
       :loading="publishing"
       @confirm="publishDraft"
       @cancel="showPublishConfirm = false"
@@ -764,19 +778,13 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-.autosave {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: 8px;
-  color: #00b88f;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.autosave.is-warn {
-  color: #b45309;
-}
+.status-chips-gap { display: none; }
+.nav-actions { gap: 10px; }
+.status-chip { display: inline-flex; align-items: center; min-height: 30px; margin: 0; padding: 4px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.status-chip.is-ok { background: #e7f4ee; color: #14624a; }
+.status-chip.is-warn { background: #fdf3e2; color: #92600a; }
+.status-chip.is-busy { background: #e8f0fb; color: #2b5cab; }
+.status-chip.is-idle { background: #eef1f4; color: #5b6b78; }
 
 .history-empty {
   margin: 0;
