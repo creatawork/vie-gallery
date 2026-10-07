@@ -1,4 +1,4 @@
-import { createDefaultViewerConfig, normalizeViewerConfig, parseViewerConfig, mergeViewerConfig, serializeViewerConfig,
+import { createDefaultViewerConfig, createRecommendedViewerConfig, normalizeViewerConfig, parseViewerConfig, mergeViewerConfig, serializeViewerConfig,
   ViewerConfigValidationError, VIEWER_PRESETS, applyViewerPreset, isViewerPreset, type ViewerConfig, type ConfigIssue } from '@vie/gallery-contracts'
 import { PublicApiClient } from '../api/client'
 
@@ -20,7 +20,7 @@ export class ConfigManager {
   private readonly STORAGE_KEY = 'vie-gallery-viewer-config'
   private readonly PREFERENCE_KEY = 'vie-gallery-viewer-preference'
   readonly diagnostics: ConfigIssue[] = []
-  constructor(initialConfig?: Partial<ViewerConfig>) { this.config = this.legacy(initialConfig ?? {}) }
+  constructor(initialConfig?: Partial<ViewerConfig>) { this.config = this.legacy(initialConfig ?? createRecommendedViewerConfig()) }
   private legacy(input: unknown): ViewerConfig {
     const result = normalizeViewerConfig(input, 'legacy')
     this.diagnostics.push(...result.issues)
@@ -38,11 +38,11 @@ export class ConfigManager {
   }
   adoptServerSnapshot(config: ViewerConfig | null): ViewerConfig {
     this.serverConfig = config ? normalizeViewerConfig(config).config : null
-    this.config = mergeViewerConfig(this.serverConfig ?? createDefaultViewerConfig(), this.loadPreferenceFromStorage())
+    this.config = mergeViewerConfig(this.serverConfig ?? createRecommendedViewerConfig(), this.loadPreferenceFromStorage())
     return this.getConfig()
   }
   savePreference(preference: Partial<ViewerConfig>): void {
-    const candidate = mergeViewerConfig(this.serverConfig ?? createDefaultViewerConfig(), preference)
+    const candidate = mergeViewerConfig(this.serverConfig ?? createRecommendedViewerConfig(), preference)
     try { localStorage.setItem(this.PREFERENCE_KEY, JSON.stringify(preference)) } catch { /* Storage is optional. */ }
     this.config = candidate
   }
@@ -57,7 +57,7 @@ export class ConfigManager {
   }
   clearPreference(): void {
     try { localStorage.removeItem(this.STORAGE_KEY); localStorage.removeItem(this.PREFERENCE_KEY) } catch { /* Storage is optional. */ }
-    this.config = structuredClone(this.serverConfig ?? createDefaultViewerConfig())
+    this.config = structuredClone(this.serverConfig ?? createRecommendedViewerConfig())
   }
   getConfig(): ViewerConfig { return structuredClone(this.config) }
   updateConfig(updates: Partial<ViewerConfig>): ViewerConfig {
