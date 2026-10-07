@@ -39,7 +39,6 @@ const loading = ref(true)
 const configLoaded = ref(false)
 const editor = useViewerConfigEditor(galleryId, { canWrite: () => canConfigWrite.value })
 const { config, issues, saving, savedJson: savedDraftJson } = editor
-const previewStatus = ref('尚未应用')
 const galleryInfo = ref<Gallery | null>(null)
 const showResetConfirm = ref(false)
 const showPublishConfirm = ref(false)
@@ -127,23 +126,18 @@ let previewChannel: ReturnType<typeof createViewerPreviewChannel> | null = null
 function refreshLivePreview() {
   if (issues.value.length) return
   previewChannel?.send(config.value)
-  previewStatus.value = '正在应用…'
 }
 watch(previewIframeRef, iframe => {
   previewChannel?.dispose(); previewChannel = null
   if (!iframe) return
   previewChannel = createViewerPreviewChannel(iframe, message => {
-    previewStatus.value = message.error ? '预览应用失败，请重试' : '已应用'
-      + ' · 有效画质 ' + ({ low: '低', mid: '中', high: '高' }[message.effectiveQuality])
-      + (message.reason ? ' · ' + message.reason : '')
-  }, bootstrapped => {
+    if (message.error) toast.error('预览应用失败，请重试')
+  }, () => {
     clearHandshakeTimer()
     embedTimedOut.value = false
     previewLive.value = true
-    previewStatus.value = bootstrapped ? '已应用' : '正在应用…'
   }, () => {
     previewLive.value = false
-    previewStatus.value = '正在连接…'
     startHandshakeTimer()
   })
   if (configLoaded.value) refreshLivePreview()
@@ -632,7 +626,6 @@ onUnmounted(() => {
         ></iframe>
 
         <div class="preview-tools">
-          <p role="status" class="preview-status">{{ previewStatus }}</p>
           <button v-if="previewLive" class="glass-btn" type="button" :disabled="!!issues.length" @click="refreshLivePreview">重新应用</button>
           <button class="glass-btn" type="button" @click="openLivePreview">
             <Icon name="external" :size="14" />
@@ -687,7 +680,6 @@ onUnmounted(() => {
 .config-side input:focus-visible, .config-side :deep(input:focus-visible) { outline: 2px solid #19815c; outline-offset: 3px; }
 .config-side :deep(button:disabled) { cursor: not-allowed; opacity: .65; }
 .config-errors { color: #b91c1c; padding: 1rem; }
-.preview-status { color: #fff; background: rgba(15,23,42,.9); border-radius: .5rem; padding: .75rem; max-width: 25rem; font-size: .8125rem; }
 
 .config-page {
   position: relative;
