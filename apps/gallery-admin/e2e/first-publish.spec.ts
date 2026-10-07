@@ -144,3 +144,22 @@ test('publish nudge is hidden for users without PUBLISH capability', async ({ pa
   await page.goto(`/app/galleries/${GALLERY_ID}`)
   await expect(page.locator('.publish-nudge')).toHaveCount(0)
 })
+
+test('full first-publish funnel: upload finishes, nudge turns ready, one click goes live', async ({ page }) => {
+  const data = await mockWorkspace(page, { hasConfigDraft: false, gallery: { ...draftGallery, photoCount: 0 } })
+  await page.goto(`/app/galleries/${GALLERY_ID}`)
+  // 空相册：无横幅
+  await expect(page.locator('.publish-nudge')).toHaveCount(0)
+  // 上传（选择器与 creation-flow.spec.ts:140 一致）；
+  // 上传 POST 置位 uploaded → 任务轮询 idle → onIdle 触发 workspace.reload() → 横幅就绪
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'e2e.png', mimeType: 'image/png', buffer: Buffer.from('a-png-bytes') }
+  ])
+  // 实测：本地上传批次结束后 onIdle 不会自动触发 workspace.reload()，按简报许可补一次刷新
+  await page.reload()
+  await expect(page.locator('.publish-nudge.is-ready')).toBeVisible({ timeout: 15_000 })
+  await page.locator('.publish-nudge.is-ready').getByRole('button', { name: '发布展厅' }).click()
+  await expect(page.getByText('展厅及配置已成功发布至访客端！')).toBeVisible()
+  expect(data.calls()).toEqual(['put-config', 'config-publish', 'gallery-publish'])
+  await expect(page.getByRole('button', { name: '分享', exact: true })).toBeVisible()
+})
