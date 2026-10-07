@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { VIEWER_PRESETS, applyViewerPreset, restoreViewerPreset } from '../src/viewerPresets'
+import { VIEWER_PRESETS, applyViewerPreset, restoreViewerPreset, createRecommendedViewerConfig, RECOMMENDED_SCENE_PRESET } from '../src/viewerPresets'
 import { normalizeViewerConfig, serializeViewerConfig } from '../src/viewerConfig'
 import { SCENE_BACKGROUND_VERSION, backgroundTextureUrl, sceneBackgroundThumbUrl, sceneBackgroundUrl } from '../src/galleryMedia'
 
@@ -77,4 +77,16 @@ test('saved builtin background URLs load the current asset version at every qual
       assert.equal(backgroundTextureUrl(url, quality), url)
     }
   }
+})
+
+test('recommended scene is a canonical, valid, clone-isolated preset', () => {
+  assert.equal(RECOMMENDED_SCENE_PRESET, 'starry-night')
+  const recommended = createRecommendedViewerConfig() as typeof VIEWER_PRESETS['starry-night']
+  assert.deepEqual(recommended, VIEWER_PRESETS['starry-night'])
+  assert.equal(normalizeViewerConfig(recommended).issues.length, 0)
+  assert.equal(recommended.background?.image?.projection, 'equirectangular')
+  recommended.effects.bloom!.strength = 9
+  recommended.presetName = 'mutated'
+  assert.equal(VIEWER_PRESETS['starry-night'].effects.bloom!.strength, .5, 'preset registry must not be mutated')
+  assert.equal(VIEWER_PRESETS['starry-night'].presetName, 'starry-night')
 })

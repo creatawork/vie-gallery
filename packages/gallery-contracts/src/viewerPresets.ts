@@ -30,6 +30,12 @@ export const VIEWER_PRESETS: Record<PresetName, ViewerConfig> = {
   'film-gallery': scene('film-gallery', { layout: { mode: 'carousel' }, background: background('film-gallery', '#1b1612'), effects: { postGrade: { enabled: true, saturation: .8, contrast: 1.12 }, vignette: { enabled: true, strength: .35 } }, lighting: { timeOfDay: 'sunset' } })
 }
 
+/** 新相册/未配置相册的默认推荐场景。改这一个常量即可全端（admin 草稿、访客端兜底、发布初始化）生效。 */
+export const RECOMMENDED_SCENE_PRESET: PresetName = 'starry-night'
+export function createRecommendedViewerConfig(): ViewerConfig {
+  return structuredClone(VIEWER_PRESETS[RECOMMENDED_SCENE_PRESET])
+}
+
 export function isViewerPreset(name: string): name is PresetName { return Object.hasOwn(VIEWER_PRESETS, name) }
 export function applyViewerPreset(name: PresetName, current: ViewerConfig): ViewerConfig {
   const preset = structuredClone(VIEWER_PRESETS[name])
