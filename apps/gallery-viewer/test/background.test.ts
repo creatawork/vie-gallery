@@ -50,7 +50,7 @@ test('builtin background textures use equirectangular mapping', () => {
   const context = createViewerContext(normalizeViewerConfig({ background: { mode: 'image', color: '#0f172a', image: { url: '/g/backgrounds/minimal.webp' } } }).config)
   const loader = controlTextureLoader()
   const plugin = new BackgroundPlugin(); plugin.install(context)
-  assert.equal(loader.calls[0].url, '/g/backgrounds/minimal.webp')
+  assert.equal(loader.calls[0].url, `/g/backgrounds/minimal.webp?v=${SCENE_BACKGROUND_VERSION}`)
   loader.succeed(0)
   const texture = context.scene.background as THREE.Texture
   assert.equal(texture.mapping, THREE.EquirectangularReflectionMapping)

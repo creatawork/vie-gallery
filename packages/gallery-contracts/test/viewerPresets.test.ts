@@ -66,3 +66,15 @@ test('historical preset-only config stays historical until a card is applied', (
   assert.equal(applyViewerPreset('minimal', old).layout.mode, 'grid')
   assert.equal(normalizeViewerConfig({ presetName: 'minimal', layout: 'helix' }, 'legacy').config.layout.mode, 'helix')
 })
+
+test('saved builtin background URLs load the current asset version at every quality', () => {
+  for (const quality of ['low', 'mid', 'high'] as const) {
+    const expected = quality === 'low' ? `/g/backgrounds/forest-dream-low.webp?v=${SCENE_BACKGROUND_VERSION}` : sceneBackgroundUrl('forest-dream')
+    for (const url of ['/g/backgrounds/forest-dream.webp?v=2026-10-06', '/g/backgrounds/forest-dream.webp']) {
+      assert.equal(backgroundTextureUrl(url, quality), expected)
+    }
+    for (const url of ['https://cdn.example.com/room.webp?v=old', '/g/backgrounds/not-a-scene.webp?v=old']) {
+      assert.equal(backgroundTextureUrl(url, quality), url)
+    }
+  }
+})

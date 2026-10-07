@@ -1,42 +1,25 @@
 # 场景背景图
 
-使用内置 image_gen 工具生成，转换为 WebP（quality 86）。图片部署于 /g/backgrounds/，配置栏和 3D 渲染共用。
+2026-10-07 按用户提供的顺序替换八个主题。来源为用户使用写实全景提示词生成的 ChatGPT 分享图片，下载原图统一为 1774×887；保留原图内容，不重绘、不放大。
 
-### 极简空间 (`minimal.webp`)
+| 主题 | 文件 | 来源 |
+| --- | --- | --- |
+| 极简空间 | minimal.webp | [分享图片](https://chatgpt.com/s/m_6ac5e84f5e808191851ee105ac9285ae) |
+| 森林之梦 | forest-dream.webp | [分享图片](https://chatgpt.com/s/m_6ac5e92d4fc88191bcb5806d9031e03c) |
+| 星空夜曲 | starry-night.webp | [分享图片](https://chatgpt.com/s/m_6ac5e9df4bb08191a1f0c8c59ab94fe9) |
+| 海洋微风 | ocean-breeze.webp | [分享图片](https://chatgpt.com/s/m_6ac5ea4f043c8191b5538a42ef8bd25f) |
+| 日落余晖 | sunset-glow.webp | [分享图片](https://chatgpt.com/s/m_6ac5ea9b2b408191a3bd258658afc12e) |
+| 心动浪漫 | romantic.webp | [分享图片](https://chatgpt.com/s/m_6ac5eb08b3f481918b05f64bafe5e6e7) |
+| 冬日雪境 | winter-snow.webp | [分享图片](https://chatgpt.com/s/m_6ac5eb51033c8191bbfb81069527d1a8) |
+| 胶片展厅 | film-gallery.webp | [分享图片](https://chatgpt.com/s/m_6ac5ec7155e88191a23d8f5abc369213) |
 
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 极简空间. An airy minimalist white architectural gallery with sculptural pale stone, soft ivory sky and diffuse daylight. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
+## 派生资源
 
-### 森林之梦 (`forest-dream.webp`)
+- 主背景：1774×887，WebP quality 86。
+- 低画质背景：`<name>-low.webp`，887×444，WebP quality 86。
+- 配置卡片：`thumbs/<name>.webp`，320×160，WebP quality 86。
+- 缓存版本由契约 `SCENE_BACKGROUND_VERSION` 管理，当前为 `2026-10-07`。加载旧配置中的内置 URL 时，各画质均使用当前版本；自定义 URL 保持原样。
 
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 森林之梦. A tranquil lush forest clearing with tall trees, jade foliage, delicate pale pink blossoms and soft morning mist. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
+## 全景验收
 
-### 星空夜曲 (`starry-night.webp`)
-
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 星空夜曲. A serene deep indigo night sky filled with delicate stars and a subtle Milky Way over distant mountains. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
-
-### 海洋微风 (`ocean-breeze.webp`)
-
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 海洋微风. A calm turquoise ocean horizon with pale blue sky and soft coastal clouds, gentle sea atmosphere. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
-
-### 日落余晖 (`sunset-glow.webp`)
-
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 日落余晖. An expansive sunset sky with luminous peach and amber clouds over distant terracotta hills. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
-
-### 心动浪漫 (`romantic.webp`)
-
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 心动浪漫. An ethereal rose garden with blush pink clouds, soft petals and elegant pale arches in the distance. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
-
-### 冬日雪境 (`winter-snow.webp`)
-
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 冬日雪境. A peaceful snowy alpine forest with powder blue sky, frosted fir trees and soft snow under diffuse winter daylight. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
-
-### 胶片展厅 (`film-gallery.webp`)
-
-Use case: stylized-concept. Asset type: immersive 3D photo gallery environment background. Theme: 胶片展厅. An elegant dark warm analog film photography gallery, charcoal walls, amber indirect lights and subtle walnut architecture, empty walls. Create a refined cinematic photorealistic 3D environment, very wide panoramic landscape 2:1 composition with coherent horizon suitable as a spherical backdrop viewed behind floating photographs. Empty uncluttered central space, fine natural textures, gentle contrast, no people, no photographs, no frames, no text, no logos, no watermark.
-
-## 派生产物与缓存版本
-
-- `thumbs/<name>.webp`（320×160）：配置面板卡片缩略图，避免卡片加载高分辨率全景。
-- `<name>-low.webp`（887×444）：low 画质设备加载的半分辨率全景变体（`backgroundTextureUrl`）。
-- 契约 `SCENE_BACKGROUND_VERSION` 会以 `?v=` 追加到以上 URL；替换任何同名素材时必须同步递增该版本，否则缓存会继续返回旧图。
-- 每张素材上线前须按等距柱状投影检查 0/90/180/270 度视角、左右接缝与极点；2:1 宽幅构图本身不等于合格全景。
+2:1 比例并不保证素材是无缝球面全景。替换不代表消除了生成素材中的所有接缝或极点变形。须在真实球面投影中检查四周、左右连接处、天顶和脚下；保留原图供用户在线上评估。

@@ -20,7 +20,7 @@ export function sceneBackgroundUrl(name?: string | null): string | undefined {
 }
 
 /** Bump when any builtin panorama asset is replaced so caches never serve the stale image. */
-export const SCENE_BACKGROUND_VERSION = '2026-10-06'
+export const SCENE_BACKGROUND_VERSION = '2026-10-07'
 
 /** Configuration cards load these small thumbs instead of the high resolution panoramas. */
 export function sceneBackgroundThumbUrl(name?: string | null): string | undefined {
@@ -32,8 +32,8 @@ export function sceneBackgroundThumbUrl(name?: string | null): string | undefine
  * custom uploads and unknown names always load as-is.
  */
 export function backgroundTextureUrl(url: string, quality: 'low' | 'mid' | 'high'): string {
-  if (quality !== 'low') return url
   const match = /^\/g\/backgrounds\/([a-z0-9-]+)\.webp(?:\?.*)?$/.exec(url)
   if (!match || !SCENE_PRESETS.some(p => p.name === match[1])) return url
-  return `/g/backgrounds/${match[1]}-low.webp?v=${SCENE_BACKGROUND_VERSION}`
+  const suffix = quality === 'low' ? '-low' : ''
+  return `/g/backgrounds/${match[1]}${suffix}.webp?v=${SCENE_BACKGROUND_VERSION}`
 }
