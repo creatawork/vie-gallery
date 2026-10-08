@@ -128,6 +128,23 @@ test.describe('创作链路', () => {
     await expect(page.locator('.photo-grid-container')).toBeVisible()
   })
 
+  test('photos start loading before gallery metadata finishes', async ({ page }) => {
+    let release!: () => void
+    const pending = new Promise<void>(resolve => { release = resolve })
+    await page.route(new RegExp(`/api/galleries/${GALLERY_ID}$`), async route => {
+      await pending
+      await route.fulfill({ json: gallery })
+    })
+    let requested = false
+    page.on('request', request => { if (request.url().endsWith('/photos')) requested = true })
+    try {
+      await page.reload()
+      await expect.poll(() => requested, { timeout: 2000 }).toBe(true)
+      release()
+      await expect(page.locator('.photo-card')).toHaveCount(2)
+    } finally { release() }
+  })
+
   test('坏文件提示但不整批拒绝，有效文件逐个上传', async ({ page }) => {
     const uploadRequests: string[] = []
     page.on('request', request => {

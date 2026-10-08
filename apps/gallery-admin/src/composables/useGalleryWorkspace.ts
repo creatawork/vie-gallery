@@ -88,19 +88,17 @@ export function useGalleryWorkspace(
     return version === requestVersion
   }
 
-  async function loadPhotos(galleryIdValue: string, version: number) {
+  async function loadPhotos(galleryIdValue: string) {
     const response = await apiFetch(`/api/galleries/${galleryIdValue}/photos`)
     if (!response.ok) throw await responseError(response, '照片列表加载失败，请稍后重试。')
     const data = await response.json() as WorkspacePhoto[]
-    if (isCurrent(version)) {
-      photos.value = data.map(photo => ({
-        ...photo,
-        title: photo.title || undefined,
-        thumbnailUrl: photo.thumbnailUrl || undefined,
-        width: photo.width || undefined,
-        height: photo.height || undefined
-      }))
-    }
+    return data.map(photo => ({
+      ...photo,
+      title: photo.title || undefined,
+      thumbnailUrl: photo.thumbnailUrl || undefined,
+      width: photo.width || undefined,
+      height: photo.height || undefined
+    }))
   }
 
   async function reload() {
@@ -124,11 +122,18 @@ export function useGalleryWorkspace(
     loading.value = true
     error.value = null
     try {
-      const response = await apiFetch(`/api/galleries/${galleryIdValue}`)
-      if (!response.ok) throw await responseError(response, '展厅信息加载失败，请稍后重试。')
-      const found = await response.json() as Gallery
-      if (isCurrent(version)) gallery.value = found
-      await loadPhotos(galleryIdValue, version)
+      const [found, loadedPhotos] = await Promise.all([
+        apiFetch(`/api/galleries/${galleryIdValue}`).then(async response => {
+          if (!response.ok) throw await responseError(response, '展厅信息加载失败，请稍后重试。')
+          return await response.json() as Gallery
+        }),
+        loadPhotos(galleryIdValue)
+      ])
+      // Commit together, so a failed or superseded load cannot restore stale photos.
+      if (isCurrent(version)) {
+        gallery.value = found
+        photos.value = loadedPhotos
+      }
     } catch (cause) {
       if (isCurrent(version)) {
         gallery.value = null

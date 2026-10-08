@@ -1,4 +1,5 @@
 const csrfState = { token: '' }
+let csrfRequest: Promise<void> | null = null
 const REQUEST_TIMEOUT_MS = 30_000  // 通用请求超时 30 秒
 const UPLOAD_TIMEOUT_MS = 120_000  // 文件上传超时 120 秒（足够处理大文件和后端图片处理）
 const SINGLE_FILE_TIMEOUT_MS = 300_000  // 逐文件上传超时 300 秒：单文件最大 50MB，慢速网络也需要余量
@@ -12,6 +13,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   const abort = () => controller.abort()
   init.signal?.addEventListener('abort', abort, { once: true })
+  if (init.signal?.aborted) abort()
 
   try {
     return await fetch(input, { ...init, signal: controller.signal })
@@ -28,10 +30,15 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
 
 export async function csrfToken(): Promise<string> {
   if (!csrfState.token) {
-    const response = await fetchWithTimeout('/api/auth/csrf', { credentials: 'include' }, REQUEST_TIMEOUT_MS)
-    if (!response.ok) throw new Error('无法建立安全连接，请刷新后重试。')
-    const body = await response.json() as { token: string }
-    csrfState.token = body.token
+    if (!csrfRequest) {
+      csrfRequest = (async () => {
+        const response = await fetchWithTimeout('/api/auth/csrf', { credentials: 'include' }, REQUEST_TIMEOUT_MS)
+        if (!response.ok) throw new Error('无法建立安全连接，请刷新后重试。')
+        const body = await response.json() as { token: string }
+        csrfState.token = body.token
+      })().finally(() => { csrfRequest = null })
+    }
+    await csrfRequest
   }
   return csrfState.token || readCookie('XSRF-TOKEN') || ''
 }
@@ -46,9 +53,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   const isFileUpload = init.body instanceof FormData
   const timeout = isFileUpload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS
 
-  const response = isMutating
-    ? await fetchWithTimeout(input, { ...init, headers, credentials: 'include' }, timeout)
-    : await fetch(input, { ...init, headers, credentials: 'include' })
+  const response = await fetchWithTimeout(input, { ...init, headers, credentials: 'include' }, timeout)
   if (response.status === 403 && isMutating) {
     csrfState.token = ''
   }

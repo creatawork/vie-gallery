@@ -63,6 +63,7 @@ const embedTimedOut = ref(false)
 const previewLoadingSlow = ref(false)
 const previewToken = ref('')
 const previewIssueError = ref('')
+let previewRequestVersion = 0
 let handshakeTimer: number | null = null
 let previewSlowTimer: number | null = null
 const PREVIEW_PROGRESS_MS = 8000
@@ -171,12 +172,16 @@ watch(previewIframeRef, iframe => {
 }, { flush: 'post' })
 
 async function retryEmbedPreview() {
+  const version = ++previewRequestVersion
   embedTimedOut.value = false
   previewLive.value = false
   previewIssueError.value = ''
   try {
-    previewToken.value = (await issuePreviewToken(galleryId)).token
+    const result = await issuePreviewToken(galleryId)
+    if (version !== previewRequestVersion) return
+    previewToken.value = result.token
   } catch (cause) {
+    if (version !== previewRequestVersion) return
     previewToken.value = ''
     previewIssueError.value = cause instanceof Error ? cause.message : '暂时无法打开内部预览，请稍后重试。'
     return
@@ -237,6 +242,7 @@ const previewEmptyText = computed(() => {
   if (previewIssueError.value) return previewIssueError.value
   if (!gallerySlug.value) return '加载空间信息后才能预览。'
   if (embedTimedOut.value) return '展厅预览没有响应。请确认预览页已启动，然后重试。'
+  if (!previewToken.value) return '正在连接内部预览…'
   if (!canEmbedViewer.value) return '当前窗口无法嵌入预览，请用新窗口打开。'
   if (previewLoadingSlow.value) return '展厅正在载入，请稍候。'
   return '正在连接内部预览…'
@@ -270,8 +276,8 @@ async function loadGalleryAndConfig() {
     const galleryRequest = apiFetch(`/api/galleries/${galleryId}`)
     const configRequest = apiFetch(`/api/galleries/${galleryId}/viewer-config`)
       .then(response => ({ response }), cause => ({ cause }))
-    const previewTokenRequest = issuePreviewToken(galleryId)
-      .then(result => ({ result }), cause => ({ cause }))
+    previewToken.value = ''
+    void retryEmbedPreview()
     const gallRes = await galleryRequest
     if (!gallRes.ok) {
       if (gallRes.status === 401) {
@@ -287,15 +293,6 @@ async function loadGalleryAndConfig() {
       return
     }
     galleryInfo.value = await gallRes.json() as Gallery
-    previewIssueError.value = ''
-    const tokenResult = await previewTokenRequest
-    if ('result' in tokenResult) {
-      previewToken.value = tokenResult.result.token
-      previewKey.value += 1
-    } else {
-      previewToken.value = ''
-      previewIssueError.value = tokenResult.cause instanceof Error ? tokenResult.cause.message : '暂时无法打开内部预览，请稍后重试。'
-    }
     // The configuration controls remain disabled until their server snapshot
     // arrives, while the iframe starts loading independently.
     loading.value = false
@@ -533,6 +530,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  previewRequestVersion += 1
   if (saveTimer) window.clearTimeout(saveTimer)
   previewChannel?.dispose()
   clearHandshakeTimer()
@@ -656,7 +654,7 @@ onUnmounted(() => {
         <div v-if="!previewLive" class="preview-empty">
           <p>{{ previewEmptyText }}</p>
           <div class="preview-empty-actions">
-            <button v-if="embedTimedOut" class="btn outline" type="button" @click="retryEmbedPreview">重试连接</button>
+            <button v-if="embedTimedOut || previewIssueError" class="btn outline" type="button" @click="retryEmbedPreview">重试连接</button>
             <button v-if="gallerySlug" class="btn solid" type="button" @click="openLivePreview">新窗口打开</button>
           </div>
         </div>

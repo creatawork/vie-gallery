@@ -16,6 +16,35 @@ async function fixture(page: Page) {
   await page.route('**/api/galleries/config-fixture/viewer-config/versions**', route => route.fulfill({ json: { items: [] } }))
   return { draft: () => JSON.parse(draft), saves: () => saves, errors }
 }
+test('editor is usable while the preview token is still pending', async ({ page }) => {
+  await fixture(page)
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/galleries/config-fixture/preview-token', async route => {
+    await pending
+    await route.fulfill({ json: { token: 'test-only-preview', expiresAt: '2099-01-01T00:00:00Z' } })
+  })
+  try {
+    await page.goto('/app/galleries/config-fixture/config')
+    await expect(page.getByLabel('照片间距')).toBeEnabled({ timeout: 2000 })
+    await expect(page.getByLabel('照片间距')).toHaveValue('1')
+    release()
+    await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+  } finally { release() }
+})
+
+test('preview token failure leaves the editor usable and can be retried', async ({ page }) => {
+  const data = await fixture(page)
+  await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ status: 503 }))
+  await page.goto('/app/galleries/config-fixture/config')
+  await expect(page.getByLabel('照片间距')).toBeEnabled()
+  await expect(page.getByRole('button', { name: '重试连接' })).toBeVisible()
+  await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ json: { token: 'test-only-preview', expiresAt: '2099-01-01T00:00:00Z' } }))
+  await page.getByRole('button', { name: '重试连接' }).click()
+  await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+  expect(data.errors).toEqual([])
+})
+
 test('complete parameters save, reload and apply to the real viewer iframe without reloading', async ({ page }) => {
   const data = await fixture(page)
   await page.goto('/app/galleries/config-fixture/config')
