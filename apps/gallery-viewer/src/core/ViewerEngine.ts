@@ -302,7 +302,7 @@ export class ViewerEngine {
       ['ClickRipple', !!effective.interaction.clickRipple], ['CursorTrail', !!effective.interaction.cursorTrail]
     ])
     for (const [name, enabled] of wanted) {
-      if (deferEffects && ['Background', 'Particles', 'Fog', 'ClickRipple', 'CursorTrail'].includes(name)) continue
+      if (deferEffects && ['Particles', 'Fog', 'ClickRipple', 'CursorTrail'].includes(name)) continue
       if (enabled) {
         if (!this.pluginManager.isInstalled(name)) await this.pluginManager.install(name)
       } else if (this.pluginManager.isInstalled(name)) this.pluginManager.uninstall(name)

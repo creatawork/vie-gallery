@@ -3,6 +3,34 @@ import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { PhotoScene } from '../src/core/PhotoScene'
 import { TexturePool } from '../src/core/TexturePool'
+
+test('visible thumbnails finish before nearby photos request high resolution upgrades', async () => {
+  const started: string[] = [], complete: Array<() => void> = []
+  const pool = new TexturePool({ maxEdge: 1, bytes: 1000, concurrent: 1, resident: 16 }, url => {
+    started.push(url)
+    return new Promise(resolve => complete.push(() => resolve({ texture: new THREE.Texture(), bytes: 4 })))
+  })
+  const scene = new PhotoScene(new THREE.Scene(), pool)
+  const photos = Array.from({ length: 3 }, (_, i) => ({ thumbnailUrl: `thumb-${i}`, textureUrl: `high-${i}`, width: 800, height: 600, sortOrder: i }))
+  const meshes = scene.sync(photos).all
+  meshes[1].position.x = 80; meshes[2].position.x = -80
+  const camera = new THREE.PerspectiveCamera(60, 2, 1, 2000)
+  camera.position.z = 300
+  const tick = () => new Promise(resolve => setImmediate(resolve))
+  try {
+    scene.updateVisibility(camera); await tick()
+    complete.shift()!(); await tick()
+    scene.updateVisibility(camera); await tick()
+    complete.shift()!(); await tick()
+    assert.deepEqual(started.slice(0, 3), ['thumb-0', 'thumb-1', 'thumb-2'])
+    complete.shift()!(); await tick()
+    scene.updateVisibility(camera); await tick()
+    assert.ok(started.some(url => url.startsWith('high-')), 'full quality upgrades still run after thumbnails')
+  } finally {
+    scene.dispose(); pool.dispose()
+    complete.forEach(resolve => resolve()); await tick()
+  }
+})
 test('append preserves identity and resources; metadata changes do not rebuild; replacement disposes once', () => {
   const pool = new TexturePool({ maxEdge: 512, bytes: 32 * 1024 ** 2, concurrent: 2, resident: 32 }, async () => ({ texture: new THREE.Texture(), bytes: 4 }))
   const photos = [{ title: 'one', thumbnailUrl: null, width: 800, height: 600, sortOrder: 0 }]

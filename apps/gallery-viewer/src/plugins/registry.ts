@@ -15,7 +15,8 @@ export function preloadCorePlugins(): Promise<void> {
   corePluginsReady ??= Promise.all([
     import('./LayoutPlugin'),
     import('./LightingPlugin'),
-    import('./PhotoFadePlugin')
+    import('./PhotoFadePlugin'),
+    import('./BackgroundPlugin')
   ]).then(() => undefined).catch(error => {
     corePluginsReady = null
     throw error
@@ -30,7 +31,6 @@ export async function preloadVisualEffects(enabled: {
   cursorTrail: boolean
 }): Promise<void> {
   await Promise.all([
-    import('./BackgroundPlugin'),
     ...(enabled.particles ? [import('./ParticlesPlugin')] : []),
     ...(enabled.fog ? [import('./FogPlugin')] : []),
     ...(enabled.clickRipple ? [import('./ClickRipplePlugin')] : []),

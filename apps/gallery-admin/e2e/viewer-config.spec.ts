@@ -33,6 +33,20 @@ test('editor is usable while the preview token is still pending', async ({ page 
   } finally { release() }
 })
 
+test('preview background loads while photo downloads and optional effects are pending', async ({ page }) => {
+  await fixture(page)
+  let release!: () => void
+  const pending = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/fixtures/photo-*', async route => { await pending; await route.fallback() })
+  await page.route('**/assets/PostProcessing-*.js', async route => { await pending; await route.continue() })
+  try {
+    await page.goto('/app/galleries/config-fixture/config')
+    const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+    await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+    await expect.poll(() => frame.locator('canvas.webgl-canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().background.width)).toBeGreaterThan(0)
+  } finally { release() }
+})
+
 test('preview token failure leaves the editor usable and can be retried', async ({ page }) => {
   const data = await fixture(page)
   await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ status: 503 }))

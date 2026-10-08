@@ -114,10 +114,13 @@ export class PhotoScene {
       const visible = this.frustum.intersectsObject(mesh)
       mesh.userData.inView = visible
       mesh.getWorldPosition(this.position)
-      const priority = visible ? this.position.distanceToSquared(camera.position) : Infinity
+      // Reserve [0, 1) for thumbnails and [1, 2) for full textures. A nearby
+      // upgrade must not occupy the download slots needed by other visible photos.
+      const distance = this.position.distanceToSquared(camera.position)
+      const priority = visible ? distance / (1 + distance) : Infinity
       const highOwner = this.highTextureOwners.get(photo)
       this.pool.touch(photo, highOwner && this.highTextureReady.has(photo) ? Infinity : priority)
-      if (highOwner) this.pool.touch(highOwner, priority)
+      if (highOwner) this.pool.touch(highOwner, priority + 1)
       else if (visible && mesh.userData.textureState === 'ready' && !this.highTextureReady.has(photo)) this.loadHighTexture(photo, mesh, priority)
     }
   }
