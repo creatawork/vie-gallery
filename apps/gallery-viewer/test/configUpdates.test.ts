@@ -32,7 +32,8 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
       effectsStarted: false, effectsReadyEmitted: false, effectsDeadlineTimer: null,
       postProcessing: { apply: () => {}, dispose: () => {} }, resizePostProcessing: () => {},
       effectiveQuality: 'mid', qualityRequest: 'auto', qualityController: new QualityController('mid', 'high', 0),
-      texturePool: { setBudget: () => {} }, renderer: { setPixelRatio: () => {} } })
+      texturePool: { setBudget: () => {}, getBudget: () => ({ maxEdge: 0, bytes: 0, concurrent: 0, resident: 0 }) },
+      renderer: { setPixelRatio: () => {}, getPixelRatio: () => 1 } })
     const a = engine.applyConfig({ particles: { enabled: true, types: ['stars'], density: .4 } })
     const b = engine.applyConfig({ particles: { density: .8 } } as never)
     for (let i = 0; i < 100 && !finish; i++) await Promise.resolve()

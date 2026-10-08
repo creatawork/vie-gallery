@@ -148,20 +148,22 @@ export class ViewerEngine {
    * 初始化
    * @param slug 相册标识（可选），如果提供则从服务端加载配置
    */
-  async init(slug?: string, serverConfigSnapshot?: ViewerConfig | null): Promise<void> {
+  async init(slug?: string, serverConfigSnapshot?: ViewerConfig | null, options: { applyLocalPreferences?: boolean } = {}): Promise<void> {
     if (this.disposed) return
     this.eventBus.emit('init')
 
     // 1. 设置插件注册表
-    const { pluginRegistry } = await import('../plugins/registry')
+    const { pluginRegistry, preloadCorePlugins } = await import('../plugins/registry')
     if (this.disposed) return
     this.pluginManager.setRegistry(pluginRegistry)
+    await preloadCorePlugins()
+    if (this.disposed) return
 
     // 2. 如果提供了 slug，从服务端加载配置
     if (serverConfigSnapshot !== undefined) {
-      this.configManager.adoptServerSnapshot(serverConfigSnapshot)
+      this.configManager.adoptServerSnapshot(serverConfigSnapshot, options.applyLocalPreferences ?? true)
     } else if (slug) {
-      await this.configManager.loadFromServer(slug)
+      await this.configManager.loadFromServer(slug, options.applyLocalPreferences ?? true)
       if (this.disposed) return
     }
 
@@ -279,8 +281,11 @@ export class ViewerEngine {
     const effective = structuredClone(candidate)
     effective.quality = this.effectiveQuality
     const budget = QUALITY_BUDGETS[this.effectiveQuality]
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, budget.dpr))
-    this.texturePool.setBudget(budget)
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, budget.dpr)
+    if (this.renderer.getPixelRatio() !== pixelRatio) this.renderer.setPixelRatio(pixelRatio)
+    const currentBudget = this.texturePool.getBudget()
+    if (currentBudget.maxEdge !== budget.maxEdge || currentBudget.bytes !== budget.bytes
+      || currentBudget.concurrent !== budget.concurrent || currentBudget.resident !== budget.resident) this.texturePool.setBudget(budget)
     if (this.motionQuery?.matches) {
       effective.effects.photoFloat = false
       effective.effects.photoEntrance = 'none'
@@ -298,8 +303,9 @@ export class ViewerEngine {
     ])
     for (const [name, enabled] of wanted) {
       if (deferEffects && ['Background', 'Particles', 'Fog', 'ClickRipple', 'CursorTrail'].includes(name)) continue
-      if (enabled) await this.pluginManager.install(name)
-      else this.pluginManager.uninstall(name)
+      if (enabled) {
+        if (!this.pluginManager.isInstalled(name)) await this.pluginManager.install(name)
+      } else if (this.pluginManager.isInstalled(name)) this.pluginManager.uninstall(name)
       if (this.disposed) return
     }
     if (!deferEffects) {

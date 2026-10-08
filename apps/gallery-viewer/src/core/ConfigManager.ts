@@ -26,19 +26,19 @@ export class ConfigManager {
     this.diagnostics.push(...result.issues)
     return result.config
   }
-  async loadFromServer(slug: string): Promise<ViewerConfig> {
+  async loadFromServer(slug: string, applyLocalPreferences = true): Promise<ViewerConfig> {
     const data = await this.publicApi.getViewerConfig(slug)
     if (data?.configJson) {
       const result = parseViewerConfig(data.configJson, data.schemaVersion ?? 1, 'legacy')
       this.diagnostics.push(...result.issues)
       this.serverConfig = result.config
-      this.config = mergeViewerConfig(result.config, this.loadPreferenceFromStorage())
+      this.config = mergeViewerConfig(result.config, applyLocalPreferences ? this.loadPreferenceFromStorage() : {})
     }
     return this.getConfig()
   }
-  adoptServerSnapshot(config: ViewerConfig | null): ViewerConfig {
+  adoptServerSnapshot(config: ViewerConfig | null, applyLocalPreferences = true): ViewerConfig {
     this.serverConfig = config ? normalizeViewerConfig(config).config : null
-    this.config = mergeViewerConfig(this.serverConfig ?? createRecommendedViewerConfig(), this.loadPreferenceFromStorage())
+    this.config = mergeViewerConfig(this.serverConfig ?? createRecommendedViewerConfig(), applyLocalPreferences ? this.loadPreferenceFromStorage() : {})
     return this.getConfig()
   }
   savePreference(preference: Partial<ViewerConfig>): void {

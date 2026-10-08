@@ -60,10 +60,13 @@ const isFullscreen = ref(false)
 const previewIframeRef = ref<HTMLIFrameElement | null>(null)
 const previewLive = ref(false)
 const embedTimedOut = ref(false)
+const previewLoadingSlow = ref(false)
 const previewToken = ref('')
 const previewIssueError = ref('')
 let handshakeTimer: number | null = null
-const HANDSHAKE_MS = 8000
+let previewSlowTimer: number | null = null
+const PREVIEW_PROGRESS_MS = 8000
+const PREVIEW_TIMEOUT_MS = 30000
 const configTab = ref<'basics' | 'atmosphere' | 'advanced' | 'history'>('basics')
 
 const CONFIG_TABS = [
@@ -78,14 +81,34 @@ function clearHandshakeTimer() {
     window.clearTimeout(handshakeTimer)
     handshakeTimer = null
   }
+  if (previewSlowTimer) {
+    window.clearTimeout(previewSlowTimer)
+    previewSlowTimer = null
+  }
+  previewLoadingSlow.value = false
 }
 
 function startHandshakeTimer() {
   clearHandshakeTimer()
   if (!showPreviewFrame.value) return
+  previewSlowTimer = window.setTimeout(() => {
+    if (!previewLive.value) previewLoadingSlow.value = true
+  }, PREVIEW_PROGRESS_MS)
   handshakeTimer = window.setTimeout(() => {
-    if (!previewLive.value) embedTimedOut.value = true
-  }, HANDSHAKE_MS)
+    if (!previewLive.value) {
+      previewLoadingSlow.value = false
+      embedTimedOut.value = true
+    }
+  }, PREVIEW_TIMEOUT_MS)
+}
+
+function resetPreviewDeadline() {
+  if (previewLive.value) return
+  if (handshakeTimer) window.clearTimeout(handshakeTimer)
+  handshakeTimer = window.setTimeout(() => {
+    previewLoadingSlow.value = false
+    embedTimedOut.value = true
+  }, PREVIEW_TIMEOUT_MS)
 }
 
 let saveTimer: number | null = null
@@ -124,23 +147,26 @@ function tryCanonicalConfig(json: string | null | undefined): string | null {
   }
 }
 let previewChannel: ReturnType<typeof createViewerPreviewChannel> | null = null
-function refreshLivePreview() {
+function refreshLivePreview(force = false) {
   if (issues.value.length) return
-  previewChannel?.send(config.value)
+  previewChannel?.send(config.value, { force })
 }
 watch(previewIframeRef, iframe => {
   previewChannel?.dispose(); previewChannel = null
-  if (!iframe) return
+  if (!iframe) { clearHandshakeTimer(); return }
   previewChannel = createViewerPreviewChannel(iframe, message => {
-    if (message.error) toast.error('预览应用失败，请重试')
-  }, () => {
     clearHandshakeTimer()
     embedTimedOut.value = false
     previewLive.value = true
+    if (message.error) toast.error('预览应用失败，请重试')
+  }, bootstrapped => {
+    clearHandshakeTimer()
+    embedTimedOut.value = false
+    previewLive.value = bootstrapped
   }, () => {
     previewLive.value = false
     startHandshakeTimer()
-  })
+  }, resetPreviewDeadline)
   if (configLoaded.value) refreshLivePreview()
 }, { flush: 'post' })
 
@@ -212,6 +238,7 @@ const previewEmptyText = computed(() => {
   if (!gallerySlug.value) return '加载空间信息后才能预览。'
   if (embedTimedOut.value) return '展厅预览没有响应。请确认预览页已启动，然后重试。'
   if (!canEmbedViewer.value) return '当前窗口无法嵌入预览，请用新窗口打开。'
+  if (previewLoadingSlow.value) return '展厅正在载入，请稍候。'
   return '正在连接内部预览…'
 })
 
@@ -233,6 +260,8 @@ async function loadGalleryAndConfig() {
   loadError.value = ''
   previewLive.value = false
   embedTimedOut.value = false
+  previewLoadingSlow.value = false
+  clearHandshakeTimer()
   lastSavedLabel.value = ''
   lastSaveFailed.value = false
   try {
@@ -644,7 +673,7 @@ onUnmounted(() => {
         ></iframe>
 
         <div class="preview-tools">
-          <button v-if="previewLive" class="glass-btn" type="button" :disabled="!!issues.length" @click="refreshLivePreview">重新应用</button>
+          <button v-if="previewLive" class="glass-btn" type="button" :disabled="!!issues.length" @click="refreshLivePreview(true)">重新应用</button>
           <button class="glass-btn" type="button" @click="openLivePreview">
             <Icon name="external" :size="14" />
             <span>新窗口预览</span>

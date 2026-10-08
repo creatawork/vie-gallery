@@ -1,8 +1,68 @@
-import test from 'node:test'
+import test, { before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createDefaultViewerConfig } from '@vie/gallery-contracts'
 import { createViewerPreviewChannel, isTrustedPreviewMessage } from '../../gallery-admin/src/lib/viewerPreviewChannel'
 import { useViewerConfigEditor } from '../../gallery-admin/src/composables/useViewerConfigEditor'
+
+const originalFrame = globalThis.requestAnimationFrame, originalCancelFrame = globalThis.cancelAnimationFrame
+before(() => {
+  globalThis.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 0) as unknown as number
+  globalThis.cancelAnimationFrame = handle => clearTimeout(handle)
+})
+after(() => {
+  globalThis.requestAnimationFrame = originalFrame
+  globalThis.cancelAnimationFrame = originalCancelFrame
+})
+
+test('manual reapply resends an unchanged bootstrapped config with a fresh sequence', async () => {
+  const sent: any[] = [], source = { postMessage: (message: unknown) => sent.push(message) } as unknown as Window
+  const iframe = { src: 'http://localhost:15174/g/test', contentWindow: source } as HTMLIFrameElement
+  const channel = createViewerPreviewChannel(iframe, () => {})
+  const event = (type: string, sequence = 0) => ({ source, origin: 'http://localhost:15174', data: { type, sequence } }) as MessageEvent
+  try {
+    const config = createDefaultViewerConfig(), initial = channel.send(config)
+    channel.accept(event('VIE_PREVIEW_BOOTSTRAP_REQUEST'))
+    channel.accept(event('VIE_PREVIEW_BOOTSTRAP_APPLIED', initial))
+    channel.accept(event('VIE_PREVIEW_READY'))
+    assert.equal(channel.send(config), initial)
+    assert.equal(sent.length, 1)
+    const reapplied = channel.send(config, { force: true })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.ok(reapplied > initial)
+    assert.equal(sent.at(-1).type, 'VIE_CONFIG_UPDATE')
+    assert.equal(sent.at(-1).sequence, reapplied)
+    assert.deepEqual(sent.at(-1).config, config)
+  } finally { channel.dispose() }
+})
+
+test('manual reapply can recover after all automatic retries time out', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const sent: any[] = [], applied: any[] = [], source = { postMessage: (message: unknown) => sent.push(message) } as unknown as Window
+  const iframe = { src: 'http://localhost:15174/g/test', contentWindow: source } as HTMLIFrameElement
+  const channel = createViewerPreviewChannel(iframe, message => applied.push(message))
+  const event = (type: string, sequence = 0) => ({ source, origin: 'http://localhost:15174', data: { type, sequence, effectiveQuality: 'mid', reason: null } }) as MessageEvent
+  try {
+    const config = createDefaultViewerConfig()
+    channel.send(config)
+    channel.accept(event('VIE_PREVIEW_READY'))
+    for (let i = 0; i < 3; i++) t.mock.timers.tick(1200)
+    assert.equal(sent.length, 3)
+    assert.equal(applied.length, 1)
+    assert.equal(typeof applied[0].error, 'string')
+    const timedOutSequence = sent.at(-1).sequence
+    const retrySequence = channel.send(config, { force: true })
+    t.mock.timers.tick(0)
+    assert.ok(retrySequence > timedOutSequence)
+    assert.equal(sent.length, 4)
+    channel.accept(event('VIE_CONFIG_APPLIED', timedOutSequence))
+    assert.equal(applied.length, 1)
+    channel.accept(event('VIE_CONFIG_APPLIED', retrySequence))
+    assert.equal(applied.length, 2)
+    assert.equal(applied[1].error, undefined)
+    t.mock.timers.tick(5000)
+    assert.equal(sent.length, 4)
+  } finally { channel.dispose() }
+})
 
 test('preview checks exact origin and source, rejects stale receipts and disposes pending messages', async () => {
   const sent: any[] = [], source = { postMessage: (...args: any[]) => sent.push(args) } as unknown as Window

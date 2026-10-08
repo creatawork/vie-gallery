@@ -38,6 +38,83 @@ test('complete parameters save, reload and apply to the real viewer iframe witho
   await expect(page.getByLabel('画质上限')).toHaveValue('mid')
   expect(data.errors).toEqual([])
 })
+test('late bootstrap updates the running preview engine before acknowledging the draft', async ({ page }) => {
+  const data = await fixture(page)
+  await page.goto('/app/galleries/config-fixture/config')
+  await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+  const config = data.draft()
+  config.layout.params.spacing = 2.2
+  await page.evaluate(config => {
+    const iframe = document.querySelector<HTMLIFrameElement>('iframe[title="展厅实时预览"]')!
+    iframe.contentWindow!.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP', sequence: 1000001, config }, new URL(iframe.src).origin)
+  }, config)
+  const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+  await expect.poll(() => frame.locator('canvas.webgl-canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.layout.params?.spacing)).toBe(2.2)
+  expect(data.errors).toEqual([])
+})
+
+test('bootstrap arriving during engine init waits for READY before applying the latest draft', async ({ page }) => {
+  const data = await fixture(page)
+  const serverConfig = data.draft()
+  serverConfig.layout.params.spacing = 2.2
+  await page.route('**/api/public/g/effects-fixture/viewer-config', route => route.fulfill({ json: { configJson: JSON.stringify(serverConfig), schemaVersion: 1 } }))
+  await page.addInitScript(() => {
+    const state = window as typeof window & { heldBootstrap?: MessageEvent; previewEngineCreated?: boolean; bootstrapReceipts?: number }
+    if (window.parent === window) {
+      state.bootstrapReceipts = 0
+      window.addEventListener('message', event => {
+        if (event.data?.type === 'VIE_PREVIEW_BOOTSTRAP_APPLIED') state.bootstrapReceipts!++
+      })
+      return
+    }
+    window.addEventListener('message', event => {
+      if (event.data?.type === 'VIE_PREVIEW_BOOTSTRAP' && !state.previewEngineCreated) {
+        event.stopImmediatePropagation()
+        state.heldBootstrap = event
+      }
+    })
+    const getContext = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (...args: Parameters<typeof getContext>) {
+      const context = Reflect.apply(getContext, this, args)
+      if (context && String(args[0]).startsWith('webgl')) state.previewEngineCreated = true
+      return context
+    } as typeof getContext
+  })
+  let releasePlugins!: () => void
+  const pluginsAllowed = new Promise<void>(resolve => { releasePlugins = resolve })
+  await page.route('**/assets/LayoutPlugin-*.js', async route => { await pluginsAllowed; await route.continue() })
+  try {
+    await page.goto('/app/galleries/config-fixture/config')
+    await expect.poll(() => page.frames().some(frame => frame.url().includes('/g/effects-fixture'))).toBe(true)
+    const viewerFrame = page.frames().find(frame => frame.url().includes('/g/effects-fixture'))!
+    await expect.poll(() => viewerFrame.evaluate(() => (window as typeof window & { previewEngineCreated?: boolean }).previewEngineCreated)).toBe(true)
+    await viewerFrame.evaluate(() => {
+      const event = (window as typeof window & { heldBootstrap?: MessageEvent }).heldBootstrap!
+      window.dispatchEvent(new MessageEvent('message', { data: event.data, source: event.source, origin: event.origin }))
+    })
+    // A same-frame barrier ensures any premature receipt has reached the parent.
+    await page.waitForTimeout(100)
+    expect(await page.evaluate(() => (window as typeof window & { bootstrapReceipts?: number }).bootstrapReceipts)).toBe(0)
+    releasePlugins()
+    await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+    await expect.poll(() => viewerFrame.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.layout.params?.spacing)).toBe(1)
+    expect(data.errors).toEqual([])
+  } finally { releasePlugins() }
+})
+
+test('manual reapply restores the editor draft even when it has not changed', async ({ page }) => {
+  const data = await fixture(page)
+  await page.goto('/app/galleries/config-fixture/config')
+  await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+  const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+  await frame.locator('canvas.webgl-canvas').evaluate(async () => {
+    await window.__VIE_VIEWER_DIAGNOSTICS__!.requestConfig({ layout: { params: { spacing: 2.2 } } } as never)
+  })
+  await page.getByRole('button', { name: '重新应用', exact: true }).click()
+  await expect.poll(() => frame.locator('canvas.webgl-canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.layout.params?.spacing)).toBe(1)
+  expect(data.errors).toEqual([])
+})
+
 test('config side panel matches the designed look', async ({ page }) => {
   await fixture(page)
   await page.goto('/app/galleries/config-fixture/config')

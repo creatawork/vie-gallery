@@ -51,7 +51,9 @@ export class PostProcessing {
     const bloom = !!config.bloom?.enabled, grading = !!config.postGrade?.enabled, vignette = !!config.vignette?.enabled
     const signature = `${bloom}:${grading || vignette}`
     if (signature !== this.signature) {
+      const size = this.size
       this.release()
+      this.size = { width: 0, height: 0, dpr: 0, scale: 0 }
       try {
         if (bloom || grading || vignette) {
           this.composer = this.createComposer(this.renderer)
@@ -59,7 +61,7 @@ export class PostProcessing {
           if (bloom) { this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0, .5, .25); this.add(this.bloom) }
           if (grading || vignette) { this.grade = new ShaderPass(gradingShader); this.add(this.grade) }
           this.add(new OutputPass())
-          this.resize(this.size.width, this.size.height, this.size.dpr, this.size.scale)
+          this.resize(size.width, size.height, size.dpr, size.scale)
         }
         this.signature = signature
       } catch (error) { this.release(); throw error }
@@ -82,6 +84,7 @@ export class PostProcessing {
   }
   private add(pass: Pass): void { this.passes.push(pass); this.composer!.addPass(pass) }
   resize(width: number, height: number, dpr: number, resolutionScale: number): void {
+    if (this.size.width === width && this.size.height === height && this.size.dpr === dpr && this.size.scale === resolutionScale) return
     this.size = { width, height, dpr, scale: resolutionScale }
     this.composer?.setPixelRatio(dpr * resolutionScale)
     this.composer?.setSize(width, height)

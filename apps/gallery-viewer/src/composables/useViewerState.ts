@@ -28,7 +28,7 @@ function userMessage(error: PublicApiError, fallback: string) {
   return fallback
 }
 
-export function useViewerState(slug: string) {
+export function useViewerState(slug: string, options: { isPreviewEmbed?: () => boolean } = {}) {
   const client = new PublicApiClient()
   markStartupStage('entry')
   const state = ref<ViewerState>('loading')
@@ -55,19 +55,36 @@ export function useViewerState(slug: string) {
   const allowDownload = computed(() => viewerConfig.value?.visitorAllowDownload === true)
   let latestPreviewConfig: ViewerConfig | undefined
   let configSnapshot: ViewerConfig | undefined
-  let configLoadStarted = false
+  let resolvePreviewBootstrap!: (config: ViewerConfig) => void
+  const previewBootstrap = new Promise<ViewerConfig>(resolve => { resolvePreviewBootstrap = resolve })
+
+  function waitForPreviewBootstrap(version: number): Promise<ViewerConfig | null> {
+    return new Promise(resolve => {
+      const timer = window.setTimeout(() => resolve(null), 350)
+      previewBootstrap.then(config => {
+        window.clearTimeout(timer)
+        resolve(version === requestVersion ? config : null)
+      })
+    })
+  }
 
   function beginLoad() {
     // Public entries still read the server on every load. Preview cycles seed
     // their own snapshot from the latest draft, before access state is cleared.
     if (latestPreviewConfig && viewerConfig.value) latestPreviewConfig = structuredClone(toRaw(viewerConfig.value))
     configSnapshot = latestPreviewConfig ? structuredClone(latestPreviewConfig) : undefined
-    configLoadStarted = false
     return ++requestVersion
   }
 
   async function loadConfig(version = requestVersion): Promise<ViewerConfig | null> {
-    configLoadStarted = true
+    if (configSnapshot === undefined && options.isPreviewEmbed?.()) {
+      const bootstrap = await waitForPreviewBootstrap(version)
+      if (version !== requestVersion) return null
+      if (bootstrap) {
+        markStartupStage('config-ready')
+        return bootstrap
+      }
+    }
     if (configSnapshot !== undefined) {
       markStartupStage('config-ready')
       return structuredClone(configSnapshot)
@@ -76,18 +93,23 @@ export function useViewerState(slug: string) {
       const cfg = await client.getViewerConfig(slug)
       markStartupStage('config-ready')
       if (version !== requestVersion) return null
-      return cfg?.configJson ? parseViewerConfig(cfg.configJson, cfg.schemaVersion ?? 1, 'legacy').config : null
+      const serverConfig = cfg?.configJson ? parseViewerConfig(cfg.configJson, cfg.schemaVersion ?? 1, 'legacy').config : null
+      return structuredClone(configSnapshot ?? serverConfig)
     } catch (cause) {
       markStartupStage('config-ready')
       if (version !== requestVersion) return null
+      if (configSnapshot !== undefined && !(cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403))) {
+        return structuredClone(configSnapshot)
+      }
       if (cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403)) throw cause
       return null
     }
   }
   function setConfigSnapshot(config: ViewerConfig): boolean {
-    if (configLoadStarted) return false
     configSnapshot = structuredClone(config)
     latestPreviewConfig = structuredClone(config)
+    viewerConfig.value = structuredClone(config)
+    resolvePreviewBootstrap(structuredClone(config))
     return true
   }
   function setAppliedConfigSnapshot(config: ViewerConfig) {
@@ -103,7 +125,7 @@ export function useViewerState(slug: string) {
       })
     ])
     if (version !== requestVersion) return
-    viewerConfig.value = config
+    viewerConfig.value = latestPreviewConfig ? structuredClone(latestPreviewConfig) : config
     photos.value = response.items
     currentPage.value = response.page
     pageSize.value = response.pageSize
@@ -115,7 +137,7 @@ export function useViewerState(slug: string) {
   async function loadEmptyGallery(version: number) {
     const config = await loadConfig(version)
     if (version !== requestVersion) return
-    viewerConfig.value = config
+    viewerConfig.value = latestPreviewConfig ? structuredClone(latestPreviewConfig) : config
     state.value = 'empty'
   }
 

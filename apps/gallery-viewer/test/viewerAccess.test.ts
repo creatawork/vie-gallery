@@ -2,6 +2,28 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { useViewerState } from '../src/composables/useViewerState'
 import { createDefaultViewerConfig } from '@vie/gallery-contracts'
+
+for (const update of ['bootstrap', 'applied'] as const) test(`photos finishing cannot replace a newer ${update} draft`, async () => {
+  const oldWindow = globalThis.window, oldFetch = globalThis.fetch
+  Object.assign(globalThis, { window: { location: { search: '?embed=preview', hash: '' }, setTimeout, clearTimeout } })
+  let finishPhotos!: (response: Response) => void
+  globalThis.fetch = async url => String(url).includes('/photos')
+    ? new Promise<Response>(resolve => { finishPhotos = resolve })
+    : Response.json({ accessState: 'READY' })
+  try {
+    const viewer = useViewerState('fixture', { isPreviewEmbed: () => true }), config = createDefaultViewerConfig()
+    const loading = viewer.initialize()
+    viewer.setConfigSnapshot({ ...config, quality: 'high' })
+    for (let i = 0; i < 100 && !finishPhotos; i++) await Promise.resolve()
+    assert.equal(typeof finishPhotos, 'function')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    if (update === 'bootstrap') viewer.setConfigSnapshot({ ...config, quality: 'low' })
+    else viewer.setAppliedConfigSnapshot({ ...config, quality: 'low' })
+    finishPhotos(Response.json({ items: [], page: 0, pageSize: 50, total: 0 }))
+    await loading
+    assert.equal(viewer.viewerConfig.value?.quality, 'low')
+  } finally { globalThis.fetch = oldFetch; globalThis.window = oldWindow }
+})
 test('unlock reloads current configuration and expiry revokes photos and download permission', async () => {
   const oldWindow = globalThis.window, oldFetch = globalThis.fetch
   Object.assign(globalThis, { window: { location: { search: '', hash: '' } } })

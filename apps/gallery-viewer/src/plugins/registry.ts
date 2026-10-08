@@ -10,6 +10,19 @@ export const pluginRegistry = {
   Fog: () => import('./FogPlugin').then(m => new m.FogPlugin())
 }
 
+let corePluginsReady: Promise<void> | null = null
+export function preloadCorePlugins(): Promise<void> {
+  corePluginsReady ??= Promise.all([
+    import('./LayoutPlugin'),
+    import('./LightingPlugin'),
+    import('./PhotoFadePlugin')
+  ]).then(() => undefined).catch(error => {
+    corePluginsReady = null
+    throw error
+  })
+  return corePluginsReady
+}
+
 export async function preloadVisualEffects(enabled: {
   particles: boolean
   fog: boolean

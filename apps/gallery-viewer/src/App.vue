@@ -16,9 +16,21 @@ const VisitorShareModal = defineAsyncComponent(() => import('./components/Visito
 
 // 从 URL 获取 slug。生产环境没有 slug 时不回退 demo 内容。
 const slug = location.pathname.split('/').filter(Boolean).pop() || ''
+const embeddedPreview = new URLSearchParams(location.search).get('embed') === 'preview'
 
 // 状态机
-const viewer = useViewerState(slug)
+const viewer = useViewerState(slug, { isPreviewEmbed: isEmbedPreview })
+let previewProgressTimer: number | null = null
+let previewProgressDeadline: number | null = null
+function stopPreviewProgress() {
+  if (previewProgressTimer !== null) window.clearInterval(previewProgressTimer)
+  if (previewProgressDeadline !== null) window.clearTimeout(previewProgressDeadline)
+  previewProgressTimer = null
+  previewProgressDeadline = null
+}
+watch(viewer.state, state => {
+  if (['password_prompt', 'share_required', 'not_found', 'error'].includes(state)) stopPreviewProgress()
+})
 
 // SEO defaults to noindex until the public gallery has loaded successfully.
 watch(
@@ -51,11 +63,12 @@ watch(viewMode, (mode) => {
   }
 })
 watch(
-  () => [viewer.isReady.value, viewMode.value],
-  async ([isReady, mode]) => {
-    if (!isReady || mode !== '2d') return
+  () => [viewer.isReady.value, viewer.isEmpty.value, viewMode.value],
+  async ([isReady, isEmpty, mode]) => {
+    if ((!isReady && !isEmpty) || mode !== '2d') return
     await nextTick()
     performance.mark('viewer:interactive')
+    if (isEmbedPreview()) notifyParentReady()
   }
 )
 const webglFallbackMessage = ref('')
@@ -126,12 +139,23 @@ const presets = [
 
 onMounted(() => {
   window.addEventListener('message', handlePostMessage)
-  if (isEmbedPreview()) window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_REQUEST' }, adminEmbedOrigin())
+  if (isEmbedPreview()) {
+    window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_REQUEST' }, adminEmbedOrigin())
+    previewProgressTimer = window.setInterval(() => {
+      window.parent.postMessage({ type: 'VIE_PREVIEW_PROGRESS' }, adminEmbedOrigin())
+    }, 5000)
+    previewProgressDeadline = window.setTimeout(stopPreviewProgress, 120000)
+    if (viewMode.value === '3d') {
+      void loadViewer3dModules().catch(() => {})
+      void import('./plugins/registry').then(({ preloadCorePlugins }) => preloadCorePlugins()).catch(() => {})
+    }
+  }
   viewer.initialize()
   document.addEventListener('fullscreenchange', handleFullscreenChange)
 })
 
 onUnmounted(() => {
+  stopPreviewProgress()
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
   window.removeEventListener('deviceorientation', handleOrientation, true)
   window.removeEventListener('message', handlePostMessage)
@@ -153,7 +177,7 @@ watch(gyroEnabled, (enabled) => {
 })
 
 function isEmbedPreview() {
-  return window.parent !== window
+  return embeddedPreview && window.parent !== window
 }
 
 function adminEmbedOrigin() {
@@ -166,15 +190,19 @@ let previewSequence = 0
 async function handlePostMessage(event: MessageEvent) {
   const origin = adminEmbedOrigin()
   if (!isEmbedPreview() || !isTrustedPreviewMessage(event, window.parent, origin)) return
-  if (event.data?.type === 'VIE_PREVIEW_BOOTSTRAP' && Number.isSafeInteger(event.data.sequence)) {
+  const bootstrap = event.data?.type === 'VIE_PREVIEW_BOOTSTRAP'
+  if (bootstrap && !engineReady.value && Number.isSafeInteger(event.data.sequence)) {
     const result = normalizeViewerConfig(event.data.config)
     if (result.issues.length) return
-    if (viewer.setConfigSnapshot(result.config)) {
+    viewer.setConfigSnapshot(result.config)
+    // Once init has captured a config, seed state but defer acknowledgment so
+    // READY triggers CONFIG_UPDATE after init instead of racing plugin setup.
+    if (!engine) {
       window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_APPLIED', sequence: event.data.sequence }, origin)
     }
     return
   }
-  if (event.data?.type !== 'VIE_CONFIG_UPDATE' || !Number.isSafeInteger(event.data.sequence) || event.data.sequence <= previewSequence) return
+  if ((!bootstrap && event.data?.type !== 'VIE_CONFIG_UPDATE') || !Number.isSafeInteger(event.data.sequence) || event.data.sequence <= previewSequence) return
   const sequence: number = event.data.sequence
   previewSequence = sequence
   try {
@@ -182,12 +210,24 @@ async function handlePostMessage(event: MessageEvent) {
     if (result.issues.length) throw new ViewerConfigValidationError(result.issues)
     serializeViewerConfig(result.config)
     const activeEngine = engine
-    if (!activeEngine) throw new Error('预览尚未就绪，请重试。')
-    await activeEngine.replaceConfig(result.config)
-    if (sequence !== previewSequence || activeEngine !== engine) return
+    if (activeEngine) {
+      const runtimeConfig = structuredClone(result.config)
+      if (isEmbedPreview()) runtimeConfig.layout.transition = { ...runtimeConfig.layout.transition, style: 'smooth', duration: 0.2 }
+      await activeEngine.replaceConfig(runtimeConfig)
+      if (sequence !== previewSequence || activeEngine !== engine) return
+    } else if (viewMode.value !== '2d') {
+      throw new Error('预览尚未就绪，请重试。')
+    }
+    if (sequence !== previewSequence) return
     viewer.setAppliedConfigSnapshot(result.config)
     applyAutoTour(result.config.camera?.autoRotate === true)
-    window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence, effectiveQuality: activeEngine.getEffectiveQuality(), reason: activeEngine.getQualityReason() }, origin)
+    if (bootstrap) {
+      window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_APPLIED', sequence }, origin)
+    } else {
+      window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence,
+        effectiveQuality: activeEngine?.getEffectiveQuality() ?? 'low',
+        reason: activeEngine?.getQualityReason() ?? (viewMode.value === '2d' ? 'classic 2D preview' : null) }, origin)
+    }
   } catch (cause) {
     if (sequence !== previewSequence) return
     window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence, effectiveQuality: engine?.getEffectiveQuality() ?? 'low', reason: null,
@@ -195,7 +235,10 @@ async function handlePostMessage(event: MessageEvent) {
   }
 }
 function notifyParentReady() {
-  if (isEmbedPreview()) window.parent.postMessage({ type: 'VIE_PREVIEW_READY' }, adminEmbedOrigin())
+  if (isEmbedPreview()) {
+    stopPreviewProgress()
+    window.parent.postMessage({ type: 'VIE_PREVIEW_READY' }, adminEmbedOrigin())
+  }
 }
 
 function handleFullscreenChange() {
@@ -220,9 +263,9 @@ watch(
   }
 )
 watch(
-  () => [viewer.isReady.value, viewer.isEmpty.value, viewer.state.value, viewMode.value, viewer.photos.value.length],
+  () => [viewer.isReady.value, viewer.isEmpty.value, viewer.state.value, viewMode.value, viewer.photos.value.length, viewer.viewerConfig.value],
   async ([isReady, isEmpty, state, mode]) => {
-    const embedReady = isEmbedPreview() && state !== 'loading' && state !== 'password_prompt'
+    const embedReady = isEmbedPreview() && viewer.viewerConfig.value !== null
     const canInit3d = mode === '3d' && (isReady || isEmpty || embedReady)
     if (mode === '2d') {
       destroy3DEngine()
@@ -287,9 +330,12 @@ async function init3DEngine() {
     scenePhotoCount = viewer.photos.value.length
 
     try {
-      await activeEngine.init(slug, viewer.state.value === 'ready' || viewer.state.value === 'empty' ? viewer.viewerConfig.value : undefined)
+      const initialConfig = isEmbedPreview()
+        ? viewer.viewerConfig.value
+        : viewer.state.value === 'ready' || viewer.state.value === 'empty' ? viewer.viewerConfig.value : undefined
+      await activeEngine.init(slug, initialConfig, { applyLocalPreferences: !isEmbedPreview() })
     } catch (err) {
-      if (!isEmbedPreview()) throw err
+      if (!isEmbedPreview() || viewer.viewerConfig.value) throw err
       await activeEngine.init()
     }
     if (initVersion !== engineInitVersion) {
