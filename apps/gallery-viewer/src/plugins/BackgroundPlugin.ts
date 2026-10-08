@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { ViewerPlugin, ViewerContext } from '../core/types'
-import { backgroundTextureUrl, type BackgroundProjection } from '@vie/gallery-contracts'
+import { backgroundTextureUrl, sceneBackgroundThumbUrl, type BackgroundProjection } from '@vie/gallery-contracts'
 export class BackgroundPlugin implements ViewerPlugin {
   name = 'Background'
   version = '1.0.0'
@@ -35,7 +35,9 @@ export class BackgroundPlugin implements ViewerPlugin {
     }
     if (config.mode === 'image' && config.image?.url) {
       const url = backgroundTextureUrl(config.image.url, this.context.getQuality())
-      new THREE.TextureLoader().load(url, texture => {
+      const loader = new THREE.TextureLoader()
+      let finished = false
+      const applyTexture = (texture: THREE.Texture, sourceUrl = url): void => {
         if (!this.context || request !== this.request || this.signature !== signature) { texture.dispose(); return }
         this.texture?.dispose(); this.texture = texture
         // Equirectangular backgrounds rotate with the camera; undeclared custom images stay flat.
@@ -45,12 +47,17 @@ export class BackgroundPlugin implements ViewerPlugin {
         texture.colorSpace = THREE.SRGBColorSpace; texture.needsUpdate = true
         const image = texture.image as { width?: number; height?: number } | undefined
         this.info = {
-          url, width: image?.width ?? 0, height: image?.height ?? 0,
+          url: sourceUrl, width: image?.width ?? 0, height: image?.height ?? 0,
           bytes: (image?.width ?? 0) * (image?.height ?? 0) * 4,
           projection: config.image?.projection === 'equirectangular' ? 'equirectangular' : 'flat'
         }
         this.context.scene.background = texture
+      }
+      loader.load(url, texture => {
+        finished = true
+        applyTexture(texture)
       }, undefined, () => {
+        finished = true
         if (!this.context || request !== this.request || this.signature !== signature) return
         this.texture?.dispose(); this.texture = null
         this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
@@ -58,6 +65,14 @@ export class BackgroundPlugin implements ViewerPlugin {
         // Clear the signature so an identical config can retry the failed URL.
         this.signature = ''
       })
+      // Small builtin previews replace the old scene before the panorama finishes.
+      // Custom URLs have no known matching thumbnail and retain their normal load path.
+      const name = /^\/g\/backgrounds\/([a-z0-9-]+)(?:-low)?\.webp(?:\?.*)?$/.exec(url)?.[1]
+      const previewUrl = sceneBackgroundThumbUrl(name)
+      if (previewUrl) loader.load(previewUrl, texture => {
+        if (finished) { texture.dispose(); return }
+        applyTexture(texture, previewUrl)
+      }, undefined, () => { /* The panorama remains the authoritative load. */ })
       return
     }
     const size = 64, data = new Uint8Array(size * size * 4)

@@ -7,6 +7,44 @@ import { createViewerContext } from './helpers/viewerContext'
 
 type LoaderCall = { url: string; succeed: (texture: THREE.Texture) => void; fail: (error: unknown) => void }
 type LoadResult = { texture: THREE.Texture; disposals: () => number }
+
+test('builtin scene shows its thumbnail while the panorama is still loading', () => {
+  const context = createViewerContext(normalizeViewerConfig({ background: { mode: 'image', color: '#000000', image: { url: '/g/backgrounds/minimal.webp' } } }).config)
+  const loader = controlTextureLoader()
+  const plugin = new BackgroundPlugin()
+  try {
+    plugin.install(context)
+    const previewIndex = loader.calls.findIndex(call => call.url.includes('/thumbs/minimal.webp'))
+    assert.ok(previewIndex >= 0, 'a small preview should load alongside the panorama')
+    const preview = loader.succeed(previewIndex)
+    assert.equal(context.scene.background, preview.texture)
+    assert.equal(preview.texture.mapping, THREE.EquirectangularReflectionMapping)
+    const full = loader.succeed(0)
+    assert.equal(context.scene.background, full.texture)
+    assert.equal(preview.disposals(), 1)
+  } finally { plugin.uninstall(); loader.restore() }
+})
+
+test('a late scene thumbnail cannot replace the full panorama or a newer scene', () => {
+  const context = createViewerContext(normalizeViewerConfig({ background: { mode: 'image', color: '#000000', image: { url: '/g/backgrounds/minimal.webp' } } }).config)
+  const loader = controlTextureLoader()
+  const plugin = new BackgroundPlugin()
+  try {
+    plugin.install(context)
+    assert.equal(loader.calls.length, 2)
+    const full = loader.succeed(0)
+    const late = loader.succeed(1)
+    assert.equal(context.scene.background, full.texture)
+    assert.equal(late.disposals(), 1)
+    context.config = mergeViewerConfig(context.config, { background: { image: { url: '/g/backgrounds/forest-dream.webp' } } })
+    context.emit('config:update', context.config)
+    context.config = mergeViewerConfig(context.config, { background: { mode: 'solid', color: '#ffffff' } })
+    context.emit('config:update', context.config)
+    const stale = loader.succeed(3)
+    assert.equal(stale.disposals(), 1)
+    assert.equal((context.scene.background as THREE.Color).getHexString(), 'ffffff')
+  } finally { plugin.uninstall(); loader.restore() }
+})
 function controlTextureLoader() {
   const original = THREE.TextureLoader.prototype.load
   const calls: LoaderCall[] = []

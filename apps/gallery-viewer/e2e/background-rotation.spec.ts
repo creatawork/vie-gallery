@@ -25,6 +25,29 @@ async function canvasClip(page: Page, fraction: { y: number; height: number }) {
   return { x: box.x, y: box.y + box.height * fraction.y, width: box.width, height: box.height * fraction.height }
 }
 
+test('scene preview appears before a delayed panorama and then upgrades', async ({ page }) => {
+  const errors = await fixedBackgroundPage(page)
+  await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().background.url)).toContain('/g/backgrounds/film-gallery.webp')
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/backgrounds/forest-dream.webp*', async route => {
+    await gate
+    await route.continue()
+  })
+  try {
+    await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.requestConfig({
+      background: { mode: 'image', color: '#000000', image: { url: '/g/backgrounds/forest-dream.webp', projection: 'equirectangular' } }
+    }))
+    await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().background.url)).toContain('/thumbs/forest-dream.webp')
+    const preview = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().background)
+    expect(preview.width).toBe(320)
+    expect(preview.projection).toBe('equirectangular')
+    release()
+    await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().background.width)).toBe(1774)
+    expect(errors).toEqual([])
+  } finally { release() }
+})
+
 test('panoramic background rotates with the camera and reports its projection', async ({ page }) => {
   const errors = await fixedBackgroundPage(page)
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().background.projection)).toBe('equirectangular')
