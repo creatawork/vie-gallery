@@ -171,6 +171,19 @@ export interface ViewerConfigVersion {
   schemaVersion: number
   createdAt: string
   createdByUserId?: string | null
+  versionNumber: string
+  title: string | null
+  note: string | null
+  isCurrent: boolean
+}
+
+export interface ViewerConfigVersionMetadata {
+  title: string | null
+  note: string | null
+}
+
+export interface PublishViewerConfigRequest extends ViewerConfigVersionMetadata {
+  schemaVersion?: number
 }
 
 export interface ViewerConfigResponse {

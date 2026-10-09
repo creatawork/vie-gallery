@@ -155,13 +155,26 @@ class GalleryViewerConfigVersioningTest {
     void viewerCannotPublishOrRollback() {
         UUID galleryId = UUID.randomUUID();
         Fixture fixture = fixture(galleryId, MembershipRole.VIEWER);
+        ViewerConfigVersion readable = ViewerConfigVersion.create(TENANT_ID, galleryId, 1,
+                "{}", "default", 1, "name", "note", USER_ID);
+        fixture.versions.save(readable);
 
         DomainException publish = assertThrows(DomainException.class, () -> fixture.facade.publishConfig(galleryId));
         DomainException rollback = assertThrows(DomainException.class,
                 () -> fixture.facade.rollbackConfig(galleryId, UUID.randomUUID()));
+        DomainException metadata = assertThrows(DomainException.class,
+                () -> fixture.facade.updateVersionMetadata(galleryId, readable.id(), "new", null));
+        DomainException restore = assertThrows(DomainException.class,
+                () -> fixture.facade.restoreVersion(galleryId, readable.id()));
+        DomainException delete = assertThrows(DomainException.class,
+                () -> fixture.facade.deleteVersion(galleryId, readable.id()));
 
         assertEquals(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, publish.code());
         assertEquals(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, rollback.code());
+        assertEquals(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, metadata.code());
+        assertEquals(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, restore.code());
+        assertEquals(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, delete.code());
+        assertEquals(readable.id(), fixture.facade.getVersion(galleryId, readable.id()).id());
     }
 
     @Test void invalidSavePublishAndRollbackPerformNoWrites() {

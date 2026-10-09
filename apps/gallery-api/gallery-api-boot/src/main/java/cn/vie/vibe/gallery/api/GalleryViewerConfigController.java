@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -48,16 +49,63 @@ public class GalleryViewerConfigController {
             @RequestBody(required = false) PublishConfigRequest request
     ) {
         Integer schemaVersion = request == null ? null : request.schemaVersion();
-        return ResponseEntity.ok(toVersionResponse(configFacade.publishConfig(UUID.fromString(galleryId), schemaVersion)));
+        String title = request == null ? null : request.title();
+        String note = request == null ? null : request.note();
+        return ResponseEntity.ok(toVersionResponse(
+                configFacade.publishConfig(UUID.fromString(galleryId), schemaVersion, title, note), true));
     }
 
     @GetMapping("/versions")
+    @Transactional(readOnly = true)
     public VersionPageResponse listVersions(
             @PathVariable("galleryId") String galleryId,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize
     ) {
-        return toVersionPage(configFacade.listVersions(UUID.fromString(galleryId), page, pageSize));
+        UUID id = UUID.fromString(galleryId);
+        UUID publishedVersionId = configFacade.getConfig(id).map(GalleryViewerConfig::publishedVersionId).orElse(null);
+        return toVersionPage(configFacade.listVersions(id, page, pageSize), publishedVersionId);
+    }
+
+    @GetMapping("/versions/{versionId}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<VersionResponse> getVersion(
+            @PathVariable("galleryId") String galleryId,
+            @PathVariable("versionId") String versionId
+    ) {
+        UUID gallery = UUID.fromString(galleryId);
+        ViewerConfigVersion version = configFacade.getVersion(gallery, UUID.fromString(versionId));
+        return ResponseEntity.ok(toVersionResponse(version, isCurrent(gallery, version.id())));
+    }
+
+    @PatchMapping("/versions/{versionId}")
+    public ResponseEntity<VersionResponse> updateVersionMetadata(
+            @PathVariable("galleryId") String galleryId,
+            @PathVariable("versionId") String versionId,
+            @RequestBody VersionMetadataRequest request
+    ) {
+        UUID gallery = UUID.fromString(galleryId);
+        ViewerConfigVersion version = configFacade.updateVersionMetadata(gallery, UUID.fromString(versionId),
+                request.title(), request.note());
+        return ResponseEntity.ok(toVersionResponse(version, isCurrent(gallery, version.id())));
+    }
+
+    @PostMapping("/versions/{versionId}/restore")
+    public ResponseEntity<GalleryViewerConfigResponse> restoreVersion(
+            @PathVariable("galleryId") String galleryId,
+            @PathVariable("versionId") String versionId
+    ) {
+        return ResponseEntity.ok(toResponse(configFacade.restoreVersion(
+                UUID.fromString(galleryId), UUID.fromString(versionId))));
+    }
+
+    @DeleteMapping("/versions/{versionId}")
+    public ResponseEntity<Void> deleteVersion(
+            @PathVariable("galleryId") String galleryId,
+            @PathVariable("versionId") String versionId
+    ) {
+        configFacade.deleteVersion(UUID.fromString(galleryId), UUID.fromString(versionId));
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/rollback")
@@ -66,7 +114,7 @@ public class GalleryViewerConfigController {
             @Valid @RequestBody RollbackConfigRequest request
     ) {
         return ResponseEntity.ok(toVersionResponse(configFacade.rollbackConfig(
-                UUID.fromString(galleryId), UUID.fromString(request.versionId()))));
+                UUID.fromString(galleryId), UUID.fromString(request.versionId())), true));
     }
 
     @DeleteMapping
@@ -92,18 +140,29 @@ public class GalleryViewerConfigController {
                 config.lastPublishedAt(), config.publishedVersionId() == null ? null : config.publishedVersionId().toString());
     }
 
-    private VersionPageResponse toVersionPage(ViewerConfigVersionPage page) {
-        return new VersionPageResponse(page.items().stream().map(this::toVersionResponse).toList(), page.page(), page.pageSize(), page.total());
+    private VersionPageResponse toVersionPage(ViewerConfigVersionPage page, UUID publishedVersionId) {
+        return new VersionPageResponse(page.items().stream()
+                .map(version -> toVersionResponse(version, version.id().equals(publishedVersionId)))
+                .toList(), page.page(), page.pageSize(), page.total());
     }
 
-    private VersionResponse toVersionResponse(ViewerConfigVersion version) {
+    private VersionResponse toVersionResponse(ViewerConfigVersion version, boolean isCurrent) {
         return new VersionResponse(version.id().toString(), version.galleryId().toString(), version.configJson(),
                 version.presetName(), version.schemaVersion(), version.createdAt(),
-                version.createdByUserId() == null ? null : version.createdByUserId().toString());
+                version.createdByUserId() == null ? null : version.createdByUserId().toString(),
+                Long.toString(version.versionNumber()), version.title(), version.note(), isCurrent);
+    }
+
+    private boolean isCurrent(UUID galleryId, UUID versionId) {
+        return configFacade.getConfig(galleryId)
+                .map(GalleryViewerConfig::publishedVersionId)
+                .map(versionId::equals)
+                .orElse(false);
     }
 
     public record SaveConfigRequest(@NotBlank String configJson, String presetName, Integer schemaVersion) {}
-    public record PublishConfigRequest(Integer schemaVersion) {}
+    public record PublishConfigRequest(Integer schemaVersion, String title, String note) {}
+    public record VersionMetadataRequest(String title, String note) {}
     public record RollbackConfigRequest(@NotBlank String versionId) {}
     public record ToggleConfigRequest(boolean enabled) {}
 
@@ -123,7 +182,8 @@ public class GalleryViewerConfigController {
 
     public record VersionResponse(
             String id, String galleryId, String configJson, String presetName,
-            int schemaVersion, Instant createdAt, String createdByUserId
+            int schemaVersion, Instant createdAt, String createdByUserId,
+            String versionNumber, String title, String note, boolean isCurrent
     ) {}
 
     public record VersionPageResponse(List<VersionResponse> items, int page, int pageSize, long total) {}

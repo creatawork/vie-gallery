@@ -1,5 +1,6 @@
 package cn.vie.vibe.gallery.api;
 
+import cn.vie.vibe.gallery.GalleryApiApplication;
 import cn.vie.vibe.gallery.application.ViewerConfigVersionRepository;
 import cn.vie.vibe.gallery.domain.ViewerConfigVersion;
 import org.junit.jupiter.api.Test;
