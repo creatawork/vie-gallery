@@ -1,6 +1,7 @@
 package cn.vie.vibe.gallery.infrastructure;
 
 import cn.vie.vibe.gallery.domain.ViewerConfigVersion;
+import cn.vie.vibe.gallery.domain.DomainException;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -67,6 +68,18 @@ class DevViewerConfigVersionRepositoryTest {
         assertEquals(1, repository.countByGallery(tenantId, galleryId));
         assertEquals(published.id(), repository.findPublishedByGallery(tenantId, galleryId).orElseThrow().id());
         assertEquals(2, repository.allocateVersionNumber(tenantId, galleryId));
+    }
+
+    @Test
+    void exhaustedVersionCounterReturnsPublishFailureWithoutAllocating() {
+        repository.save(ViewerConfigVersion.create(tenantId, galleryId, Long.MAX_VALUE,
+                "{}", "default", 1, null, null, null));
+
+        DomainException error = assertThrows(DomainException.class,
+                () -> repository.allocateVersionNumber(tenantId, galleryId));
+
+        assertEquals("CONFIG_VERSION_PUBLISH_FAILED", error.code());
+        assertEquals(1, repository.countByGallery(tenantId, galleryId));
     }
 
     @Test

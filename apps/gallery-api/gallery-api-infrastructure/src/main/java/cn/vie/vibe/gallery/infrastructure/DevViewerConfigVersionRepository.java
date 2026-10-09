@@ -1,6 +1,7 @@
 package cn.vie.vibe.gallery.infrastructure;
 
 import cn.vie.vibe.gallery.application.ViewerConfigVersionRepository;
+import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.ViewerConfigVersion;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -112,7 +113,12 @@ class DevViewerConfigVersionRepository implements ViewerConfigVersionRepository 
     @Override
     public long allocateVersionNumber(UUID tenantId, UUID galleryId) {
         GalleryKey key = new GalleryKey(tenantId, galleryId);
-        return withLock(key, () -> counters.compute(key, (ignored, current) -> Math.addExact(current == null ? 0L : current, 1L)));
+        try {
+            return withLock(key, () -> counters.compute(key,
+                    (ignored, current) -> Math.addExact(current == null ? 0L : current, 1L)));
+        } catch (ArithmeticException exception) {
+            throw new DomainException("CONFIG_VERSION_PUBLISH_FAILED", "Configuration version number space is exhausted");
+        }
     }
 
     @Override

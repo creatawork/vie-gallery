@@ -99,10 +99,16 @@ public class GalleryViewerConfigFacade {
 
     @Transactional
     public ViewerConfigVersion publishConfig(UUID galleryId, Integer requestedSchemaVersion) {
+        return publishConfig(galleryId, requestedSchemaVersion, null, null);
+    }
+
+    @Transactional
+    public ViewerConfigVersion publishConfig(UUID galleryId, Integer requestedSchemaVersion, String title, String note) {
         TenantContext context = authorization.requireEditor();
         requireSchema(requestedSchemaVersion);
         requireVersioningEnabled();
         requireGallery(context, galleryId);
+        ViewerConfigVersionMetadata metadata = ViewerConfigVersionMetadata.of(title, note);
         return versionRepository.withGalleryLock(context.tenantId(), galleryId, () -> {
             GalleryViewerConfig draft = configRepository.findByGalleryId(galleryId)
                     .orElseThrow(() -> new DomainException("CONFIG_NOT_FOUND", "Viewer configuration not found"));
@@ -111,7 +117,7 @@ public class GalleryViewerConfigFacade {
             Instant now = Instant.now();
             ViewerConfigVersion version = ViewerConfigVersion.create(
                     context.tenantId(), galleryId, number, safeJson, draft.presetName(),
-                    draft.schemaVersion(), null, null, context.userId());
+                    draft.schemaVersion(), metadata.title(), metadata.note(), context.userId());
             versionRepository.save(version);
             if (versionRepository.publish(context.tenantId(), galleryId, version.id(), now) == 0) {
                 throw new DomainException("CONFIG_VERSION_PUBLISH_FAILED", "Unable to publish viewer configuration");
@@ -139,6 +145,71 @@ public class GalleryViewerConfigFacade {
 
     public ViewerConfigVersionPage listVersions(UUID galleryId) {
         return listVersions(galleryId, 0, 20);
+    }
+
+    public ViewerConfigVersion getVersion(UUID galleryId, UUID versionId) {
+        TenantContext context = authorization.requireViewer();
+        requireVersioningEnabled();
+        requireGallery(context, galleryId);
+        return versionRepository.findById(context.tenantId(), galleryId, versionId)
+                .orElseThrow(() -> new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found"));
+    }
+
+    @Transactional
+    public ViewerConfigVersion updateVersionMetadata(UUID galleryId, UUID versionId, String title, String note) {
+        TenantContext context = authorization.requireEditor();
+        requireVersioningEnabled();
+        requireGallery(context, galleryId);
+        ViewerConfigVersionMetadata metadata = ViewerConfigVersionMetadata.of(title, note);
+        return versionRepository.withGalleryLock(context.tenantId(), galleryId, () -> {
+            if (versionRepository.findById(context.tenantId(), galleryId, versionId).isEmpty()) {
+                throw new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found");
+            }
+            if (versionRepository.updateMetadata(context.tenantId(), galleryId, versionId,
+                    metadata.title(), metadata.note(), Instant.now(), context.userId()) == 0) {
+                throw new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found");
+            }
+            return versionRepository.findById(context.tenantId(), galleryId, versionId)
+                    .orElseThrow(() -> new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found"));
+        });
+    }
+
+    @Transactional
+    public GalleryViewerConfig restoreVersion(UUID galleryId, UUID versionId) {
+        TenantContext context = authorization.requireEditor();
+        requireVersioningEnabled();
+        requireGallery(context, galleryId);
+        return versionRepository.withGalleryLock(context.tenantId(), galleryId, () -> {
+            ViewerConfigVersion source = versionRepository.findById(context.tenantId(), galleryId, versionId)
+                    .orElseThrow(() -> new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found"));
+            requireSchema(source.schemaVersion());
+            String safeJson = validator.validate(source.configJson(), source.schemaVersion());
+            GalleryViewerConfig draft = configRepository.findByGalleryId(galleryId)
+                    .orElseGet(() -> GalleryViewerConfig.create(galleryId, safeJson, source.presetName()));
+            GalleryViewerConfig restored = draft.withDraft(safeJson, source.presetName(), context.userId());
+            configRepository.save(restored);
+            return restored;
+        });
+    }
+
+    @Transactional
+    public void deleteVersion(UUID galleryId, UUID versionId) {
+        TenantContext context = authorization.requireEditor();
+        requireVersioningEnabled();
+        requireGallery(context, galleryId);
+        versionRepository.withGalleryLock(context.tenantId(), galleryId, () -> {
+            ViewerConfigVersion version = versionRepository.findByIdIncludingDeleted(context.tenantId(), galleryId, versionId)
+                    .orElseThrow(() -> new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found"));
+            if (versionRepository.findPublishedByGallery(context.tenantId(), galleryId)
+                    .map(current -> current.id().equals(versionId)).orElse(false)) {
+                throw new DomainException("CONFIG_VERSION_CURRENT", "The current viewer configuration version cannot be deleted");
+            }
+            if (version.deletedAt() != null) return null;
+            if (versionRepository.softDelete(context.tenantId(), galleryId, versionId, Instant.now(), context.userId()) == 0) {
+                throw new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found");
+            }
+            return null;
+        });
     }
 
     @Transactional

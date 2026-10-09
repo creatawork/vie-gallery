@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GalleryViewerConfigVersioningTest {
@@ -44,13 +45,16 @@ class GalleryViewerConfigVersioningTest {
         UUID galleryId = UUID.randomUUID();
         Fixture fixture = fixture(galleryId, MembershipRole.EDITOR);
         fixture.facade.saveConfig(galleryId, "{\"preset\":\"one\"}", "one");
-        ViewerConfigVersion first = fixture.facade.publishConfig(galleryId);
+        ViewerConfigVersion first = fixture.facade.publishConfig(galleryId, 1, " 第一版 ", "initial\nrelease");
         fixture.facade.saveConfig(galleryId, "{\"preset\":\"two\"}", "two");
         ViewerConfigVersion second = fixture.facade.publishConfig(galleryId);
 
         assertEquals(2, fixture.versions.versions.size());
         assertEquals(1L, first.versionNumber());
         assertEquals(2L, second.versionNumber());
+        assertEquals("第一版", first.title());
+        assertEquals("initial\nrelease", first.note());
+        assertNull(second.title());
         assertNotEquals(first.id(), second.id());
         assertEquals(second.id(), fixture.facade.getConfig(galleryId).orElseThrow().publishedVersionId());
         assertEquals("{\"preset\":\"two\"}", fixture.facade.getPublicConfig("demo").orElseThrow().configJson());
@@ -71,6 +75,68 @@ class GalleryViewerConfigVersioningTest {
         assertNotEquals(first.id(), rollback.id());
         assertEquals(first.configJson(), fixture.facade.getPublicConfig("demo").orElseThrow().configJson());
         assertEquals("one", fixture.facade.getConfig(galleryId).orElseThrow().presetName());
+    }
+
+    @Test
+    void restoreUpdatesOnlyDraftAndNextPublishKeepsTheSequence() {
+        UUID galleryId = UUID.randomUUID();
+        Fixture fixture = fixture(galleryId, MembershipRole.OWNER);
+        fixture.facade.saveConfig(galleryId, "{\"preset\":\"one\"}", "one");
+        ViewerConfigVersion first = fixture.facade.publishConfig(galleryId);
+        fixture.facade.saveConfig(galleryId, "{\"preset\":\"two\"}", "two");
+        ViewerConfigVersion second = fixture.facade.publishConfig(galleryId);
+
+        GalleryViewerConfig restored = fixture.facade.restoreVersion(galleryId, first.id());
+
+        assertEquals(first.configJson(), restored.configJson());
+        assertEquals(second.id(), restored.publishedVersionId());
+        assertEquals(second.configJson(), fixture.facade.getPublicConfig("demo").orElseThrow().configJson());
+        assertEquals(2, fixture.versions.versions.size());
+        assertEquals(3L, fixture.facade.publishConfig(galleryId).versionNumber());
+    }
+
+    @Test
+    void deletedVersionIsHiddenAndDeleteIsIdempotentButCurrentVersionIsProtected() {
+        UUID galleryId = UUID.randomUUID();
+        Fixture fixture = fixture(galleryId, MembershipRole.OWNER);
+        fixture.facade.saveConfig(galleryId, "{\"preset\":\"one\"}", "one");
+        ViewerConfigVersion first = fixture.facade.publishConfig(galleryId);
+        fixture.facade.saveConfig(galleryId, "{\"preset\":\"two\"}", "two");
+        ViewerConfigVersion current = fixture.facade.publishConfig(galleryId);
+
+        fixture.facade.deleteVersion(galleryId, first.id());
+        fixture.facade.deleteVersion(galleryId, first.id());
+
+        assertEquals(1, fixture.facade.listVersions(galleryId).total());
+        DomainException read = assertThrows(DomainException.class, () -> fixture.facade.getVersion(galleryId, first.id()));
+        assertEquals("CONFIG_VERSION_NOT_FOUND", read.code());
+        DomainException edit = assertThrows(DomainException.class,
+                () -> fixture.facade.updateVersionMetadata(galleryId, first.id(), "gone", null));
+        assertEquals("CONFIG_VERSION_NOT_FOUND", edit.code());
+        DomainException restore = assertThrows(DomainException.class, () -> fixture.facade.restoreVersion(galleryId, first.id()));
+        assertEquals("CONFIG_VERSION_NOT_FOUND", restore.code());
+        DomainException deleteCurrent = assertThrows(DomainException.class,
+                () -> fixture.facade.deleteVersion(galleryId, current.id()));
+        assertEquals("CONFIG_VERSION_CURRENT", deleteCurrent.code());
+    }
+
+    @Test
+    void metadataUpdateChangesOnlyMetadataAndRollbackCreatesAnUnnamedVersion() {
+        UUID galleryId = UUID.randomUUID();
+        Fixture fixture = fixture(galleryId, MembershipRole.OWNER);
+        fixture.facade.saveConfig(galleryId, "{}", "default");
+        ViewerConfigVersion original = fixture.facade.publishConfig(galleryId);
+        ViewerConfigVersion edited = fixture.facade.updateVersionMetadata(galleryId, original.id(), " 春季 ", " note ");
+
+        assertEquals("春季", edited.title());
+        assertEquals("note", edited.note());
+        assertEquals(original.configJson(), edited.configJson());
+        assertEquals(original.createdAt(), edited.createdAt());
+        ViewerConfigVersion rollback = fixture.facade.rollbackConfig(galleryId, edited.id());
+        assertNotEquals(original.id(), rollback.id());
+        assertEquals(2L, rollback.versionNumber());
+        assertNull(rollback.title());
+        assertNull(rollback.note());
     }
 
     @Test
@@ -116,6 +182,20 @@ class GalleryViewerConfigVersioningTest {
         assertEquals(count, fixture.versions.versions.size());
         assertEquals(configWrites, fixture.configs.writes);
         assertEquals(published.id(), fixture.versions.published.get(galleryId));
+    }
+
+    @Test
+    void invalidPublishMetadataIsRejectedBeforeAllocatingOrSaving() {
+        UUID galleryId = UUID.randomUUID();
+        Fixture fixture = fixture(galleryId, MembershipRole.OWNER);
+        fixture.facade.saveConfig(galleryId, "{}", "default");
+
+        DomainException invalid = assertThrows(DomainException.class,
+                () -> fixture.facade.publishConfig(galleryId, 1, "x".repeat(61), null));
+
+        assertEquals("CONFIG_VERSION_METADATA_INVALID", invalid.code());
+        assertEquals(0, fixture.versions.versions.size());
+        assertNull(fixture.configs.values.get(galleryId).publishedVersionId());
     }
 
     private static Fixture fixture(UUID galleryId, MembershipRole role) {
