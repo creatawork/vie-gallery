@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 public class GalleryViewerConfigFacade {
     private final GalleryViewerConfigRepository configRepository;
@@ -82,12 +83,14 @@ public class GalleryViewerConfigFacade {
         TenantContext context = authorization.requireEditor();
         requireSchema(requestedSchemaVersion);
         requireGallery(context, galleryId);
-        String safeJson = validator.validate(configJson, requestedSchemaVersion == null ? 1 : requestedSchemaVersion);
-        GalleryViewerConfig config = configRepository.findByGalleryId(galleryId)
-                .map(existing -> existing.withUpdate(safeJson, presetName, context.userId()))
-                .orElseGet(() -> GalleryViewerConfig.create(galleryId, safeJson, presetName));
-        configRepository.save(config);
-        return config;
+        return withGalleryLock(context, galleryId, () -> {
+            String safeJson = validator.validate(configJson, requestedSchemaVersion == null ? 1 : requestedSchemaVersion);
+            GalleryViewerConfig config = configRepository.findByGalleryId(galleryId)
+                    .map(existing -> existing.withUpdate(safeJson, presetName, context.userId()))
+                    .orElseGet(() -> GalleryViewerConfig.create(galleryId, safeJson, presetName));
+            configRepository.save(config);
+            return config;
+        });
     }
 
     public GalleryViewerConfig saveConfig(UUID galleryId, String configJson, String presetName) {
@@ -100,19 +103,22 @@ public class GalleryViewerConfigFacade {
         requireSchema(requestedSchemaVersion);
         requireVersioningEnabled();
         requireGallery(context, galleryId);
-        GalleryViewerConfig draft = configRepository.findByGalleryId(galleryId)
-                .orElseThrow(() -> new DomainException("CONFIG_NOT_FOUND", "Viewer configuration not found"));
-        String safeJson = validator.validate(draft.configJson(), draft.schemaVersion());
-        Instant now = Instant.now();
-        ViewerConfigVersion version = ViewerConfigVersion.create(
-                context.tenantId(), galleryId, safeJson, draft.presetName(),
-                draft.schemaVersion(), context.userId());
-        versionRepository.save(version);
-        if (versionRepository.publish(context.tenantId(), galleryId, version.id(), now) == 0) {
-            throw new DomainException("CONFIG_VERSION_PUBLISH_FAILED", "Unable to publish viewer configuration");
-        }
-        configRepository.save(draft.withPublishedVersion(version.id(), now));
-        return version;
+        return versionRepository.withGalleryLock(context.tenantId(), galleryId, () -> {
+            GalleryViewerConfig draft = configRepository.findByGalleryId(galleryId)
+                    .orElseThrow(() -> new DomainException("CONFIG_NOT_FOUND", "Viewer configuration not found"));
+            String safeJson = validator.validate(draft.configJson(), draft.schemaVersion());
+            long number = versionRepository.allocateVersionNumber(context.tenantId(), galleryId);
+            Instant now = Instant.now();
+            ViewerConfigVersion version = ViewerConfigVersion.create(
+                    context.tenantId(), galleryId, number, safeJson, draft.presetName(),
+                    draft.schemaVersion(), null, null, context.userId());
+            versionRepository.save(version);
+            if (versionRepository.publish(context.tenantId(), galleryId, version.id(), now) == 0) {
+                throw new DomainException("CONFIG_VERSION_PUBLISH_FAILED", "Unable to publish viewer configuration");
+            }
+            configRepository.save(draft.withPublishedVersion(version.id(), now));
+            return version;
+        });
     }
 
     public ViewerConfigVersion publishConfig(UUID galleryId) {
@@ -140,34 +146,49 @@ public class GalleryViewerConfigFacade {
         TenantContext context = authorization.requireEditor();
         requireVersioningEnabled();
         requireGallery(context, galleryId);
-        ViewerConfigVersion source = versionRepository.findById(context.tenantId(), galleryId, versionId)
-                .orElseThrow(() -> new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found"));
-        String safeJson = validator.validate(source.configJson(), source.schemaVersion());
-        Instant now = Instant.now();
-        ViewerConfigVersion rollback = ViewerConfigVersion.create(
-                context.tenantId(), galleryId, safeJson, source.presetName(), source.schemaVersion(), context.userId());
-        versionRepository.save(rollback);
-        if (versionRepository.publish(context.tenantId(), galleryId, rollback.id(), now) == 0) {
-            throw new DomainException("CONFIG_VERSION_PUBLISH_FAILED", "Unable to publish rolled back configuration");
-        }
-        GalleryViewerConfig draft = configRepository.findByGalleryId(galleryId)
-                .orElseGet(() -> GalleryViewerConfig.create(galleryId, safeJson, source.presetName()));
-        configRepository.save(draft.withUpdate(safeJson, source.presetName(), context.userId())
-                .withPublishedVersion(rollback.id(), now));
-        return rollback;
+        return versionRepository.withGalleryLock(context.tenantId(), galleryId, () -> {
+            ViewerConfigVersion source = versionRepository.findById(context.tenantId(), galleryId, versionId)
+                    .orElseThrow(() -> new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found"));
+            String safeJson = validator.validate(source.configJson(), source.schemaVersion());
+            long number = versionRepository.allocateVersionNumber(context.tenantId(), galleryId);
+            Instant now = Instant.now();
+            ViewerConfigVersion rollback = ViewerConfigVersion.create(
+                    context.tenantId(), galleryId, number, safeJson, source.presetName(), source.schemaVersion(),
+                    null, null, context.userId());
+            versionRepository.save(rollback);
+            if (versionRepository.publish(context.tenantId(), galleryId, rollback.id(), now) == 0) {
+                throw new DomainException("CONFIG_VERSION_PUBLISH_FAILED", "Unable to publish rolled back configuration");
+            }
+            GalleryViewerConfig draft = configRepository.findByGalleryId(galleryId)
+                    .orElseGet(() -> GalleryViewerConfig.create(galleryId, safeJson, source.presetName()));
+            configRepository.save(draft.withUpdate(safeJson, source.presetName(), context.userId())
+                    .withPublishedVersion(rollback.id(), now));
+            return rollback;
+        });
     }
 
     public void deleteConfig(UUID galleryId) {
         TenantContext context = authorization.requireEditor();
         requireGallery(context, galleryId);
-        configRepository.deleteByGalleryId(galleryId);
-        if (versionRepository != null) versionRepository.clearPublished(context.tenantId(), galleryId);
+        withGalleryLock(context, galleryId, () -> {
+            configRepository.deleteByGalleryId(galleryId);
+            if (versionRepository != null) versionRepository.clearPublished(context.tenantId(), galleryId);
+            return null;
+        });
     }
 
     public void toggleConfig(UUID galleryId, boolean enabled) {
         TenantContext context = authorization.requireEditor();
         requireGallery(context, galleryId);
-        configRepository.findByGalleryId(galleryId).ifPresent(config -> configRepository.save(config.withEnabled(enabled)));
+        withGalleryLock(context, galleryId, () -> {
+            configRepository.findByGalleryId(galleryId).ifPresent(config -> configRepository.save(config.withEnabled(enabled)));
+            return null;
+        });
+    }
+
+    private <T> T withGalleryLock(TenantContext context, UUID galleryId, Supplier<T> action) {
+        return versionRepository == null ? action.get()
+                : versionRepository.withGalleryLock(context.tenantId(), galleryId, action);
     }
 
     private void requireVersioningEnabled() {

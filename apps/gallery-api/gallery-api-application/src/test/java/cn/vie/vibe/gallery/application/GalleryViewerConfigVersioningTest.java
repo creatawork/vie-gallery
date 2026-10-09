@@ -49,6 +49,8 @@ class GalleryViewerConfigVersioningTest {
         ViewerConfigVersion second = fixture.facade.publishConfig(galleryId);
 
         assertEquals(2, fixture.versions.versions.size());
+        assertEquals(1L, first.versionNumber());
+        assertEquals(2L, second.versionNumber());
         assertNotEquals(first.id(), second.id());
         assertEquals(second.id(), fixture.facade.getConfig(galleryId).orElseThrow().publishedVersionId());
         assertEquals("{\"preset\":\"two\"}", fixture.facade.getPublicConfig("demo").orElseThrow().configJson());
@@ -106,7 +108,7 @@ class GalleryViewerConfigVersioningTest {
         assertEquals(configWrites, fixture.configs.writes);
         // Deliberately corrupt storage to exercise old invalid snapshots.
         fixture.configs.values.put(galleryId, GalleryViewerConfig.create(galleryId, "[]", "bad"));
-        ViewerConfigVersion corrupt = ViewerConfigVersion.create(TENANT_ID, galleryId, "[]", "bad", 1, USER_ID);
+        ViewerConfigVersion corrupt = ViewerConfigVersion.create(TENANT_ID, galleryId, 2, "[]", "bad", 1, null, null, USER_ID);
         fixture.versions.versions.add(corrupt);
         int count = fixture.versions.versions.size();
         assertThrows(DomainException.class, () -> fixture.facade.publishConfig(galleryId));
@@ -155,27 +157,34 @@ class GalleryViewerConfigVersioningTest {
     private static final class InMemoryVersionRepository implements ViewerConfigVersionRepository {
         private final List<ViewerConfigVersion> versions = new ArrayList<>();
         private final java.util.Map<UUID, UUID> published = new java.util.HashMap<>();
+        private final java.util.Map<UUID, Long> counters = new java.util.HashMap<>();
+        private final java.util.concurrent.ConcurrentMap<UUID, Object> locks = new java.util.concurrent.ConcurrentHashMap<>();
 
         @Override
         public void save(ViewerConfigVersion version) {
             versions.add(version);
+            counters.merge(version.galleryId(), version.versionNumber(), Math::max);
         }
 
         @Override
         public List<ViewerConfigVersion> findByGallery(UUID tenantId, UUID galleryId, int offset, int limit) {
             return versions.stream()
-                    .filter(v -> v.tenantId().equals(tenantId) && v.galleryId().equals(galleryId))
-                    .sorted(Comparator.comparing(ViewerConfigVersion::createdAt).reversed())
+                    .filter(v -> v.tenantId().equals(tenantId) && v.galleryId().equals(galleryId) && v.deletedAt() == null)
+                    .sorted(Comparator.comparingLong(ViewerConfigVersion::versionNumber).reversed())
                     .skip(offset).limit(limit).toList();
         }
 
         @Override
         public long countByGallery(UUID tenantId, UUID galleryId) {
-            return versions.stream().filter(v -> v.tenantId().equals(tenantId) && v.galleryId().equals(galleryId)).count();
+            return versions.stream().filter(v -> v.tenantId().equals(tenantId) && v.galleryId().equals(galleryId) && v.deletedAt() == null).count();
         }
 
         @Override
         public Optional<ViewerConfigVersion> findById(UUID tenantId, UUID galleryId, UUID versionId) {
+            return findByIdIncludingDeleted(tenantId, galleryId, versionId).filter(v -> v.deletedAt() == null);
+        }
+
+        @Override public Optional<ViewerConfigVersion> findByIdIncludingDeleted(UUID tenantId, UUID galleryId, UUID versionId) {
             return versions.stream().filter(v -> v.id().equals(versionId) && v.tenantId().equals(tenantId)
                     && v.galleryId().equals(galleryId)).findFirst();
         }
@@ -196,6 +205,28 @@ class GalleryViewerConfigVersioningTest {
         @Override
         public int clearPublished(UUID tenantId, UUID galleryId) {
             return published.remove(galleryId) == null ? 0 : 1;
+        }
+
+        @Override public void lockGallery(UUID tenantId, UUID galleryId) { }
+        @Override public <T> T withGalleryLock(UUID tenantId, UUID galleryId, java.util.function.Supplier<T> action) {
+            synchronized (locks.computeIfAbsent(galleryId, ignored -> new Object())) { return action.get(); }
+        }
+        @Override public long allocateVersionNumber(UUID tenantId, UUID galleryId) {
+            long next = Math.addExact(counters.getOrDefault(galleryId, 0L), 1L);
+            counters.put(galleryId, next);
+            return next;
+        }
+        @Override public int updateMetadata(UUID tenantId, UUID galleryId, UUID versionId, String title, String note, Instant at, UUID actor) {
+            var version = findById(tenantId, galleryId, versionId).orElse(null);
+            if (version == null) return 0;
+            versions.set(versions.indexOf(version), version.withMetadata(title, note, at, actor));
+            return 1;
+        }
+        @Override public int softDelete(UUID tenantId, UUID galleryId, UUID versionId, Instant at, UUID actor) {
+            var version = findById(tenantId, galleryId, versionId).orElse(null);
+            if (version == null) return 0;
+            versions.set(versions.indexOf(version), version.deleted(at, actor));
+            return 1;
         }
     }
 

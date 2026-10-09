@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 public interface ViewerConfigVersionRepository {
     void save(ViewerConfigVersion version);
@@ -21,4 +22,17 @@ public interface ViewerConfigVersionRepository {
     int publish(UUID tenantId, UUID galleryId, UUID versionId, Instant publishedAt);
 
     int clearPublished(UUID tenantId, UUID galleryId);
+
+    void lockGallery(UUID tenantId, UUID galleryId);
+
+    <T> T withGalleryLock(UUID tenantId, UUID galleryId, Supplier<T> action);
+
+    long allocateVersionNumber(UUID tenantId, UUID galleryId);
+
+    Optional<ViewerConfigVersion> findByIdIncludingDeleted(UUID tenantId, UUID galleryId, UUID versionId);
+
+    int updateMetadata(UUID tenantId, UUID galleryId, UUID versionId,
+                       String title, String note, Instant at, UUID actor);
+
+    int softDelete(UUID tenantId, UUID galleryId, UUID versionId, Instant at, UUID actor);
 }

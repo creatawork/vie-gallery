@@ -703,6 +703,12 @@ class PublicAccessFacadeTest {
                 }
                 public int publish(UUID tenantId, UUID galleryId, UUID versionId, Instant publishedAt) { return 0; }
                 public int clearPublished(UUID tenantId, UUID galleryId) { return 0; }
+                public void lockGallery(UUID tenantId, UUID galleryId) { }
+                public <T> T withGalleryLock(UUID tenantId, UUID galleryId, java.util.function.Supplier<T> action) { return action.get(); }
+                public long allocateVersionNumber(UUID tenantId, UUID galleryId) { return 1; }
+                public Optional<ViewerConfigVersion> findByIdIncludingDeleted(UUID tenantId, UUID galleryId, UUID versionId) { return Optional.empty(); }
+                public int updateMetadata(UUID tenantId, UUID galleryId, UUID versionId, String title, String note, Instant at, UUID actor) { return 0; }
+                public int softDelete(UUID tenantId, UUID galleryId, UUID versionId, Instant at, UUID actor) { return 0; }
             };
             this.facade = new PublicAccessFacade(
                     galleries, shareLinks, photos, storage, new FixedObjectStorage(),
@@ -717,9 +723,9 @@ class PublicAccessFacadeTest {
                     passwordHash, null, false, CREATED_AT);
             galleries.values.put(gallery.id(), gallery);
             published.put(gallery.id(), new ViewerConfigVersion(
-                    UUID.randomUUID(), tenantId, gallery.id(),
+                    UUID.randomUUID(), tenantId, gallery.id(), 1L,
                     "{\"visitorAllowDownload\":" + allowDownloadDefault + "}",
-                    "minimal", 1, CREATED_AT, null));
+                    "minimal", 1, CREATED_AT, null, null, null, null, null, null, null));
             return gallery;
         }
 
