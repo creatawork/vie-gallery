@@ -13,7 +13,10 @@ async function fixture(page: Page) {
     if (route.request().method() === 'PUT') { draft = route.request().postDataJSON().configJson; saves++ }
     await route.fulfill({ json: { configJson: draft, schemaVersion: 1 } })
   })
-  await page.route('**/api/galleries/config-fixture/viewer-config/versions**', route => route.fulfill({ json: { items: [] } }))
+  await page.route('**/api/galleries/config-fixture/viewer-config/versions**', route => {
+    const item = { id: 'version-1', galleryId: 'config-fixture', configJson: draft, schemaVersion: 1, createdAt: '2026-10-07T00:00:00Z', versionNumber: '1', title: null, note: null, isCurrent: true }
+    return route.fulfill({ json: route.request().url().includes('/versions?') ? { items: [item], total: 1, page: 0, pageSize: 20 } : item })
+  })
   return { draft: () => JSON.parse(draft), saves: () => saves, errors }
 }
 test('editor is usable while the preview token is still pending', async ({ page }) => {
@@ -232,6 +235,30 @@ test('invalid color blocks writes and preset reset preserves quality, downloads 
   expect(data.draft().extension).toEqual({ future: 42 }); expect(data.draft().customized).toBe(false)
   expect(data.errors).toEqual([])
 })
+
+test('publishing metadata counts Unicode code points and sends normalized optional fields', async ({ page }) => {
+  const data = await fixture(page)
+  let request: { title?: string | null; note?: string | null } | null = null
+  await page.route('**/api/galleries/config-fixture/viewer-config/publish', async route => {
+    request = route.request().postDataJSON()
+    await route.fulfill({ json: { id: 'version-2', versionNumber: '2', title: request?.title, note: request?.note, isCurrent: true, createdAt: '2026-10-08T00:00:00Z' } })
+  })
+  await page.goto('/app/galleries/config-fixture/config')
+  await page.getByRole('button', { name: '同步到访客端' }).click()
+  await page.getByLabel('版本名称（选填）').fill('春'.repeat(61))
+  await expect(page.getByRole('alert').filter({ hasText: '最多 60 个字符' })).toBeVisible()
+  await page.getByRole('button', { name: '确认同步' }).click()
+  expect(request).toBeNull()
+
+  await page.getByLabel('版本名称（选填）').fill(`  ${'春'.repeat(60)}  `)
+  await page.getByLabel('备注（选填）').fill('第一行 😀\n第二行')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.getByRole('button', { name: '确认同步' }).click()
+  await expect.poll(() => request?.title).toBe('春'.repeat(60))
+  expect(request?.note).toBe('第一行 😀\n第二行')
+  expect(data.errors).toEqual([])
+})
+
 test('draft and publish states are explicit, and a draft gallery can go live in one click from config', async ({ page }) => {
   let draft = JSON.stringify({ ...VIEWER_PRESETS['film-gallery'] })
   const calls: string[] = []

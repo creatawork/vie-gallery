@@ -27,6 +27,7 @@ async function mockWorkspace(page: import('@playwright/test').Page, options: {
   const gallery = options.gallery ?? draftGallery
   let uploaded = options.startUploaded ?? false
   let published = false
+  let configPublished = false
   let savedConfig: unknown = null
   const calls: string[] = []
   await page.route('**/api/auth/csrf', route => route.fulfill({ json: { token: 'e2e-csrf-token' } }))
@@ -63,7 +64,7 @@ async function mockWorkspace(page: import('@playwright/test').Page, options: {
       galleryStatus: published ? 'PUBLISHED' : 'DRAFT',
       readyPhotoCount: uploaded || gallery.photoCount > 0 ? 1 : 0,
       galleryPublishable: !published,
-      configDraftChanged: !options.hasConfigDraft && !published,
+      configDraftChanged: !options.hasConfigDraft && !configPublished && !published,
       publishedConfigVersionId: null, draftConfigVersionId: null,
       publishedAt: published ? '2026-10-07T01:00:00Z' : null, lastConfigPublishedAt: null,
       blockers: []
@@ -84,7 +85,8 @@ async function mockWorkspace(page: import('@playwright/test').Page, options: {
   })
   await page.route(new RegExp(`/api/galleries/${GALLERY_ID}/viewer-config/publish$`), async route => {
     calls.push('config-publish')
-    await route.fulfill({ json: { id: 'version-1', versionNumber: 1, createdAt: '2026-10-07T00:00:00Z' } })
+    configPublished = true
+    await route.fulfill({ json: { id: 'version-1', versionNumber: '1', title: null, note: null, isCurrent: true, createdAt: '2026-10-07T00:00:00Z' } })
   })
   await page.route(new RegExp(`/api/galleries/${GALLERY_ID}/publish$`), async route => {
     calls.push('gallery-publish')
@@ -99,6 +101,7 @@ test('publishing a never-configured gallery auto-creates the recommended scene d
   await page.goto(`/app/galleries/${GALLERY_ID}`)
   // 页面同时存在 hero 与就绪横幅两个“发布展厅”按钮（Task 7 之后），.first() 取 hero 的那个；两者走同一条 publishAll 链路
   await page.getByRole('button', { name: '发布展厅' }).first().click()
+  await page.getByRole('button', { name: '确认发布' }).click()
   await expect(page.getByText('展厅及配置已成功发布至访客端！')).toBeVisible()
   expect(data.calls()).toEqual(['put-config', 'config-publish', 'gallery-publish'])
   const saved = data.savedConfig() as { configJson: string; presetName: string }
@@ -118,6 +121,7 @@ test('publish nudge appears ready after upload, hides without publish capability
   await expect(nudge.getByRole('button', { name: '调整场景' })).toBeVisible()
   // 点击“发布展厅”走 Task 6 的完整链路
   await nudge.getByRole('button', { name: '发布展厅' }).click()
+  await page.getByRole('button', { name: '确认发布' }).click()
   await expect(page.getByText('展厅及配置已成功发布至访客端！')).toBeVisible()
   expect(data.calls()).toEqual(['put-config', 'config-publish', 'gallery-publish'])
   await expect(page.locator('.publish-nudge')).toHaveCount(0)
@@ -159,7 +163,31 @@ test('full first-publish funnel: upload finishes, nudge turns ready, one click g
   await page.reload()
   await expect(page.locator('.publish-nudge.is-ready')).toBeVisible({ timeout: 15_000 })
   await page.locator('.publish-nudge.is-ready').getByRole('button', { name: '发布展厅' }).click()
+  await page.getByRole('button', { name: '确认发布' }).click()
   await expect(page.getByText('展厅及配置已成功发布至访客端！')).toBeVisible()
   expect(data.calls()).toEqual(['put-config', 'config-publish', 'gallery-publish'])
   await expect(page.getByRole('button', { name: '分享', exact: true })).toBeVisible()
+})
+
+test('gallery retry after config succeeds does not publish another config version', async ({ page }) => {
+  const data = await mockWorkspace(page, { hasConfigDraft: false })
+  let galleryAttempts = 0
+  await page.route(new RegExp(`/api/galleries/${GALLERY_ID}/publish$`), async route => {
+    galleryAttempts++
+    if (galleryAttempts === 1) {
+      await route.fulfill({ status: 500, json: { message: '服务暂时不可用' } })
+      return
+    }
+    await route.fallback()
+  })
+  await page.goto(`/app/galleries/${GALLERY_ID}`)
+  await page.getByRole('button', { name: '发布展厅' }).first().click()
+  await page.getByRole('button', { name: '确认发布' }).click()
+  await expect(page.getByText(/配置版本 v1 已生效，相册发布失败/)).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: '发布展厅' }).first().click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByText('展厅及配置已成功发布至访客端！')).toBeVisible()
+  expect(data.calls().filter(call => call === 'config-publish')).toHaveLength(1)
+  expect(galleryAttempts).toBe(2)
 })

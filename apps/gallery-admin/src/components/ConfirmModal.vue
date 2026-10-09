@@ -52,6 +52,10 @@ const { root } = useModalFocus(computed(() => props.show), {
           </div>
         </div>
 
+        <div v-if="$slots.default" class="modal-content">
+          <slot />
+        </div>
+
         <div class="modal-actions">
           <button
             type="button"
@@ -182,6 +186,8 @@ const { root } = useModalFocus(computed(() => props.show), {
   justify-content: flex-end;
   gap: 10px;
 }
+
+.modal-content { margin: -8px 0 20px; }
 
 .modal-actions .btn {
   animation: modal-button-slide 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.25s both;

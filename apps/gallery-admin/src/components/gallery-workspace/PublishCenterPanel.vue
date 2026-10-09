@@ -133,7 +133,7 @@ function formatDateTime(value?: string | null) {
           v-if="canPublish"
           class="btn btn-primary"
           type="button"
-          :disabled="hasBlockers || publishing || (!hasChangesToPublish && isPublished)"
+          :disabled="loading || hasBlockers || publishing || (!hasChangesToPublish && isPublished)"
           @click="emit('publish')"
         >
           <Icon v-if="publishing" name="refresh" :size="15" class="spinning" />

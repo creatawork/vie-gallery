@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { ShareLinkStatus } from '@vie/gallery-contracts'
+import type { ShareLinkStatus, ViewerConfigVersion } from '@vie/gallery-contracts'
 import { RECOMMENDED_SCENE_PRESET, SCENE_PRESETS } from '@vie/gallery-contracts'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
@@ -8,6 +8,7 @@ import { useAuth } from '../composables/useAuth'
 import { useGalleryWorkspace, type WorkspacePhoto } from '../composables/useGalleryWorkspace'
 import { useUploadTasks, type UploadTask } from '../composables/useUploadTasks'
 import { usePublishCenter } from '../composables/usePublishCenter'
+import { useConfigVersionMetadata } from '../composables/useConfigVersionMetadata'
 import { apiFetch } from '../api'
 import { openCreatorPreview } from '../lib/preview'
 import Icon from '../components/Icon.vue'
@@ -21,6 +22,7 @@ import GalleryPhotoList from '../components/gallery-workspace/GalleryPhotoList.v
 import UploadTaskCenter from '../components/gallery-workspace/UploadTaskCenter.vue'
 import PublishCenterPanel from '../components/gallery-workspace/PublishCenterPanel.vue'
 import ShareDeliveryPanel from '../components/gallery-workspace/ShareDeliveryPanel.vue'
+import VersionMetadataFields from '../components/gallery-config/VersionMetadataFields.vue'
 
 type LightboxPhoto = Omit<WorkspacePhoto, 'title'> & { title?: string }
 
@@ -43,6 +45,8 @@ const publishCenter = usePublishCenter(
   galleryId,
   computed(() => !!currentUser.value && !authLoading.value && !!workspace.gallery.value)
 )
+const versionMetadata = useConfigVersionMetadata()
+const showPublishMetadata = ref(false)
 
 const photoViewMode = ref<'grid' | 'list'>('grid')
 const photoGridRef = ref<{ clearSelection: () => void } | null>(null)
@@ -215,11 +219,32 @@ async function handlePublish() {
 
 async function handlePublishAll() {
   if (!canPublish.value) return
+  await publishCenter.loadReadiness()
+  if (publishCenter.error.value) {
+    toast.error(publishCenter.error.value)
+    return
+  }
+  if (publishCenter.readiness.value?.configDraftChanged) {
+    versionMetadata.reset()
+    showPublishMetadata.value = true
+    return
+  }
+  await confirmPublishAll()
+}
+
+async function confirmPublishAll() {
+  if (!canPublish.value || !versionMetadata.valid.value) return
   try {
-    await publishCenter.publishAll()
+    await publishCenter.publishAll(versionMetadata.toRequest())
     await workspace.reload()
+    showPublishMetadata.value = false
+    versionMetadata.reset()
     toast.success('展厅及配置已成功发布至访客端！')
   } catch (error) {
+    if (publishCenter.appliedConfigVersion.value) {
+      showPublishMetadata.value = false
+      versionMetadata.reset()
+    }
     toast.error(error instanceof Error ? error.message : '发布失败，请重试。')
   }
 }
@@ -487,10 +512,9 @@ async function loadGalleryConfig() {
       return
     }
     if (data.publishedVersionId) {
-      const versionsRes = await apiFetch(`/api/galleries/${gId}/viewer-config/versions?page=0&pageSize=50`)
-      if (!versionsRes.ok) return
-      const versions = await versionsRes.json() as { items?: Array<{ id: string; configJson?: string }> }
-      const published = (versions.items || []).find(item => item.id === data.publishedVersionId)
+      const versionRes = await apiFetch(`/api/galleries/${gId}/viewer-config/versions/${data.publishedVersionId}`)
+      if (!versionRes.ok) return
+      const published = await versionRes.json() as ViewerConfigVersion
       if (published?.configJson) {
         const parsed = JSON.parse(published.configJson) as { visitorAllowDownload?: boolean }
         visitorAllowDownload.value = !!parsed.visitorAllowDownload
@@ -782,6 +806,23 @@ async function openShareModal() {
       @open-config="goToConfig"
       @gallery-updated="workspace.reload"
     />
+
+    <ConfirmModal
+      :show="showPublishMetadata"
+      title="发布展厅配置"
+      message="系统会自动分配配置版本编号。名称和备注仅用于管理，不会影响访客看到的照片。"
+      confirm-text="确认发布"
+      :loading="publishCenter.publishing.value"
+      @confirm="confirmPublishAll"
+      @cancel="showPublishMetadata = false; versionMetadata.reset()"
+    >
+      <VersionMetadataFields
+        v-model:title="versionMetadata.title.value"
+        v-model:note="versionMetadata.note.value"
+        :disabled="publishCenter.publishing.value"
+        :error="versionMetadata.error.value"
+      />
+    </ConfirmModal>
 
     <ConfirmModal
       :show="showUnpublishModal"

@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
-import type { Gallery } from '@vie/gallery-contracts'
+import type { Gallery, ViewerConfigVersion } from '@vie/gallery-contracts'
 import { useToast } from '../composables/useToast'
 import { useViewerConfigEditor } from '../composables/useViewerConfigEditor'
 import { createViewerPreviewChannel } from '../lib/viewerPreviewChannel'
@@ -16,6 +16,8 @@ import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useAuth } from '../composables/useAuth'
 import { creatorPreviewUrl, issuePreviewToken, openCreatorPreview } from '../lib/preview'
+import { useConfigVersionMetadata } from '../composables/useConfigVersionMetadata'
+import VersionMetadataFields from '../components/gallery-config/VersionMetadataFields.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,17 +25,6 @@ const toast = useToast()
 const { can } = useAuth()
 const canConfigWrite = can('CONFIG_WRITE')
 const galleryId = route.params.id as string
-
-interface ConfigVersionItem {
-  id: string
-  configJson?: string
-  presetName?: string | null
-  versionNumber?: number
-  title?: string
-  createdAt?: string
-  createdByUserId?: string | null
-}
-
 
 const loading = ref(true)
 const configLoaded = ref(false)
@@ -46,8 +37,20 @@ const showRollbackConfirm = ref(false)
 const publishing = ref(false)
 const hasServerDraft = ref(false) // 服务端是否已有草稿配置行（决定发布前是否需要强制保存）
 const rollingBack = ref(false)
-const rollbackVersionId = ref<string | null>(null)
-const versions = ref<ConfigVersionItem[]>([])
+const versions = ref<ViewerConfigVersion[]>([])
+const versionTotal = ref(0)
+const versionPage = ref(0)
+const loadingMoreVersions = ref(false)
+const versionListError = ref('')
+const currentVersion = ref<ViewerConfigVersion | null>(null)
+const currentVersionLoading = ref(false)
+const editingVersion = ref<ViewerConfigVersion | null>(null)
+const versionAction = ref<'restore' | 'delete' | null>(null)
+const versionActionTarget = ref<ViewerConfigVersion | null>(null)
+const versionActionBusy = ref(false)
+const versionMetadata = useConfigVersionMetadata()
+const metadataSaving = ref(false)
+const showMetadataDialog = ref(false)
 const publishedVersionId = ref<string | null>(null)
 const lastPublishedAt = ref<string | null>(null)
 const publishedConfigJson = ref<string | null>(null)
@@ -192,7 +195,8 @@ async function retryEmbedPreview() {
 
 const hasDraftChanges = editor.dirty
 const hasUnpublishedDraft = computed(() => !publishedVersionId.value || publishedConfigJson.value !== savedDraftJson.value)
-const publishedVersionNumber = computed(() => versions.value.find(version => version.id === publishedVersionId.value)?.versionNumber ?? null)
+const configNeedsPublish = computed(() => !publishedVersionId.value || hasUnpublishedDraft.value)
+const publishedVersionNumber = computed(() => currentVersion.value?.versionNumber ?? versions.value.find(version => version.id === publishedVersionId.value)?.versionNumber ?? null)
 const draftStatus = computed(() => {
   if (saving.value) return { tone: 'busy', text: '正在保存草稿…' }
   if (issues.value.length) return { tone: 'warn', text: `有 ${issues.value.length} 项配置错误` }
@@ -208,20 +212,13 @@ const publishStatus = computed(() => {
 })
 const isGalleryPublished = computed(() => galleryInfo.value?.status === 'PUBLISHED')
 
-const publishConfirmMessage = computed(() => isGalleryPublished.value
-  ? '确定将当前展厅配置同步到访客端吗？访客将立即看到最新的空间布局与氛围。'
-  : '将保存当前草稿、把配置同步为线上版本，并正式发布展厅。发布后可随时撤回。')
+const publishConfirmMessage = computed(() => configNeedsPublish.value
+  ? (isGalleryPublished.value
+      ? '确定将当前展厅配置同步到访客端吗？访客将立即看到最新的空间布局与氛围。'
+      : '将保存当前草稿、创建配置版本并正式发布展厅。发布后可随时撤回。')
+  : '配置版本已生效，只发布展厅即可。')
 
-const displayVersions = computed(() => {
-  return versions.value.slice(0, 10).map((version) => {
-    const current = version.id === publishedVersionId.value
-    return {
-      ...version,
-      current,
-      title: current ? '当前线上版本' : (version.title || `历史版本 v${version.versionNumber ?? ''}`.trim())
-    }
-  })
-})
+const displayVersions = computed(() => versions.value)
 
 const gallerySlug = computed(() => galleryInfo.value?.slug || '')
 
@@ -248,16 +245,59 @@ const previewEmptyText = computed(() => {
   return '正在连接内部预览…'
 })
 
-async function loadVersions() {
-  const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions?page=0&pageSize=20`)
-  if (!response.ok) {
-    versions.value = []
+let versionListSequence = 0
+let currentVersionSequence = 0
+async function loadCurrentVersion() {
+  const versionId = publishedVersionId.value
+  const sequence = ++currentVersionSequence
+  if (!versionId) {
+    currentVersion.value = null
+    currentVersionLoading.value = false
     return
   }
-  const data = await response.json()
-  versions.value = Array.isArray(data.items) ? data.items : []
-  const published = versions.value.find(version => version.id === publishedVersionId.value)
-  if (published?.configJson) publishedConfigJson.value = tryCanonicalConfig(published.configJson)
+  currentVersionLoading.value = true
+  try {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions/${versionId}`)
+    if (!response.ok) throw new Error('无法读取当前配置版本')
+    const version = await response.json() as ViewerConfigVersion
+    if (sequence !== currentVersionSequence) return
+    currentVersion.value = version
+    publishedConfigJson.value = tryCanonicalConfig(version.configJson)
+  } catch {
+    if (sequence === currentVersionSequence) currentVersion.value = null
+  } finally {
+    if (sequence === currentVersionSequence) currentVersionLoading.value = false
+  }
+}
+
+async function loadVersions(append = false) {
+  const sequence = ++versionListSequence
+  const page = append ? versionPage.value + 1 : 0
+  if (append) loadingMoreVersions.value = true
+  else versionListError.value = ''
+  try {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions?page=${page}&pageSize=20`)
+    if (!response.ok) throw new Error('版本历史加载失败，请重试。')
+    const data = await response.json() as { items?: ViewerConfigVersion[]; total?: number }
+    if (sequence !== versionListSequence) return
+    const incoming = Array.isArray(data.items) ? data.items : []
+    if (append) {
+      const known = new Set(versions.value.map(version => version.id))
+      versions.value = [...versions.value, ...incoming.filter(version => !known.has(version.id))]
+    } else {
+      versions.value = incoming
+    }
+    versionPage.value = page
+    versionTotal.value = Number(data.total ?? versions.value.length)
+  } catch (error) {
+    if (sequence === versionListSequence) versionListError.value = error instanceof Error ? error.message : '版本历史加载失败，请重试。'
+  } finally {
+    if (sequence === versionListSequence) loadingMoreVersions.value = false
+  }
+}
+
+async function reloadVersionHistory() {
+  await Promise.all([loadVersions(), loadCurrentVersion()])
 }
 
 async function loadGalleryAndConfig() {
@@ -316,7 +356,7 @@ async function loadGalleryAndConfig() {
       lastSavedLabel.value = formatClock(new Date())
       configLoaded.value = true
       previewChannel?.send(config.value)
-      void loadVersions().catch(() => { versions.value = [] })
+      void reloadVersionHistory()
     } else if (response.status === 404) {
       // 新相册还没有配置行：直接以推荐场景（星空夜曲）作为草稿与预览起点。
       editor.replace(serializeViewerConfig(createRecommendedViewerConfig()), true)
@@ -376,7 +416,7 @@ async function doSave(options?: { silent?: boolean }): Promise<boolean> {
 }
 
 async function publishDraft() {
-  if (!canConfigWrite.value || issues.value.length || publishing.value) return
+  if (!canConfigWrite.value || issues.value.length || publishing.value || (configNeedsPublish.value && !versionMetadata.valid.value)) return
   // 发布前确保草稿已落库：草稿有改动、上次保存失败、或服务端从未有过草稿行时都先保存，
   // 否则 viewer-config/publish 会在后端因 CONFIG_NOT_FOUND 返回 404。
   if (hasDraftChanges.value || lastSaveFailed.value || !hasServerDraft.value) {
@@ -393,21 +433,28 @@ async function publishDraft() {
     return
   }
   publishing.value = true
+  let configVersionPublished = false
+  let publishedNumber: string | null = null
   try {
-    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schemaVersion: 1 })
-    })
-    if (!response.ok) throw new Error('配置同步失败，请稍后重试。')
-    const version = await response.json()
-    publishedVersionId.value = version.id || null
-    publishedConfigJson.value = savedDraftJson.value
-    lastPublishedAt.value = version.createdAt || new Date().toISOString()
-    await loadVersions()
+    if (configNeedsPublish.value) {
+      const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schemaVersion: 1, ...versionMetadata.toRequest() })
+      })
+      if (!response.ok) throw new Error('配置同步失败，请稍后重试。')
+      const version = await response.json() as { id?: string; versionNumber?: string | number; createdAt?: string }
+      configVersionPublished = true
+      publishedNumber = version.versionNumber == null ? null : String(version.versionNumber)
+      publishedVersionId.value = version.id || null
+      publishedConfigJson.value = savedDraftJson.value
+      lastPublishedAt.value = version.createdAt || new Date().toISOString()
+      await reloadVersionHistory()
+      versionMetadata.reset()
+    }
     if (!isGalleryPublished.value) {
       const publishResponse = await apiFetch(`/api/galleries/${galleryId}/publish`, { method: 'POST' })
-      if (!publishResponse.ok) throw new Error('配置已同步，但展厅发布失败，请到展厅工作区重试。')
+      if (!publishResponse.ok) throw new Error('展厅发布失败，请到展厅工作区重试。')
       if (galleryInfo.value) galleryInfo.value = { ...galleryInfo.value, status: 'PUBLISHED' }
       toast.success('展厅已发布！去展厅工作区获取分享链接。')
     } else {
@@ -415,64 +462,132 @@ async function publishDraft() {
     }
     showPublishConfirm.value = false
   } catch (err) {
-    toast.error(err instanceof Error ? err.message : '发布失败，请稍后重试')
+    if (configVersionPublished) {
+      showPublishConfirm.value = false
+      versionMetadata.reset()
+      toast.error(`配置版本 v${publishedNumber ?? '?'} 已生效，相册发布失败。请重试发布展厅。`)
+    } else {
+      toast.error(err instanceof Error ? err.message : '发布失败，请稍后重试')
+    }
   } finally {
     publishing.value = false
   }
 }
 
+function closePublishConfirm() {
+  if (publishing.value) return
+  showPublishConfirm.value = false
+  versionMetadata.reset()
+}
+
 function requestHeaderRollback() {
-  const previous = displayVersions.value.find(version => !version.current)
+  const previous = displayVersions.value.find(version => !version.isCurrent)
   if (!previous) {
     toast.info('暂无可回滚的历史版本')
     return
   }
-  rollbackVersionId.value = previous.id
-  showRollbackConfirm.value = true
+  requestRollback(previous.id)
 }
 
 function requestRollback(versionId: string) {
-  rollbackVersionId.value = versionId
+  versionActionTarget.value = versions.value.find(version => version.id === versionId) ?? null
+  if (!versionActionTarget.value) return
+  versionAction.value = 'restore'
   showRollbackConfirm.value = true
 }
 
+function closeVersionAction() {
+  if (rollingBack.value || versionActionBusy.value) return
+  showRollbackConfirm.value = false
+  versionAction.value = null
+  versionActionTarget.value = null
+}
+
 async function rollbackDraft() {
-  if (!canConfigWrite.value || !rollbackVersionId.value) return
+  if (!canConfigWrite.value || !versionActionTarget.value || versionAction.value !== 'restore') return
   rollingBack.value = true
   try {
-    const selected = versions.value.find(version => version.id === rollbackVersionId.value)
-    if (selected?.configJson) {
-      const parsed = JSON.parse(selected.configJson)
-      editor.replace(JSON.stringify(parsed))
-      if (selected.presetName) config.value.presetName = selected.presetName
-      const saved = await save({ silent: true })
-      if (!saved) throw new Error('草稿保存失败，未完成回滚，请重试。')
-      showRollbackConfirm.value = false
-      rollbackVersionId.value = null
-      refreshLivePreview()
-      toast.success('已恢复为草稿。同步到访客端后才会生效。')
-      return
-    }
-    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/rollback`, {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions/${versionActionTarget.value.id}/restore`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ versionId: rollbackVersionId.value, publish: false })
     })
-    if (!response.ok) throw new Error('回滚失败，请稍后重试。')
-    const version = await response.json()
-    const parsed = JSON.parse(version.configJson)
-    editor.replace(JSON.stringify(parsed))
-    if (version.presetName) config.value.presetName = version.presetName
+    if (!response.ok) throw new Error('恢复草稿失败，请稍后重试。')
+    const restored = await response.json() as { configJson: string; presetName?: string | null; schemaVersion?: number }
+    const parsed = JSON.parse(restored.configJson)
+    editor.replace(JSON.stringify(parsed), false, restored.schemaVersion ?? 1)
+    if (restored.presetName) config.value.presetName = restored.presetName
     savedDraftJson.value = serializeViewerConfig(getCleanConfig())
-    await loadVersions()
+    hasServerDraft.value = true
+    await reloadVersionHistory()
     showRollbackConfirm.value = false
-    rollbackVersionId.value = null
+    versionAction.value = null
+    versionActionTarget.value = null
     refreshLivePreview()
-    toast.success('已恢复为草稿。同步到访客端后才会生效。')
+    toast.success('已恢复到当前草稿，公开配置保持不变。')
   } catch (err) {
-    toast.error(err instanceof Error ? err.message : '回滚失败，请稍后重试')
+    toast.error(err instanceof Error ? err.message : '恢复草稿失败，请稍后重试')
   } finally {
     rollingBack.value = false
+  }
+}
+
+async function editVersion(version: ViewerConfigVersion) {
+  if (!canConfigWrite.value) return
+  try {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions/${version.id}`)
+    if (!response.ok) throw new Error('无法读取版本详情，请刷新后重试。')
+    editingVersion.value = await response.json() as ViewerConfigVersion
+    versionMetadata.reset(editingVersion.value)
+    showMetadataDialog.value = true
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '无法读取版本详情。')
+  }
+}
+
+async function saveVersionMetadata() {
+  if (!editingVersion.value || !versionMetadata.valid.value || metadataSaving.value) return
+  metadataSaving.value = true
+  try {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions/${editingVersion.value.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(versionMetadata.toRequest())
+    })
+    if (!response.ok) throw new Error('保存版本信息失败，请重试。')
+    const updated = await response.json() as ViewerConfigVersion
+    versions.value = versions.value.map(version => version.id === updated.id ? { ...version, ...updated } : version)
+    if (currentVersion.value?.id === updated.id) currentVersion.value = updated
+    showMetadataDialog.value = false
+    editingVersion.value = null
+    toast.success('版本信息已保存。')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '保存版本信息失败。')
+  } finally {
+    metadataSaving.value = false
+  }
+}
+
+function requestDeleteVersion(version: ViewerConfigVersion) {
+  if (!canConfigWrite.value || version.isCurrent) return
+  versionAction.value = 'delete'
+  versionActionTarget.value = version
+}
+
+async function deleteVersion() {
+  const target = versionActionTarget.value
+  if (!target || target.isCurrent || versionActionBusy.value) return
+  versionActionBusy.value = true
+  try {
+    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions/${target.id}`, { method: 'DELETE' })
+    if (!response.ok && response.status !== 204) throw new Error('删除版本失败，请重试。')
+    versionAction.value = null
+    versionActionTarget.value = null
+    await reloadVersionHistory()
+    toast.success(`已删除 v${target.versionNumber}，当前配置不受影响。`)
+  } catch (error) {
+    await loadCurrentVersion()
+    toast.error(error instanceof Error ? error.message : '删除版本失败。')
+  } finally {
+    versionActionBusy.value = false
   }
 }
 
@@ -568,7 +683,7 @@ onUnmounted(() => {
         <p role="status" class="status-chip" :class="`is-${publishStatus.tone}`"><span>{{ publishStatus.text }}</span></p>
         <button v-if="canConfigWrite" class="btn ghost" type="button" @click="requestHeaderRollback">
           <Icon name="undo" :size="14" />
-          <span>回滚</span>
+          <span>恢复旧版</span>
         </button>
         <button v-if="canConfigWrite" class="btn ghost" type="button" :disabled="!configLoaded || !config.presetName || !isViewerPreset(config.presetName)" @click="showResetConfirm = true">
           <Icon name="refresh" :size="14" />
@@ -584,7 +699,7 @@ onUnmounted(() => {
           <span>{{ saving ? '保存中…' : '重试保存' }}</span>
         </button>
         <button v-if="canConfigWrite" class="btn outline" type="button" :disabled="!configLoaded || saving || !!issues.length" @click="save()">{{ saving ? '保存中…' : '保存草稿' }}</button>
-        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="!configLoaded || publishing || saving || hasDraftChanges || lastSaveFailed || !!issues.length" @click="showPublishConfirm = true">
+        <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="!configLoaded || currentVersionLoading || publishing || saving || hasDraftChanges || lastSaveFailed || !!issues.length" @click="showPublishConfirm = true">
           <Icon name="send" :size="14" />
           <span>{{ publishing ? (isGalleryPublished ? '同步中…' : '发布中…') : (isGalleryPublished ? '同步到访客端' : '发布展厅') }}</span>
         </button>
@@ -635,18 +750,36 @@ onUnmounted(() => {
             <Icon name="clock" :size="15" />
             版本历史
           </h2>
+          <div v-if="currentVersion" class="current-version-summary" aria-label="当前使用版本">
+            <div class="current-version-heading">
+              <strong>{{ currentVersion.title || `配置版本 v${currentVersion.versionNumber}` }}</strong>
+              <span>v{{ currentVersion.versionNumber }} · 当前使用</span>
+            </div>
+            <p v-if="currentVersion.note" class="version-note">{{ currentVersion.note }}</p>
+          </div>
+          <p v-else-if="currentVersionLoading" class="history-empty" role="status">正在读取当前使用版本…</p>
+          <p v-else-if="publishedVersionId" class="history-empty">当前版本详情暂时无法读取。</p>
+          <p v-if="versionListError" class="history-error" role="alert">{{ versionListError }}</p>
           <ul v-if="displayVersions.length" class="history">
             <li v-for="version in displayVersions" :key="version.id">
-              <button class="history-row" type="button" @click="version.current ? null : requestRollback(version.id)">
-                <span>
-                  <strong>{{ version.title }}</strong>
-                  <em>v{{ version.versionNumber }}</em>
-                </span>
-                <small>{{ formatHistoryTime(version.createdAt) }}</small>
-              </button>
+              <article class="history-entry">
+                <div class="history-copy">
+                  <strong>{{ version.title || `配置版本 v${version.versionNumber}` }}</strong>
+                  <span class="history-meta">v{{ version.versionNumber }}<template v-if="version.isCurrent"> · 当前使用</template> · {{ formatHistoryTime(version.createdAt) }}</span>
+                  <p v-if="version.note" class="version-note">{{ version.note }}</p>
+                </div>
+                <div v-if="canConfigWrite" class="history-actions">
+                  <button class="history-action" type="button" :aria-label="`编辑 v${version.versionNumber} 信息`" @click="editVersion(version)">编辑</button>
+                  <button class="history-action" type="button" :disabled="version.isCurrent || rollingBack || versionActionBusy" :aria-label="`恢复 v${version.versionNumber} 到草稿`" @click="requestRollback(version.id)">恢复</button>
+                  <button v-if="!version.isCurrent" class="history-action danger" type="button" :disabled="rollingBack || versionActionBusy" :aria-label="`删除 v${version.versionNumber}`" @click="requestDeleteVersion(version)">删除</button>
+                </div>
+              </article>
             </li>
           </ul>
-          <p v-else class="history-empty">还没有可回滚的历史版本。</p>
+          <p v-else class="history-empty">还没有已发布的配置版本。</p>
+          <button v-if="versions.length < versionTotal" class="load-more-versions" type="button" :disabled="loadingMoreVersions" @click="loadVersions(true)">
+            {{ loadingMoreVersions ? '正在加载…' : `加载更多（${versions.length}/${versionTotal}）` }}
+          </button>
         </section>
       </aside>
 
@@ -688,11 +821,13 @@ onUnmounted(() => {
       :show="showPublishConfirm"
       :title="isGalleryPublished ? '同步到访客端' : '发布展厅'"
       :message="publishConfirmMessage"
-      :confirm-text="isGalleryPublished ? '确认同步' : '确认发布'"
+      :confirm-text="isGalleryPublished ? (configNeedsPublish ? '确认同步' : '发布展厅') : '确认发布'"
       :loading="publishing"
       @confirm="publishDraft"
-      @cancel="showPublishConfirm = false"
-    />
+      @cancel="closePublishConfirm"
+    >
+      <VersionMetadataFields v-if="configNeedsPublish" v-model:title="versionMetadata.title.value" v-model:note="versionMetadata.note.value" :disabled="publishing" :error="versionMetadata.error.value" />
+    </ConfirmModal>
 
     <ConfirmModal
       :show="showRollbackConfirm"
@@ -701,8 +836,31 @@ onUnmounted(() => {
       confirm-text="确认回滚"
       :loading="rollingBack"
       @confirm="rollbackDraft"
-      @cancel="showRollbackConfirm = false"
+      @cancel="closeVersionAction"
     />
+
+    <ConfirmModal
+      :show="versionAction === 'delete'"
+      title="删除配置版本？"
+      :message="`删除 v${versionActionTarget?.versionNumber ?? ''} 后无法恢复，不会影响照片或当前配置。`"
+      confirm-text="删除版本"
+      danger
+      :loading="versionActionBusy"
+      @confirm="deleteVersion"
+      @cancel="closeVersionAction"
+    />
+
+    <ConfirmModal
+      :show="showMetadataDialog"
+      title="编辑版本信息"
+      message="修改名称和备注不会改变这份配置快照。"
+      confirm-text="保存信息"
+      :loading="metadataSaving"
+      @confirm="saveVersionMetadata"
+      @cancel="showMetadataDialog = false"
+    >
+      <VersionMetadataFields v-model:title="versionMetadata.title.value" v-model:note="versionMetadata.note.value" :disabled="metadataSaving" :error="versionMetadata.error.value" />
+    </ConfirmModal>
 
     <ConfirmModal
       :show="showResetConfirm"
@@ -818,6 +976,22 @@ onUnmounted(() => {
   font-size: 13px;
   color: #6b7280;
 }
+
+.history-error { margin: 0 0 8px; color: #b91c1c; font-size: 12px; }
+.current-version-summary { margin: 0 0 12px; padding: 10px; border-left: 3px solid #00b88f; border-radius: 6px; background: #eef8f3; }
+.current-version-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
+.current-version-heading strong { overflow-wrap: anywhere; color: #18372a; font-size: 13px; }
+.current-version-heading span, .history-meta { color: #6a7c71; font-size: 11px; }
+.history-entry { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 9px 4px; border-bottom: 1px solid #edf1ee; }
+.history-copy { min-width: 0; display: grid; gap: 3px; }
+.history-copy > strong { overflow-wrap: anywhere; color: #263b31; font-size: 13px; }
+.version-note { margin: 2px 0 0; color: #66766d; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; flex-shrink: 0; }
+.history-action, .load-more-versions { border: 1px solid #dce7e0; border-radius: 7px; padding: 5px 7px; background: #fff; color: #27664e; font-size: 11px; cursor: pointer; }
+.history-action.danger { color: #b42318; border-color: #f2d4d1; }
+.history-action:disabled, .load-more-versions:disabled { cursor: not-allowed; opacity: .55; }
+.load-more-versions { width: 100%; margin-top: 10px; padding: 8px; }
+.history-action:focus-visible, .load-more-versions:focus-visible { outline: 2px solid #19815c; outline-offset: 2px; }
 
 .state-actions {
   display: flex;
