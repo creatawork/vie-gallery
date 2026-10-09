@@ -109,3 +109,45 @@ test('editor can edit metadata, restore into draft, and delete an old version', 
   await expect.poll(api.deleted).toBe(true)
   await expect(page.getByRole('button', { name: '删除 v2', exact: true })).toHaveCount(0)
 })
+
+test('metadata editor opens from the loaded history even when detail requests fail', async ({ page }) => {
+  await setup(page)
+  await page.goto(`/app/galleries/${galleryId}/config`)
+  await page.getByRole('tab', { name: '版本', exact: true }).click()
+  await expect(page.locator('.history-entry')).toHaveCount(20)
+  let detailRequests = 0
+  await page.route(`**/viewer-config/versions/version-2`, route => {
+    detailRequests++
+    return route.fulfill({ status: 503 })
+  })
+
+  await page.getByRole('button', { name: '编辑 v2 信息' }).click()
+  await expect(page.getByRole('dialog', { name: '编辑版本信息' })).toBeVisible()
+  await expect(page.getByLabel('版本名称（选填）')).toHaveValue('版本 2')
+  expect(detailRequests).toBe(0)
+})
+
+test('failed metadata save keeps the input and successful retry updates history without reloading it', async ({ page }) => {
+  await setup(page)
+  await page.goto(`/app/galleries/${galleryId}/config`)
+  await page.getByRole('tab', { name: '版本', exact: true }).click()
+  await expect(page.locator('.history-entry')).toHaveCount(20)
+  let saves = 0
+  await page.route(`**/viewer-config/versions/version-2`, route => {
+    if (route.request().method() !== 'PATCH') return route.fulfill({ json: version(2) })
+    saves++
+    return saves === 1
+      ? route.fulfill({ status: 503 })
+      : route.fulfill({ json: { ...version(2), ...route.request().postDataJSON() } })
+  })
+  await page.route('**/viewer-config/versions?*', route => route.fulfill({ status: 503 }))
+
+  await page.getByRole('button', { name: '编辑 v2 信息' }).click()
+  await page.getByLabel('版本名称（选填）').fill('重试后保存')
+  await page.getByRole('button', { name: '保存信息' }).click()
+  await expect(page.getByRole('button', { name: '保存信息' })).toBeEnabled()
+  await expect(page.getByLabel('版本名称（选填）')).toHaveValue('重试后保存')
+  await page.getByRole('button', { name: '保存信息' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.locator('.history-entry').filter({ hasText: '重试后保存' })).toBeVisible()
+})

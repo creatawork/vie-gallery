@@ -530,17 +530,12 @@ async function rollbackDraft() {
   }
 }
 
-async function editVersion(version: ViewerConfigVersion) {
-  if (!canConfigWrite.value) return
-  try {
-    const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/versions/${version.id}`)
-    if (!response.ok) throw new Error('无法读取版本详情，请刷新后重试。')
-    editingVersion.value = await response.json() as ViewerConfigVersion
-    versionMetadata.reset(editingVersion.value)
-    showMetadataDialog.value = true
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : '无法读取版本详情。')
-  }
+function editVersion(version: ViewerConfigVersion) {
+  if (!canConfigWrite.value || metadataSaving.value) return
+  // History already includes all editable fields; opening the form needs no request.
+  editingVersion.value = version
+  versionMetadata.reset(version)
+  showMetadataDialog.value = true
 }
 
 async function saveVersionMetadata() {

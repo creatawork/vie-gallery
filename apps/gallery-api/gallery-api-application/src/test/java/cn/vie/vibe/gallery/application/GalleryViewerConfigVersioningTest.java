@@ -140,6 +140,27 @@ class GalleryViewerConfigVersioningTest {
     }
 
     @Test
+    void metadataSaveReadsSnapshotOnlyOnceAndMissingVersionDoesNotReadSnapshot() {
+        UUID galleryId = UUID.randomUUID();
+        Fixture fixture = fixture(galleryId, MembershipRole.OWNER);
+        fixture.facade.saveConfig(galleryId, "{}", "default");
+        ViewerConfigVersion original = fixture.facade.publishConfig(galleryId);
+        fixture.versions.snapshotReads = 0;
+
+        ViewerConfigVersion edited = fixture.facade.updateVersionMetadata(galleryId, original.id(), " 春季 ", " note ");
+
+        assertEquals(1, fixture.versions.snapshotReads);
+        assertEquals("春季", edited.title());
+        assertEquals(original.configJson(), edited.configJson());
+        assertEquals(edited, fixture.versions.findById(TENANT_ID, galleryId, original.id()).orElseThrow());
+        fixture.versions.snapshotReads = 0;
+        DomainException missing = assertThrows(DomainException.class,
+                () -> fixture.facade.updateVersionMetadata(galleryId, UUID.randomUUID(), "new", null));
+        assertEquals("CONFIG_VERSION_NOT_FOUND", missing.code());
+        assertEquals(0, fixture.versions.snapshotReads);
+    }
+
+    @Test
     void unsupportedSchemaIsRejectedBeforeSaving() {
         UUID galleryId = UUID.randomUUID();
         Fixture fixture = fixture(galleryId, MembershipRole.OWNER);
@@ -248,6 +269,7 @@ class GalleryViewerConfigVersioningTest {
     }
 
     private static final class InMemoryVersionRepository implements ViewerConfigVersionRepository {
+        private int snapshotReads;
         private final List<ViewerConfigVersion> versions = new ArrayList<>();
         private final java.util.Map<UUID, UUID> published = new java.util.HashMap<>();
         private final java.util.Map<UUID, Long> counters = new java.util.HashMap<>();
@@ -274,6 +296,7 @@ class GalleryViewerConfigVersioningTest {
 
         @Override
         public Optional<ViewerConfigVersion> findById(UUID tenantId, UUID galleryId, UUID versionId) {
+            snapshotReads++;
             return findByIdIncludingDeleted(tenantId, galleryId, versionId).filter(v -> v.deletedAt() == null);
         }
 
@@ -310,7 +333,7 @@ class GalleryViewerConfigVersioningTest {
             return next;
         }
         @Override public int updateMetadata(UUID tenantId, UUID galleryId, UUID versionId, String title, String note, Instant at, UUID actor) {
-            var version = findById(tenantId, galleryId, versionId).orElse(null);
+            var version = findByIdIncludingDeleted(tenantId, galleryId, versionId).filter(v -> v.deletedAt() == null).orElse(null);
             if (version == null) return 0;
             versions.set(versions.indexOf(version), version.withMetadata(title, note, at, actor));
             return 1;

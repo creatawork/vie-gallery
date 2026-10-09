@@ -162,9 +162,8 @@ public class GalleryViewerConfigFacade {
         requireGallery(context, galleryId);
         ViewerConfigVersionMetadata metadata = ViewerConfigVersionMetadata.of(title, note);
         return versionRepository.withGalleryLock(context.tenantId(), galleryId, () -> {
-            if (versionRepository.findById(context.tenantId(), galleryId, versionId).isEmpty()) {
-                throw new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found");
-            }
+            // The scoped UPDATE also checks existence and excludes deleted versions.
+            // Read the immutable snapshot only once, for the compatible response.
             if (versionRepository.updateMetadata(context.tenantId(), galleryId, versionId,
                     metadata.title(), metadata.note(), Instant.now(), context.userId()) == 0) {
                 throw new DomainException("CONFIG_VERSION_NOT_FOUND", "Viewer configuration version not found");

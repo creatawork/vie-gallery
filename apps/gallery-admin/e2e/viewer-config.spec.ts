@@ -273,11 +273,17 @@ test('draft and publish states are explicit, and a draft gallery can go live in 
     if (route.request().method() === 'PUT') { draft = route.request().postDataJSON().configJson; calls.push('save-draft') }
     await route.fulfill({ json: { configJson: draft, schemaVersion: 1 } })
   })
-  await page.route('**/api/galleries/config-fixture/viewer-config/versions**', route => route.fulfill({ json: { items: [{ id: 'version-1', versionNumber: 1, title: '历史版本 v1', createdAt: '2026-10-07T00:00:00Z' }] } }))
+  const publishedVersion = () => ({
+    id: 'version-1', galleryId: 'config-fixture', versionNumber: '1', title: '历史版本 v1', note: null,
+    configJson: draft, presetName: 'film-gallery', schemaVersion: 1,
+    createdAt: '2026-10-07T00:00:00Z', createdByUserId: null, isCurrent: true
+  })
+  await page.route('**/api/galleries/config-fixture/viewer-config/versions?*', route => route.fulfill({ json: { items: [publishedVersion()], page: 0, pageSize: 20, total: 1 } }))
+  await page.route('**/api/galleries/config-fixture/viewer-config/versions/version-1', route => route.fulfill({ json: publishedVersion() }))
   // 注意：Playwright 后注册的路由优先匹配，publish 路由必须注册在 viewer-config 之后
   await page.route('**/api/galleries/config-fixture/viewer-config/publish', async route => {
     calls.push('config-publish')
-    await route.fulfill({ json: { id: 'version-1', versionNumber: 1, createdAt: '2026-10-07T00:00:00Z' } })
+    await route.fulfill({ json: publishedVersion() })
   })
   await page.route(new RegExp('/api/galleries/config-fixture/publish$'), async route => {
     calls.push('gallery-publish')
