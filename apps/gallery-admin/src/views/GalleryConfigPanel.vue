@@ -770,7 +770,7 @@ onUnmounted(() => {
                 </div>
                 <div v-if="canConfigWrite" class="history-actions">
                   <button class="history-action" type="button" :aria-label="`编辑 v${version.versionNumber} 信息`" @click="editVersion(version)">编辑</button>
-                  <button class="history-action" type="button" :disabled="version.isCurrent || rollingBack || versionActionBusy" :aria-label="`恢复 v${version.versionNumber} 到草稿`" @click="requestRollback(version.id)">恢复</button>
+                  <button class="history-action" type="button" :disabled="rollingBack || versionActionBusy" :aria-label="`恢复 v${version.versionNumber} 到草稿`" @click="requestRollback(version.id)">恢复</button>
                   <button v-if="!version.isCurrent" class="history-action danger" type="button" :disabled="rollingBack || versionActionBusy" :aria-label="`删除 v${version.versionNumber}`" @click="requestDeleteVersion(version)">删除</button>
                 </div>
               </article>
