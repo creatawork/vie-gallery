@@ -37,7 +37,7 @@ function handleAction(toast: { id: string; action?: { handler: () => void } }) {
             @click.stop="handleAction(toast)"
           >{{ toast.action.label }}</button>
         </div>
-        <button class="toast-close" aria-label="关闭" @click.stop="dismiss(toast.id)">
+        <button class="toast-close" type="button" aria-label="关闭" @click.stop="dismiss(toast.id)">
           <Icon name="x" :size="14" />
         </button>
         <div class="toast-progress"></div>
@@ -197,8 +197,11 @@ function handleAction(toast: { id: string; action?: { handler: () => void } }) {
 .toast-close {
   background: none;
   border: none;
-  padding: 2px;
-  color: #a1a1aa;
+  padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  color: #52525b;
   cursor: pointer;
   border-radius: 4px;
   display: flex;
@@ -208,6 +211,7 @@ function handleAction(toast: { id: string; action?: { handler: () => void } }) {
 }
 
 .toast-action {
+  min-height: 44px;
   margin-top: 6px;
   align-self: flex-start;
   padding: 3px 12px;
@@ -309,5 +313,10 @@ function handleAction(toast: { id: string; action?: { handler: () => void } }) {
     max-width: none;
     width: auto;
   }
+}
+
+.toast-close:focus-visible, .toast-action:focus-visible {
+  outline: 2px solid var(--brand-deep, #047857);
+  outline-offset: 2px;
 }
 </style>

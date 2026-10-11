@@ -89,7 +89,7 @@ const { root } = useModalFocus(computed(() => props.show), {
   -webkit-backdrop-filter: blur(8px);
   display: grid;
   place-items: center;
-  z-index: 1000;
+  z-index: 2100;
   padding: 20px;
 }
 

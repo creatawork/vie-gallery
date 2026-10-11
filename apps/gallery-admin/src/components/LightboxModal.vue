@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { formatBytes } from '../lib/format'
+import { useModalFocus } from '../composables/useModalFocus'
 
 interface PhotoItem {
   id: string
@@ -38,12 +39,22 @@ const emit = defineEmits<{
 const isEditingTitle = ref(false)
 const titleInput = ref('')
 const titleInputRef = ref<HTMLInputElement | null>(null)
+const titleButtonRef = ref<HTMLButtonElement | null>(null)
 
 const currentPhoto = computed(() => props.photos[props.currentIndex])
+const { root } = useModalFocus(computed(() => props.show && !!currentPhoto.value), {
+  focusContainer: true,
+  onEscape: () => {
+    if (isEditingTitle.value) cancelEditTitle()
+    else emit('close')
+  }
+})
 
-watch(() => props.currentIndex, () => {
+watch(() => props.currentIndex, async () => {
   isEditingTitle.value = false
   titleInput.value = currentPhoto.value?.title || ''
+  await nextTick()
+  if (props.show && document.activeElement === document.body) root.value?.focus()
 })
 
 watch(() => props.show, (shown) => {
@@ -63,43 +74,43 @@ function startEditTitle() {
   })
 }
 
-function saveTitle() {
+function saveTitle(restoreFocus = false) {
   if (!isEditingTitle.value || !currentPhoto.value) return
   const trimmed = titleInput.value.trim()
   isEditingTitle.value = false
   if (trimmed !== (currentPhoto.value.title || '')) {
     emit('update-title', { photo: currentPhoto.value, title: trimmed })
   }
+  if (restoreFocus) nextTick(() => titleButtonRef.value?.focus())
 }
 
 function cancelEditTitle() {
   isEditingTitle.value = false
   titleInput.value = currentPhoto.value?.title || ''
+  nextTick(() => titleButtonRef.value?.focus())
 }
 
 function handleKeyDown(e: KeyboardEvent) {
-  if (!props.show) return
+  if (!props.show || e.isComposing) return
   if (isEditingTitle.value) {
     if (e.key === 'Enter') {
       e.preventDefault()
-      saveTitle()
+      saveTitle(true)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       cancelEditTitle()
     }
     return
   }
-  if (e.key === 'Escape') emit('close')
   if (e.key === 'ArrowLeft' && props.currentIndex > 0) {
+    e.preventDefault()
     emit('select', props.currentIndex - 1)
   }
   if (e.key === 'ArrowRight' && props.currentIndex < props.photos.length - 1) {
+    e.preventDefault()
     emit('select', props.currentIndex + 1)
   }
 }
-
-onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 
 function statusLabel(status?: string) {
   if (status === 'PROCESSING') return '处理中'
@@ -111,7 +122,17 @@ function statusLabel(status?: string) {
 
 <template>
   <Transition name="fade">
-    <div v-if="show && photos[currentIndex]" class="lightbox-overlay" @click.self="emit('close')">
+    <div
+      v-if="show && currentPhoto"
+      ref="root"
+      class="lightbox-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="照片大图"
+      tabindex="-1"
+      @keydown="handleKeyDown"
+      @click.self="emit('close')"
+    >
       <!-- Top Navigation Bar -->
       <div class="lightbox-topbar">
         <div class="photo-indicator">
@@ -149,7 +170,7 @@ function statusLabel(status?: string) {
             <Icon name="star" :size="15" />
             <span>设为封面</span>
           </button>
-          <span v-else class="cover-badge">
+          <span v-else-if="photos[currentIndex].cover" class="lightbox-cover-badge">
             <Icon name="check" :size="14" />
             <span>当前封面</span>
           </span>
@@ -176,7 +197,7 @@ function statusLabel(status?: string) {
             <span>删除</span>
           </button>
 
-          <button class="action-btn close-btn" title="关闭 (Esc)" @click="emit('close')">
+          <button class="action-btn close-btn" type="button" aria-label="关闭 (Esc)" title="关闭 (Esc)" @click="emit('close')">
             <Icon name="x" :size="18" />
           </button>
         </div>
@@ -198,7 +219,7 @@ function statusLabel(status?: string) {
         <div class="image-wrapper">
           <img
             :src="photos[currentIndex].thumbnailUrl"
-            :alt="photos[currentIndex].title || 'Photo'"
+            :alt="photos[currentIndex].title || '未命名照片'"
             class="main-image"
           />
         </div>
@@ -225,21 +246,28 @@ function statusLabel(status?: string) {
                 v-model="titleInput"
                 class="title-input-field"
                 type="text"
+                aria-label="照片标题"
                 maxlength="160"
                 placeholder="输入照片标题（按 Enter 保存）"
-                @blur="saveTitle"
+                @blur="saveTitle()"
               />
-              <button class="title-save-btn" type="button" @click="saveTitle">保存</button>
+              <button class="title-save-btn" type="button" @click="saveTitle(true)">保存</button>
             </template>
             <template v-else>
-              <h3
-                class="photo-title"
-                :class="{ 'can-edit': canWrite }"
-                :title="canWrite ? '点击修改标题' : ''"
-                @click="startEditTitle"
-              >
-                {{ photos[currentIndex].title || '未命名照片' }}
-                <Icon v-if="canWrite" name="edit" :size="14" class="edit-hint-icon" />
+              <h3 class="photo-title">
+                <button
+                  v-if="canWrite"
+                  ref="titleButtonRef"
+                  class="title-edit-btn"
+                  type="button"
+                  aria-label="修改照片标题"
+                  title="修改照片标题"
+                  @click="startEditTitle"
+                >
+                  {{ photos[currentIndex].title || '未命名照片' }}
+                  <Icon name="edit" :size="14" class="edit-hint-icon" />
+                </button>
+                <span v-else>{{ photos[currentIndex].title || '未命名照片' }}</span>
               </h3>
             </template>
           </div>
@@ -271,6 +299,7 @@ function statusLabel(status?: string) {
   flex-direction: column;
   color: #ffffff;
   user-select: none;
+  overflow-y: auto;
   font-family: var(--font-family, 'Plus Jakarta Sans', system-ui, sans-serif);
 }
 
@@ -278,6 +307,8 @@ function statusLabel(status?: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
+  gap: 12px;
   padding: 16px 24px;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 100%);
   z-index: 10;
@@ -302,11 +333,17 @@ function statusLabel(status?: string) {
 
 .topbar-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
   align-items: center;
   gap: 8px;
 }
 
 .action-btn {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -337,7 +374,7 @@ function statusLabel(status?: string) {
   border-color: rgba(220, 38, 38, 0.5);
 }
 
-.cover-badge {
+.lightbox-cover-badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -362,13 +399,14 @@ function statusLabel(status?: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 0;
+  min-height: 100px;
   padding: 20px;
 }
 
 .image-wrapper {
+  height: 100%;
   max-width: 90vw;
-  max-height: 75vh;
+  max-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -376,7 +414,7 @@ function statusLabel(status?: string) {
 
 .main-image {
   max-width: 100%;
-  max-height: 75vh;
+  max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
@@ -431,9 +469,12 @@ function statusLabel(status?: string) {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .photo-info {
+  min-width: 0;
+  max-width: 100%;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -442,6 +483,7 @@ function statusLabel(status?: string) {
 }
 
 .title-edit-container {
+  max-width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -453,19 +495,28 @@ function statusLabel(status?: string) {
   font-size: 16px;
   font-weight: 700;
   color: #f8fafc;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.photo-title.can-edit {
+.title-edit-btn {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  min-height: 44px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   cursor: pointer;
   padding: 2px 8px;
   border-radius: 6px;
   transition: background 0.15s ease;
 }
 
-.photo-title.can-edit:hover {
+.title-edit-btn:hover {
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -482,11 +533,14 @@ function statusLabel(status?: string) {
   font-size: 14px;
   font-weight: 600;
   outline: none;
-  min-width: 240px;
+  min-width: 0;
+  width: min(240px, 100%);
   text-align: center;
 }
 
 .title-save-btn {
+  min-height: 44px;
+  flex-shrink: 0;
   padding: 4px 10px;
   border-radius: 6px;
   background: var(--brand-accent, #10b981);
@@ -497,6 +551,7 @@ function statusLabel(status?: string) {
 }
 
 .photo-meta-tags {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -529,5 +584,28 @@ function statusLabel(status?: string) {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.lightbox-overlay :is(button, a, input):focus-visible {
+  outline: 2px solid var(--brand-lime, #d9f99d);
+  outline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .lightbox-topbar { padding: 12px 16px; align-items: flex-start; }
+  .photo-indicator { padding-top: 12px; flex-shrink: 0; }
+  .topbar-actions { gap: 6px; }
+  .lightbox-stage { padding: 12px; }
+  .prev-btn { left: 12px; }
+  .next-btn { right: 12px; }
+  .lightbox-bottombar { padding: 12px 16px max(16px, env(safe-area-inset-bottom)); }
+  .title-input-field { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-image { animation: none; }
+  .fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
+  .action-btn, .nav-btn { transition: background-color 0.15s ease; }
+  .nav-btn:hover { transform: translateY(-50%); }
 }
 </style>
