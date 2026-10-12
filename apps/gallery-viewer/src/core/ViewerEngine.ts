@@ -4,6 +4,8 @@ import { PhotoScene } from './PhotoScene'
 import { TexturePool, loadPhotoTexture } from './TexturePool'
 import { FrameClock } from './FrameClock'
 import { QualityController, QUALITY_BUDGETS, initialQuality, type Quality, type QualitySample, type QualityDecision } from './QualityController'
+import type { PhotoTheatrePlugin } from '../plugins/PhotoTheatrePlugin'
+import type { TheatreCommand } from '../lib/photoTheatre'
 import type { ParticlesPlugin } from '../plugins/ParticlesPlugin'
 import type { PostProcessing } from './PostProcessing'
 import type { ViewerDiagnosticApi } from './types'
@@ -43,6 +45,9 @@ export class ViewerEngine {
   private camera: THREE.PerspectiveCamera
   private renderer: THREE.WebGLRenderer
   private controls: OrbitControls | null = null
+  private theatreView: { position: THREE.Vector3; target: THREE.Vector3; enabled: boolean; damping: boolean; autoRotate: boolean } | null = null
+  private theatrePointer: { id: number; x: number; y: number } | null = null
+  private theatreWheelAt = 0
   private composer: EffectComposer | null = null
 
   // 子系统
@@ -139,6 +144,14 @@ export class ViewerEngine {
     // 监听动画转场过渡事件
     this.eventBus.on('transition:start', () => this.notifyTransitionStart())
     this.eventBus.on('transition:end', () => this.notifyTransitionEnd())
+
+    this.eventBus.on('theatre:active', this.handleTheatreActive)
+    this.canvas.addEventListener('pointerdown', this.theatrePointerDown)
+    this.canvas.addEventListener('pointerup', this.theatrePointerUp)
+    this.canvas.addEventListener('pointermove', this.theatrePointerMove)
+    this.canvas.addEventListener('pointercancel', this.theatrePointerCancel)
+    this.canvas.addEventListener('wheel', this.theatreWheel, { passive: false })
+    this.canvas.addEventListener('keydown', this.theatreKey)
 
     // 用户交互事件监听（重置空闲休眠定时器）
     this.attachUserActivityListeners()
@@ -323,7 +336,7 @@ export class ViewerEngine {
         this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
       }
     }
-    if (this.controls) {
+    if (this.controls && !this.theatreView) {
       this.controls.autoRotate = !!effective.camera?.autoRotate
       this.controls.autoRotateSpeed = effective.camera?.rotateSpeed ?? .5
     }
@@ -528,11 +541,79 @@ export class ViewerEngine {
     this.notifyTransitionStart()
   }
   setAutoTour(enabled: boolean): void {
+    if (this.theatreView) this.eventBus.emit('theatre:command', { type: 'exit' })
     if (this.controls) {
       this.controls.autoRotate = enabled && !this.motionQuery.matches
       this.controls.autoRotateSpeed = this.pluginContext?.config.camera?.rotateSpeed ?? .5
       this.wakeUp()
     }
+  }
+  async theatreCommand(command: TheatreCommand): Promise<void> {
+    if (this.disposed) return
+    if (!this.pluginManager.isInstalled('PhotoTheatre')) await this.pluginManager.install('PhotoTheatre')
+    if (this.disposed) return
+    this.eventBus.emit('theatre:command', command)
+    this.wakeUp()
+  }
+  private theatreSnapshot() { return (this.pluginManager.get('PhotoTheatre') as PhotoTheatrePlugin | undefined)?.snapshot() }
+  private handleTheatreActive = (active: boolean): void => {
+    if (!this.controls) return
+    this.cancelIntroFlight()
+    if (active && !this.theatreView) {
+      this.theatreView = { position: this.camera.position.clone(), target: this.controls.target.clone(),
+        enabled: this.controls.enabled, damping: this.controls.enableDamping, autoRotate: this.controls.autoRotate }
+      this.controls.autoRotate = false; this.controls.enableDamping = false; this.controls.update()
+      this.controls.enabled = false
+      this.camera.position.set(0, 0, 1000); this.controls.target.set(0, 0, 0); this.controls.update()
+      this.camera.lookAt(0, 0, 0)
+    } else if (!active && this.theatreView) {
+      const view = this.theatreView; this.theatreView = null; this.theatrePointer = null
+      this.camera.position.copy(view.position); this.controls.target.copy(view.target)
+      this.controls.update(); this.controls.enabled = view.enabled
+      this.controls.enableDamping = view.damping; this.controls.autoRotate = view.autoRotate
+    }
+    this.wakeUp()
+  }
+  private theatrePointerDown = (event: PointerEvent): void => {
+    if (!this.theatreView) return
+    this.theatrePointer = { id: event.pointerId, x: event.clientX, y: event.clientY }
+    this.canvas.setPointerCapture?.(event.pointerId)
+    this.eventBus.emit('theatre:command', { type: 'pause' })
+  }
+  private theatrePointerMove = (event: PointerEvent): void => {
+    const state = this.theatreSnapshot()
+    if (!this.theatreView || this.theatrePointer || state?.mode !== 'cloud' || state.status === 'paused' || this.motionQuery.matches) return
+    const rect = this.canvas.getBoundingClientRect()
+    this.camera.position.x = ((event.clientX - rect.left) / Math.max(1, rect.width) - .5) * 32
+    this.camera.position.y = -((event.clientY - rect.top) / Math.max(1, rect.height) - .5) * 22
+    this.camera.lookAt(0, 0, 0)
+  }
+  private theatrePointerCancel = (): void => { this.theatrePointer = null }
+  private theatrePointerUp = (event: PointerEvent): void => {
+    const down = this.theatrePointer; this.theatrePointer = null
+    if (!down || down.id !== event.pointerId || !this.theatreView) return
+    const dx = event.clientX - down.x, dy = event.clientY - down.y
+    if (Math.abs(dx) > 32 && Math.abs(dx) > Math.abs(dy)) this.eventBus.emit('theatre:command', { type: 'step', direction: dx < 0 ? 1 : -1 })
+  }
+  private theatreWheel = (event: WheelEvent): void => {
+    if (!this.theatreView) return
+    event.preventDefault()
+    if (performance.now() - this.theatreWheelAt < 300) return
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    if (Math.abs(delta) < 5) return
+    this.theatreWheelAt = performance.now()
+    this.eventBus.emit('theatre:command', { type: 'step', direction: Math.sign(delta) })
+    this.wakeUp()
+  }
+  private theatreKey = (event: KeyboardEvent): void => {
+    if (!this.theatreView) return
+    const state = this.theatreSnapshot()
+    let command: TheatreCommand | null = null
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') command = { type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1 }
+    else if (event.key === 'Escape') command = { type: 'exit' }
+    else if (event.key === ' ') command = { type: state?.status === 'playing' ? 'pause' : 'play' }
+    else if (event.key === 'Enter' && state) command = { type: 'focus', index: state.offset }
+    if (command) { event.preventDefault(); this.eventBus.emit('theatre:command', command); this.wakeUp() }
   }
   private cancelIntroFlight(): void {
     if (this.introFlight) { this.introFlight = null; this.notifyTransitionEnd() }
@@ -546,6 +627,7 @@ export class ViewerEngine {
    */
   resetView(): void {
     if (this.disposed) return
+    this.eventBus.emit('theatre:command', { type: 'exit' })
     this.cancelIntroFlight()
     this.camera.position.set(0, 80, 1100)
     if (this.controls) {
@@ -621,6 +703,12 @@ export class ViewerEngine {
     }
 
     // 移除监听
+    this.canvas.removeEventListener('pointerdown', this.theatrePointerDown)
+    this.canvas.removeEventListener('pointerup', this.theatrePointerUp)
+    this.canvas.removeEventListener('pointermove', this.theatrePointerMove)
+    this.canvas.removeEventListener('pointercancel', this.theatrePointerCancel)
+    this.canvas.removeEventListener('wheel', this.theatreWheel)
+    this.canvas.removeEventListener('keydown', this.theatreKey)
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
     this.canvas.removeEventListener('webglcontextrestored', this.handleContextRestored)
     this.detachUserActivityListeners()
@@ -796,7 +884,7 @@ export class ViewerEngine {
     this.renderer.info.reset()
 
     // 更新 OrbitControls 阻尼
-    if (this.controls) {
+    if (this.controls && !this.theatreView) {
       this.updateIntroFlight(elapsed)
       this.controls.update(delta)
     }
@@ -891,7 +979,9 @@ export class ViewerEngine {
     const background = this.pluginManager.get('Background') as { getInfo?: () => { url: string | null; width: number; height: number; bytes: number; projection: 'flat' | 'equirectangular' | 'none' } } | undefined
     const direction = new THREE.Vector3()
     this.camera.getWorldDirection(direction)
+    const visiblePhotos = this.photos.filter(photo => photo.visible && photo.userData.inView)
     return { postProcessing, requestedConfig: requested, requested,
+      renderedPhotos: { visible: visiblePhotos.length, ready: visiblePhotos.filter(photo => photo.userData.textureState === 'ready').length },
       effectiveConfig: structuredClone(this.pluginContext!.config), effectiveQuality: this.effectiveQuality, reason: this.qualityReason,
       elapsed: this.frozenTime ?? this.clock.elapsed, meshCount: this.photos.length,
       particleCounts: particles?.getParticleCounts() ?? { stars: 0, hearts: 0, sakura: 0, snow: 0, fireflies: 0, meteors: 0 },

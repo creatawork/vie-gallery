@@ -111,7 +111,7 @@ export class PhotoScene {
     this.matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     this.frustum.setFromProjectionMatrix(this.matrix)
     for (const [photo, mesh] of this.meshes) {
-      const visible = this.frustum.intersectsObject(mesh)
+      const visible = mesh.visible && this.frustum.intersectsObject(mesh)
       mesh.userData.inView = visible
       mesh.getWorldPosition(this.position)
       // Reserve [0, 1) for thumbnails and [1, 2) for full textures. A nearby

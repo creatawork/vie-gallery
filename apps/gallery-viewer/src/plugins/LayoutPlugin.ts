@@ -31,6 +31,12 @@ export class LayoutPlugin implements ViewerPlugin {
 
   private context: ViewerContext | null = null
   private currentLayout: string = 'sphere'
+  private theatreActive = false
+  private onTheatreActive = (active: boolean) => {
+    this.theatreActive = active
+    this.cancelInFlightMorphs()
+    if (!active) this.applyLayout(this.currentLayout)
+  }
   private morphs: MorphTarget[] = []
   private restPoses: Map<number, RestPose> = new Map()
   private clock = 0
@@ -38,7 +44,7 @@ export class LayoutPlugin implements ViewerPlugin {
   private entranceOffsets = new WeakMap<THREE.Mesh, number>()
   private layoutSignature = ''
   private onLayoutChange = (mode: string) => this.switchLayout(mode)
-  private onPhotosLoaded = () => { this.cancelInFlightMorphs(); this.applyLayout(this.currentLayout) }
+  private onPhotosLoaded = () => { this.cancelInFlightMorphs(); if (!this.theatreActive) this.applyLayout(this.currentLayout) }
   private onConfigUpdate = () => {
     const signature = JSON.stringify(this.context?.config.layout)
     if (signature !== this.layoutSignature && this.context) {
@@ -52,6 +58,7 @@ export class LayoutPlugin implements ViewerPlugin {
     this.currentLayout = context.config.layout?.mode || 'sphere'
 
     this.layoutSignature = JSON.stringify(context.config.layout)
+    context.on('theatre:active', this.onTheatreActive)
     context.on('layout:change', this.onLayoutChange)
     context.on('photos:loaded', this.onPhotosLoaded)
     context.on('config:update', this.onConfigUpdate)
@@ -63,6 +70,7 @@ export class LayoutPlugin implements ViewerPlugin {
 
   uninstall(): void {
     this.cancelInFlightMorphs()
+    this.context?.off('theatre:active', this.onTheatreActive)
     this.context?.off('layout:change', this.onLayoutChange)
     this.context?.off('photos:loaded', this.onPhotosLoaded)
     this.context?.off('config:update', this.onConfigUpdate)
@@ -74,6 +82,7 @@ export class LayoutPlugin implements ViewerPlugin {
   }
 
   update(delta: number, elapsed: number): void {
+    if (this.theatreActive) return
     this.clock = elapsed
     for (const photo of this.context?.photos ?? []) {
       photo.position.y -= this.entranceOffsets.get(photo) ?? 0
@@ -188,6 +197,7 @@ export class LayoutPlugin implements ViewerPlugin {
   switchLayout(mode: string, baseDuration = this.context?.config.layout.transition?.duration ?? 1.2): void {
     if (!this.context) return
     this.currentLayout = mode
+    if (this.theatreActive) return
 
     const photos = this.context.photos
     if (!photos || photos.length === 0) return
@@ -247,6 +257,7 @@ export class LayoutPlugin implements ViewerPlugin {
   private applyLayout(mode: string): void {
     if (!this.context) return
     this.currentLayout = mode
+    if (this.theatreActive) return
 
     const photos = this.context.photos
     if (!photos || photos.length === 0) return

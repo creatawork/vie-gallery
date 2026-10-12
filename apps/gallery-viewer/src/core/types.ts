@@ -119,6 +119,7 @@ export type ViewerEvent =
   | 'destroy'
 
 export interface ViewerDiagnostics {
+  renderedPhotos: { visible: number; ready: number }
   postProcessing: PostProcessingState
   requestedConfig: ViewerConfig
   effectiveConfig: ViewerConfig

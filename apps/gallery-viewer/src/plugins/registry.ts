@@ -1,5 +1,6 @@
 /** Lazy factories used by the viewer engine without eagerly re-exporting effects. */
 export const pluginRegistry = {
+  PhotoTheatre: () => import('./PhotoTheatrePlugin').then(m => new m.PhotoTheatrePlugin()),
   Layout: () => import('./LayoutPlugin').then(m => new m.LayoutPlugin()),
   ClickRipple: () => import('./ClickRipplePlugin').then(m => new m.ClickRipplePlugin()),
   Lighting: () => import('./LightingPlugin').then(m => new m.LightingPlugin()),

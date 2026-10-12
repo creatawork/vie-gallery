@@ -10,6 +10,21 @@ import EmptyState from './components/EmptyState.vue'
 import ErrorState from './components/ErrorState.vue'
 import PhotoWall from './components/PhotoWall.vue'
 import Icon from './components/Icon.vue'
+import type { TheatreCommand, TheatreState } from './lib/photoTheatre'
+const PhotoTheatreControls = defineAsyncComponent(() => import('./components/PhotoTheatreControls.vue'))
+const theatreMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+const theatreMotionChanged = () => { theatre.value = { ...theatre.value, reducedMotion: theatreMotion.matches } }
+const theatre = ref<TheatreState>({ active: false, mode: 'cloud', status: 'idle', elapsed: 0, offset: 0, indices: [], reducedMotion: theatreMotion.matches })
+const theatreBusy = ref(false)
+async function sendTheatreCommand(command: TheatreCommand) {
+  const active = engine
+  if (!active || theatreBusy.value) return
+  theatreBusy.value = true
+  try { await active.theatreCommand(command) }
+  catch { if (engine === active) webglFallbackMessage.value = '照片编排暂未就绪，请重试。' }
+  finally { theatreBusy.value = false }
+}
+
 
 const LightboxModal = defineAsyncComponent(() => import('./components/LightboxModal.vue'))
 const VisitorShareModal = defineAsyncComponent(() => import('./components/VisitorShareModal.vue'))
@@ -138,6 +153,7 @@ const presets = [
 ]
 
 onMounted(() => {
+  theatreMotion.addEventListener('change', theatreMotionChanged)
   window.addEventListener('message', handlePostMessage)
   if (isEmbedPreview()) {
     window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_REQUEST' }, adminEmbedOrigin())
@@ -155,6 +171,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  theatreMotion.removeEventListener('change', theatreMotionChanged)
   stopPreviewProgress()
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
   window.removeEventListener('deviceorientation', handleOrientation, true)
@@ -356,6 +373,13 @@ async function init3DEngine() {
     webglLostHandler = () => fallbackTo2D('3D 渲染连接中断，已切换到经典画廊，照片仍可正常浏览。')
     activeEngine.getEventBus().on('webgl:lost', webglLostHandler)
 
+    activeEngine.getEventBus().on('theatre:state', (state: TheatreState) => {
+      theatre.value = state
+      hoveredPhoto.value = null
+      lastHoveredMesh = null
+    })
+    activeEngine.getEventBus().on('theatre:focused', (index: number) => openLightbox(index))
+
     // 绑定 3D 悬停与交互
     bindCanvasInteractions()
     activeEngine.start()
@@ -404,7 +428,7 @@ function bindCanvasInteractions() {
     activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
     activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
-    const intersects = activeRaycaster.intersectObjects(engine.getPhotos())
+    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible))
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh
@@ -412,10 +436,11 @@ function bindCanvasInteractions() {
 
       if (lastHoveredMesh !== hit) {
         if (lastHoveredMesh) {
-          lastHoveredMesh.scale.setScalar(lastHoveredMesh.userData.layoutScale ?? 1)
+          if (!theatre.value.active) lastHoveredMesh.scale.setScalar(lastHoveredMesh.userData.layoutScale ?? 1)
         }
         lastHoveredMesh = hit
-        hit.scale.setScalar((hit.userData.layoutScale ?? 1) * 1.08)
+        if (!theatre.value.active) hit.scale.setScalar((hit.userData.layoutScale ?? 1) * 1.08)
+        engine.getEventBus().emit('theatre:hover', hit.userData.index)
       }
 
       hoveredPhoto.value = {
@@ -425,11 +450,12 @@ function bindCanvasInteractions() {
       hoveredScreenPos.value = { x: e.clientX, y: e.clientY }
     } else {
       if (lastHoveredMesh) {
-        lastHoveredMesh.scale.setScalar(lastHoveredMesh.userData.layoutScale ?? 1)
+        if (!theatre.value.active) lastHoveredMesh.scale.setScalar(lastHoveredMesh.userData.layoutScale ?? 1)
         lastHoveredMesh = null
       }
       canvas.style.cursor = 'default'
       hoveredPhoto.value = null
+      engine.getEventBus().emit('theatre:hover', null)
     }
   }
 
@@ -446,12 +472,17 @@ function bindCanvasInteractions() {
     activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
     activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
-    const intersects = activeRaycaster.intersectObjects(engine.getPhotos())
+    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible))
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh
       const idx = hit.userData.index
       
+      if (theatre.value.active) {
+        void sendTheatreCommand({ type: 'focus', index: idx })
+        return
+      }
+
       // 触发照片点击事件，让光照系统响应
       engine.getEventBus().emit('photo:click', { photo: hit })
       
@@ -489,6 +520,11 @@ function applyAutoTour(enabled: boolean) {
   engine?.setAutoTour(enabled)
 }
 
+function selectLightboxPhoto(index: number) {
+  lightboxIndex.value = index
+  if (theatre.value.active) void sendTheatreCommand({ type: 'focus', index })
+}
+
 function closeLightbox() {
   showLightbox.value = false
   engine?.getEventBus().emit('photo:blur')
@@ -502,6 +538,7 @@ function toggleAutoTour() {
  * 移动端陀螺仪重力感应视差
  */
 function handleOrientation(e: DeviceOrientationEvent) {
+  if (theatre.value.active) return
   if (!gyroEnabled.value || !engine) return
   const beta = e.beta || 0   // -180 ~ 180 (X-axis tilt)
   const gamma = e.gamma || 0 // -90 ~ 90 (Y-axis tilt)
@@ -569,6 +606,8 @@ function destroy3DEngine() {
     engine = null
   }
   engineReady.value = false
+  theatre.value = { ...theatre.value, active: false, status: 'idle', elapsed: 0, indices: [] }
+  theatreBusy.value = false
   raycaster = null
   mousePos = null
 }
@@ -604,6 +643,7 @@ function resetView() {
 }
 
 async function selectPreset(presetName: string) {
+  if (theatre.value.active) engine?.getEventBus().emit('theatre:command', { type: 'exit' })
   currentPreset.value = presetName
   showPresetMenu.value = false
   if (engine) {
@@ -654,7 +694,7 @@ async function selectPreset(presetName: string) {
         :current-index="lightboxIndex"
         :allow-download="viewer.allowDownload.value"
         @close="closeLightbox"
-        @select="idx => lightboxIndex = idx"
+        @select="selectLightboxPhoto"
       />
     </div>
 
@@ -762,6 +802,7 @@ async function selectPreset(presetName: string) {
             <button
               class="hud-icon-btn gyro-btn"
               :class="{ active: gyroEnabled }"
+              :disabled="theatre.active"
               title="陀螺仪重力感应视差"
               @click="toggleGyro"
             >
@@ -867,8 +908,9 @@ async function selectPreset(presetName: string) {
 
       <!-- Mode 1: 3D Spatial WebGL Canvas -->
       <div v-show="viewMode === '3d'" class="canvas-container">
-        <canvas ref="canvasRef" class="webgl-canvas"></canvas>
-        <div class="spatial-tips">
+        <canvas ref="canvasRef" class="webgl-canvas" tabindex="0" aria-label="照片空间，编排模式下方向键换组、回车查看主图、空格播放或暂停"></canvas>
+        <PhotoTheatreControls v-if="show3dHud" :state="theatre" :total="viewer.photos.value.length" :busy="theatreBusy" @command="sendTheatreCommand" />
+        <div v-if="!theatre.active" class="spatial-tips">
           <p>单击照片聚焦飞入 · 拖动旋转视角 · 滚轮缩放 · 罗盘按钮复位视角</p>
         </div>
         <button
@@ -909,7 +951,7 @@ async function selectPreset(presetName: string) {
         :current-index="lightboxIndex"
         :allow-download="viewer.allowDownload.value"
         @close="closeLightbox"
-        @select="idx => lightboxIndex = idx"
+        @select="selectLightboxPhoto"
       />
 
       <!-- 访客分享面板：微信/QQ 内置浏览器引导 + 系统分享 + 复制链接 -->
@@ -1527,4 +1569,7 @@ async function selectPreset(presetName: string) {
     left: 12px;
   }
 }
+.canvas-container:has(.theatre-dock) .spatial-tips { bottom: 100px; }
+.canvas-container:has(.theatre-dock) .load-more-floating { bottom: 170px; }
+.webgl-canvas:focus-visible { outline: 2px solid var(--brand-emerald); outline-offset: -4px; }
 </style>
