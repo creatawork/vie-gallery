@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
 import { VIEWER_PRESETS } from '@vie/gallery-contracts'
 import { mockGallery } from '../../gallery-viewer/e2e/helpers/mockGallery'
 async function fixture(page: Page) {
   let draft = JSON.stringify({ ...VIEWER_PRESETS['film-gallery'], quality: 'high', visitorAllowDownload: true, extension: { future: 42 } }), saves = 0
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
-  await mockGallery(page, { config: JSON.parse(draft) })
+  await mockGallery(page, { config: JSON.parse(draft), shared: true })
   await page.route('**/api/me', route => route.fulfill({ json: { role: 'OWNER', capabilities: ['GALLERY_READ', 'CONFIG_READ', 'CONFIG_WRITE'], user: { displayName: '测试策展人' }, tenant: { name: '配置验收' } } }))
   await page.route('**/api/auth/csrf', route => route.fulfill({ json: { token: 'fixture-csrf' } }))
   await page.route('**/api/galleries/config-fixture', route => route.fulfill({ json: { id: 'config-fixture', slug: 'effects-fixture', name: '配置验收', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2026-10-05T00:00:00Z' } }))
@@ -168,9 +169,9 @@ test('config side panel matches the designed look', async ({ page }) => {
   await expect(page.locator('.side-heading')).toBeVisible()
   await expect(page.locator('.config-side')).toHaveCSS('background-color', 'rgb(255, 254, 250)')
   await page.getByRole('tab', { name: '氛围', exact: true }).click()
-  await expect(page.locator('.preset-card')).toHaveCount(8)
+  await expect(page.locator('.preset-card')).toHaveCount(16)
   // 推荐场景卡片带“推荐”徽标；氛围页不再直接暴露原始参数
-  await expect(page.locator('.preset-card').filter({ hasText: '星空夜曲' }).locator('.preset-recommend')).toBeVisible()
+  await expect(page.locator('.preset-card').filter({ hasText: '翡翠流光' }).locator('.preset-recommend')).toBeVisible()
   await expect(page.getByLabel('背景类型')).toHaveCount(0)
   const selected = page.locator('.preset-card[aria-pressed="true"]')
   await expect(selected).toHaveCount(1)
@@ -331,4 +332,86 @@ test('configuration sections support keyboard tab navigation', async ({ page }) 
   await expect(page.getByRole('tab', { name: '版本', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Home')
   await expect(page.getByRole('tab', { name: '基础', exact: true })).toBeFocused()
+})
+
+test('creator previews ignore visitor 2D preferences without overwriting them', async ({ page }) => {
+  const data = await fixture(page)
+  await page.context().addInitScript(() => {
+    localStorage.setItem('vie:view-mode', '2d')
+    localStorage.setItem('vie-gallery-viewer-preference', JSON.stringify({ background: { mode: 'solid', color: '#ff0000' }, layout: { mode: 'random' } }))
+  })
+  await page.goto('/app/galleries/config-fixture/config')
+  const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+  await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+  await expect(frame.locator('canvas.webgl-canvas')).toBeVisible()
+  const requested = await frame.locator('canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().requested)
+  expect(requested.background).toEqual(data.draft().background)
+  expect(requested.layout).toEqual(data.draft().layout)
+  expect(await frame.locator('canvas').evaluate(() => localStorage.getItem('vie:view-mode'))).toBe('2d')
+  expect(data.errors).toEqual([])
+})
+
+test('all sixteen looks replace the active composition and background in the same iframe', async ({ page }) => {
+  test.setTimeout(180000)
+  const data = await fixture(page)
+  await page.goto('/app/galleries/config-fixture/config')
+  await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+  await page.getByRole('tab', { name: '氛围', exact: true }).click()
+  const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+  const viewerFrame = page.frames().find(candidate => candidate.url().includes('/g/effects-fixture'))!
+  const initialUrl = viewerFrame.url()
+  for (const [name, expected] of Object.entries(VIEWER_PRESETS)) {
+    await page.locator('.preset-card').nth(Object.keys(VIEWER_PRESETS).indexOf(name)).click()
+    await expect.poll(() => viewerFrame.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.presetName)).toBe(name)
+    const snapshot = await viewerFrame.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot())
+    expect(snapshot.requested.layout).toEqual(expected.layout)
+    expect(snapshot.requested.background?.mode).toBe(expected.background?.mode)
+    expect(snapshot.requested.background?.motion).toBe(expected.background?.motion)
+    const curated = expected.layout.params?.composition === 'curated'
+    expect(snapshot.plugins.includes('SpatialStage')).toBe(curated)
+    expect(snapshot.plugins.includes('Layout')).toBe(!curated)
+    expect(snapshot.plugins.includes('PhotoFade')).toBe(!curated)
+    if (expected.background?.mode === 'image') await expect.poll(() => viewerFrame.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().background.projection)).toBe('equirectangular')
+    else expect(snapshot.background.url).toBeNull()
+    expect(viewerFrame.url()).toBe(initialUrl)
+  }
+  await page.locator('.preset-card').filter({ hasText: '翡翠流光' }).click()
+  await expect.poll(() => frame.locator('canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.presetName)).toBe('jade-flow')
+  await page.screenshot({ path: fileURLToPath(new URL('../../../.cache/effects-unified-desktop.png', import.meta.url)), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: fileURLToPath(new URL('../../../.cache/effects-unified-mobile.png', import.meta.url)), fullPage: true })
+  expect(data.errors).toEqual([])
+})
+
+test('new window previews share unsaved edits and keep the entire viewport in one scene', async ({ page }) => {
+  test.setTimeout(90000)
+  const data = await fixture(page)
+  await page.goto('/app/galleries/config-fixture/config')
+  await expect(page.locator('.live-preview')).toHaveClass(/is-ready/)
+  await page.getByLabel('照片间距').fill('1.73')
+  const opened = page.waitForEvent('popup')
+  await page.getByRole('button', { name: '新窗口预览' }).click()
+  const popup = await opened
+  const errors: string[] = []
+  popup.on('pageerror', error => errors.push(error.message))
+  await popup.waitForURL(/live=config/)
+  await expect.poll(() => popup.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.layout.params?.spacing)).toBe(1.73)
+  await page.getByRole('tab', { name: '氛围', exact: true }).click()
+  await page.locator('.preset-card').filter({ hasText: '深海潮汐' }).click()
+  await expect.poll(() => popup.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.presetName)).toBe('deep-ocean')
+  const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+  await expect.poll(() => frame.locator('canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.presetName)).toBe('deep-ocean')
+  expect(await popup.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().requested)).toEqual(await frame.locator('canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().requested))
+  await expect(popup.locator('.exhibition-header')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await popup.getByRole('button', { name: '螺旋', exact: true }).click()
+  await expect.poll(() => popup.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.layout.mode)).toBe('helix')
+  expect(await popup.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().requested.background)).toEqual(VIEWER_PRESETS['deep-ocean'].background)
+  await page.getByRole('tab', { name: '基础', exact: true }).click()
+  await page.getByLabel('照片间距').fill('2')
+  await expect.poll(() => popup.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().requested.layout.params?.spacing)).toBe(2)
+  await popup.screenshot({ path: fileURLToPath(new URL('../../../.cache/effects-unified-window.png', import.meta.url)) })
+  expect(data.errors).toEqual([])
+  expect(errors).toEqual([])
+  await popup.close()
 })

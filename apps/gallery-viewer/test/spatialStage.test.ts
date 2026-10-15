@@ -76,6 +76,64 @@ test('portrait works keep their aspect ratio and fit the mobile focus area', () 
   stage.uninstall()
 })
 
+test('stage applies scale, spacing and radius changes without replacing the scene', () => {
+  const { context, stage } = fixture()
+  stage.install(context)
+  const scale = context.photos[0].scale.x
+  const position = context.photos[1].position.clone()
+  context.config.layout.params!.scale = 1.5
+  stage.update(.05, 1)
+  assert.ok(Math.abs(context.photos[0].scale.x - scale * 1.5) < .001)
+  context.config.layout.params!.spacing = 1.7
+  stage.update(.05, 2)
+  assert.ok(context.photos[1].position.distanceTo(position) > 30)
+  const x = context.photos[1].position.x
+  context.config.layout.params!.radius = 680
+  stage.update(.05, 3)
+  assert.ok(Math.abs(context.photos[1].position.x - x * 2) < .001)
+  stage.uninstall()
+})
+
+test('photo float is independent of autoplay and stops when disabled', () => {
+  const { context, stage } = fixture(12, false)
+  context.config.camera!.autoRotate = false
+  stage.install(context)
+  for (let i = 0; i < 100; i++) stage.update(.05, i * .05)
+  const y = context.photos[0].position.y
+  for (let i = 100; i < 150; i++) stage.update(.05, i * .05)
+  assert.ok(Math.abs(context.photos[0].position.y - y) > .1)
+  context.config.effects.photoFloat = false
+  for (let i = 150; i < 250; i++) stage.update(.05, i * .05)
+  assert.ok(Math.abs(context.photos[0].position.y) < .001)
+  stage.uninstall()
+})
+
+test('zero cruise speed pauses automatic advancement', () => {
+  const { context, stage } = fixture(12, false)
+  context.config.camera!.rotateSpeed = 0
+  let index = -1
+  context.on('stage:change', (state: { index: number }) => { index = state.index })
+  stage.install(context)
+  for (let i = 0; i < 400; i++) stage.update(.05, i * .05)
+  assert.equal(index, 0)
+  stage.uninstall()
+})
+
+test('changing entrance settings replays the visible works immediately', () => {
+  const { context, stage } = fixture(12, false)
+  context.config.camera!.autoRotate = false
+  stage.install(context)
+  for (let i = 0; i < 100; i++) stage.update(.05, i * .05)
+  assert.equal((context.photos[0].material as THREE.Material).opacity, 1)
+  context.config.effects.photoEntrance = 'rise'
+  context.emit('config:update', context.config)
+  stage.update(.05, 5)
+  assert.equal((context.photos[0].material as THREE.Material).opacity, 0)
+  for (let i = 0; i < 50; i++) stage.update(.05, 5 + i * .05)
+  assert.equal((context.photos[0].material as THREE.Material).opacity, 1)
+  stage.uninstall()
+})
+
 test('published autoplay changes take effect without reinstalling the stage', () => {
   const { context, stage } = fixture(12, false)
   let index = -1

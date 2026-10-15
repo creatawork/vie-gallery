@@ -10,5 +10,9 @@
   {"name":"future version","json":"{}","schemaVersion":99,"strictValid":false,"legacyValid":false,"issuePaths":["schemaVersion"]},
   {"name":"extension retained","json":"{\"extension\":{\"label\":\"x\"}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
   {"name":"dangerous keys ignored","json":"{\"__proto__\":{\"polluted\":true},\"extension\":{\"constructor\":{},\"value\":1}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
-  {"name":"duplicate particles","json":"{\"particles\":{\"types\":[\"stars\",\"stars\"]}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["particles.types"]}
+  {"name":"duplicate particles","json":"{\"particles\":{\"types\":[\"stars\",\"stars\"]}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["particles.types"]},
+  {"name":"curated composition and moving gradient","json":"{\"layout\":{\"params\":{\"composition\":\"curated\"}},\"background\":{\"mode\":\"gradient\",\"motion\":true}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
+  {"name":"explicit spatial composition","json":"{\"layout\":{\"params\":{\"composition\":\"spatial\"}}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
+  {"name":"unknown composition","json":"{\"layout\":{\"params\":{\"composition\":\"mixed\"}}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["layout.params.composition"]},
+  {"name":"motion requires boolean","json":"{\"background\":{\"motion\":\"yes\"}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["background.motion"]}
 ]

@@ -7,8 +7,11 @@ export class PhotoFadePlugin implements ViewerPlugin {
   private states = new Map<PhotoMesh, FadeState>()
   private seen = new WeakSet<PhotoMesh>()
   private transitioning = false
+  private entranceSignature = ''
   install(context: ViewerContext): void {
     this.context = context
+    this.entranceSignature = JSON.stringify([context.config.effects.photoEntrance, context.config.effects.entranceDuration])
+    context.on('config:update', this.handleConfigUpdate)
     context.on('photos:loaded', this.handlePhotosLoaded)
     context.on('photo:texture-ready', this.handleTextureReady)
     context.on('photo:focus', this.handleFocus)
@@ -17,6 +20,7 @@ export class PhotoFadePlugin implements ViewerPlugin {
     this.handlePhotosLoaded(context.photos)
   }
   uninstall(): void {
+    this.context?.off('config:update', this.handleConfigUpdate)
     this.context?.off('photos:loaded', this.handlePhotosLoaded)
     this.context?.off('photo:texture-ready', this.handleTextureReady)
     this.context?.off('photo:focus', this.handleFocus)
@@ -53,6 +57,15 @@ export class PhotoFadePlugin implements ViewerPlugin {
       this.states.set(mesh, { start: this.context!.now() + Math.min(1, index * .05), from: 0, to: 1, duration: config.entranceDuration ?? .5, rise })
     })
     this.syncTransition()
+  }
+  private handleConfigUpdate = (): void => {
+    if (!this.context) return
+    const signature = JSON.stringify([this.context.config.effects.photoEntrance, this.context.config.effects.entranceDuration])
+    if (signature === this.entranceSignature) return
+    this.entranceSignature = signature
+    this.resetAllOpacity()
+    this.seen = new WeakSet()
+    this.handlePhotosLoaded(this.context.photos)
   }
   private handleFocus = (data: { photo: PhotoMesh }) => {
     this.context?.photos.forEach(mesh => this.fadeTo(mesh, mesh === data.photo ? 1 : .6))

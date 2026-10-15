@@ -25,17 +25,21 @@ export class SpatialStagePlugin implements ViewerPlugin {
   private rotation = new THREE.Euler()
   private quaternion = new THREE.Quaternion()
   private known = new WeakSet<THREE.Mesh>()
+  private entrances = new WeakMap<THREE.Mesh, number>()
+  private entranceSignature = ''
   private paths = new THREE.Group()
 
   install(context: ViewerContext) {
     this.installed = true
     this.context = context
     this.known = new WeakSet()
+    this.entrances = new WeakMap()
     this.lastIndex = -1
     this.cursor = 0; this.target = 0; this.dwell = 0
     this.suspended = false; this.hovered = null; this.pointer.set(0, 0)
     this.canvas = context.renderer.domElement
     this.autoplay = this.configuredAutoplay = !!context.config.camera?.autoRotate
+    this.entranceSignature = JSON.stringify([context.config.effects.photoEntrance, context.config.effects.entranceDuration])
     context.on('stage:step', this.step)
     context.on('stage:reset', this.reset)
     context.on('stage:autoplay', this.setAutoplay)
@@ -79,6 +83,11 @@ export class SpatialStagePlugin implements ViewerPlugin {
     const enabled = !!this.context.config.camera?.autoRotate
     if (enabled !== this.configuredAutoplay) this.setAutoplay(enabled)
     this.configuredAutoplay = enabled
+    const signature = JSON.stringify([this.context.config.effects.photoEntrance, this.context.config.effects.entranceDuration])
+    if (signature !== this.entranceSignature) {
+      this.entranceSignature = signature
+      this.entrances = new WeakMap()
+    }
   }
   private hover = (index: number | null) => { this.hovered = index }
   private photosChanged = () => { this.lastIndex = -1; this.dwell = 0 }
@@ -131,12 +140,15 @@ export class SpatialStagePlugin implements ViewerPlugin {
     const mobile = camera.aspect < .85
     const reduced = context.reducedMotion()
     const dt = Math.min(delta, .05)
-    const blend = reduced ? 1 : 1 - Math.exp(-dt * 5)
+    const transition = context.config.layout.transition
+    const instant = reduced || transition?.style === 'none'
+    const blend = instant ? 1 : 1 - Math.exp(-dt * 6 / (transition?.duration ?? 1.2))
+    const speed = context.config.camera?.rotateSpeed ?? .5
     if (!this.suspended && this.autoplay && !reduced && !this.drag && count > 1) {
-      this.dwell += dt * (this.hovered !== null ? .15 : 1)
+      this.dwell += dt * speed * 2 * (this.hovered !== null ? .15 : 1)
       if (this.dwell > 5.5) { this.target = Math.round(this.target) + 1; this.dwell = 0 }
     }
-    this.cursor += (this.target - this.cursor) * (reduced ? 1 : 1 - Math.exp(-dt * 4.5))
+    this.cursor += (this.target - this.cursor) * blend
     const moving = Math.abs(this.target - this.cursor) > .001
     if (moving !== this.moving) {
       this.moving = moving
@@ -148,6 +160,11 @@ export class SpatialStagePlugin implements ViewerPlugin {
       this.cursor -= cycles; this.target -= cycles
     }
     const mode = context.config.layout.mode
+    const params = context.config.layout.params
+    const spacing = params?.spacing ?? 1
+    const radius = (params?.radius ?? 340) / 340
+    const heightFactor = (params?.height ?? 430) / 430
+    const turns = (params?.turns ?? 1.15) / 1.15
     const parallax = reduced || this.suspended ? 0 : 1
     this.cameraPosition.set(this.pointer.x * 32 * parallax, -this.pointer.y * 22 * parallax, mobile ? 1040 : 930)
     camera.position.lerp(this.cameraPosition, blend)
@@ -159,30 +176,37 @@ export class SpatialStagePlugin implements ViewerPlugin {
       const mesh = context.photos[i]
       const d = ((i - this.cursor + count / 2) % count + count) % count - count / 2
       const a = Math.abs(d)
+      const offset = d * spacing
       // The wrap happens outside the visible ribbon. Opacity hides even a three-photo seam.
       const edge = count > 2 ? Math.min(1, Math.max(0, (count / 2 - a) * 2)) : 1
       const presence = Math.min(1, Math.max(0, 5 - a)) * edge
       let x: number, y: number, z: number, ry: number, rz = 0
       if (mode === 'carousel') {
-        x = Math.sin(d * .57) * (mobile ? 420 : 790)
-        y = Math.cos(d * .57) * 95 - 90
-        z = 150 - (1 - Math.cos(d * .57)) * 730
-        ry = Math.sin(d * .57) * .72
+        x = Math.sin(offset * .57) * (mobile ? 420 : 790) * radius
+        y = Math.cos(offset * .57) * 95 - 90
+        z = 150 - (1 - Math.cos(offset * .57)) * 730 * radius
+        ry = Math.sin(offset * .57) * .72
       } else if (mode === 'grid') {
-        x = d * (mobile ? 290 : 400)
-        y = Math.sin(d * .85) * (mobile ? 160 : 155)
+        x = offset * (mobile ? 290 : 400)
+        y = Math.sin(offset * .85) * (mobile ? 160 : 155)
         z = 150 - a * 115
         ry = Math.sin(d * .65) * .3
         rz = Math.sin(d * .85) * -.045
       } else {
-        x = Math.sin(d * .78) * (mobile ? 355 : 710)
-        y = Math.sin(d * .85) * (mobile ? 275 : 280)
-        z = 180 - a * 260
-        ry = Math.sin(d * .78) * .48
-        rz = Math.sin(d * .6) * -.07
+        x = Math.sin(offset * .78 * turns) * (mobile ? 355 : 710) * radius
+        y = Math.sin(offset * .85 * turns) * (mobile ? 275 : 280) * heightFactor
+        z = 180 - a * spacing * 260 * radius
+        ry = Math.sin(offset * .78 * turns) * .48
+        rz = Math.sin(offset * .6) * -.07
       }
       if (count === 1) { x = 0; y = 0; z = 180; ry = 0; rz = 0 }
-      if (!reduced && !this.suspended && this.autoplay) y += Math.sin(elapsed * .45 + i) * 3
+      if (!reduced && !this.suspended && context.config.effects.photoFloat) {
+        y += Math.sin(elapsed * (context.config.effects.floatSpeed ?? 1) + i) * 5 * (context.config.effects.floatAmplitude ?? 1)
+      }
+      if (!this.entrances.has(mesh)) this.entrances.set(mesh, elapsed)
+      const entrance = reduced || context.config.effects.photoEntrance === 'none' ? 1
+        : Math.min(1, Math.max(0, (elapsed - this.entrances.get(mesh)!) / (context.config.effects.entranceDuration ?? .5)))
+      if (context.config.effects.photoEntrance === 'rise') y -= (1 - entrance) * 80
       this.photoPosition.set(x, y, z)
       this.rotation.set(0, ry, rz)
       this.quaternion.setFromEuler(this.rotation)
@@ -193,12 +217,12 @@ export class SpatialStagePlugin implements ViewerPlugin {
       const width = geometry.parameters.width || 80, height = geometry.parameters.height || 60
       const fit = Math.min((mobile ? 240 : 360) / width, (mobile ? 285 : 315) / height)
       const hover = !reduced && !this.drag && !this.suspended && this.hovered === i ? 1.028 : 1
-      const scale = fit * (1 - Math.min(a, 4) * .12) * hover
+      const scale = fit * (params?.scale ?? 1) * (1 - Math.min(a, 4) * .12) * hover
       mesh.scale.setScalar(fresh ? scale : THREE.MathUtils.lerp(mesh.scale.x, scale, blend))
       mesh.userData.layoutScale = mesh.scale.x
       mesh.visible = presence > .005
       const material = mesh.material as THREE.MeshStandardMaterial
-      material.opacity = presence
+      material.opacity = presence * entrance
       if (!material.transparent) { material.transparent = true; material.needsUpdate = true }
       // Light the aluminium, not the photograph: keep the image's own color and contrast.
       material.color.setScalar(.28)
@@ -207,7 +231,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
       for (const child of mesh.children) {
         if (!(child instanceof THREE.Mesh)) continue
         const mat = child.material as THREE.MeshStandardMaterial
-        mat.transparent = true; mat.opacity = presence
+        mat.transparent = true; mat.opacity = presence * entrance
         child.scale.set((width + .65) / (width + 2), (height + .65) / (height + 2), 1)
       }
     }

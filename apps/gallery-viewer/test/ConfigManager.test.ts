@@ -14,7 +14,7 @@ test('a gallery without server config presents the recommended scene, not a blan
   } })
   try {
     const adopted = new ConfigManager().adoptServerSnapshot(null)
-    assert.equal(adopted.presetName, 'starry-night')
+    assert.equal(adopted.presetName, 'jade-flow')
     assert.equal(adopted.background?.mode, 'gradient')
     assert.equal(adopted.layout.params?.composition, 'curated')
     assert.equal(adopted.camera?.autoRotate, true)
@@ -25,11 +25,17 @@ test('a gallery without server config presents the recommended scene, not a blan
     assert.equal(existing.presetName, 'minimal')
     assert.equal(existing.background?.mode, 'solid')
 
-    // 访客偏好仍叠加在推荐场景之上
-    values.set('vie-gallery-viewer-preference', '{"layout":{"mode":"grid"}}')
+    // Historical browser snapshots cannot override authored visual settings.
+    values.set('vie-gallery-viewer-preference', '{"layout":{"mode":"grid"},"background":{"mode":"solid","color":"#ff0000"},"visitorAllowDownload":true,"quality":"low"}')
     const preferred = new ConfigManager().adoptServerSnapshot(null)
-    assert.equal(preferred.presetName, 'starry-night')
-    assert.equal(preferred.layout.mode, 'grid')
+    assert.equal(preferred.presetName, 'jade-flow')
+    assert.equal(preferred.layout.mode, 'helix')
+    assert.equal(preferred.background?.color, '#111a17')
+    assert.equal(preferred.visitorAllowDownload, false)
+    assert.equal(preferred.quality, 'low')
+    values.set('vie-gallery-viewer-preference', '{"quality":"high"}')
+    const capped = new ConfigManager().adoptServerSnapshot(normalizeViewerConfig({ quality: 'low' }).config)
+    assert.equal(capped.quality, 'low')
   } finally { Object.assign(globalThis, { window: oldWindow, localStorage: oldStorage }) }
 })
 

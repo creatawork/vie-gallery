@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { VIEWER_PRESETS, applyViewerPreset, restoreViewerPreset, createRecommendedViewerConfig, RECOMMENDED_SCENE_PRESET } from '../src/viewerPresets'
 import { normalizeViewerConfig, serializeViewerConfig } from '../src/viewerConfig'
 import { SCENE_BACKGROUND_VERSION, backgroundTextureUrl, sceneBackgroundThumbUrl, sceneBackgroundUrl } from '../src/galleryMedia'
+import { applyCuratedStyle } from '../src/curatedStyles'
 
 test('scene background urls are versioned, thumbnailed and tiered by quality', () => {
   assert.equal(sceneBackgroundUrl('minimal'), `/g/backgrounds/minimal.webp?v=${SCENE_BACKGROUND_VERSION}`)
@@ -17,9 +18,9 @@ test('scene background urls are versioned, thumbnailed and tiered by quality', (
   assert.equal(backgroundTextureUrl(unknownScene, 'low'), unknownScene)
 })
 
-test('eight complete scenes are distinct, valid and clear previous scene effects', () => {
+test('sixteen complete scenes are distinct, valid and clear previous scene effects', () => {
   const fingerprints = new Set<string>()
-  assert.equal(Object.keys(VIEWER_PRESETS).length, 8)
+  assert.equal(Object.keys(VIEWER_PRESETS).length, 16)
   for (const [name, scene] of Object.entries(VIEWER_PRESETS)) {
     assert.equal(normalizeViewerConfig(scene).issues.length, 0, name)
     fingerprints.add(JSON.stringify([scene.layout, scene.particles, scene.background, scene.effects, scene.camera]))
@@ -30,7 +31,7 @@ test('eight complete scenes are distinct, valid and clear previous scene effects
     assert.equal(minimal.effects.postGrade?.enabled, false)
     assert.equal(minimal.camera?.autoRotate, false)
   }
-  assert.equal(fingerprints.size, 8)
+  assert.equal(fingerprints.size, 16)
 })
 test('scene switch and restore preserve access, quality, audio and nested extensions', () => {
   const current = normalizeViewerConfig({ quality: 'low', visitorAllowDownload: true, extension: { label: 'kept' }, camera: { extension: true }, audio: { bgm: { enabled: true } } }).config
@@ -55,6 +56,7 @@ test('scene switch and restore preserve access, quality, audio and nested extens
 })
 test('scene presets declare equirectangular image backgrounds', () => {
   for (const [name, scene] of Object.entries(VIEWER_PRESETS)) {
+    if (scene.background?.mode !== 'image') continue
     assert.equal(scene.background?.mode, 'image', name)
     assert.equal(scene.background?.image?.projection, 'equirectangular', name)
     assert.equal(scene.background?.image?.url, sceneBackgroundUrl(name), name)
@@ -80,7 +82,7 @@ test('saved builtin background URLs load the current asset version at every qual
 })
 
 test('recommended scene is a valid, clone-isolated curated helix without a background download', () => {
-  assert.equal(RECOMMENDED_SCENE_PRESET, 'starry-night')
+  assert.equal(RECOMMENDED_SCENE_PRESET, 'jade-flow')
   const recommended = createRecommendedViewerConfig() as typeof VIEWER_PRESETS['starry-night']
   assert.equal(recommended.layout.mode, 'helix')
   assert.equal(recommended.layout.params?.composition, 'curated')
@@ -88,8 +90,37 @@ test('recommended scene is a valid, clone-isolated curated helix without a backg
   assert.equal(recommended.background?.mode, 'gradient')
   assert.equal(recommended.background?.color, '#111a17')
   assert.equal(recommended.background?.secondaryColor, '#263b32')
+  assert.deepEqual(recommended, VIEWER_PRESETS[RECOMMENDED_SCENE_PRESET])
+  assert.equal(recommended.customized, false)
   recommended.effects.bloom!.strength = 9
   recommended.presetName = 'mutated'
   assert.equal(VIEWER_PRESETS['starry-night'].effects.bloom!.strength, .5, 'preset registry must not be mutated')
   assert.equal(VIEWER_PRESETS['starry-night'].presetName, 'starry-night')
+})
+
+test('every preset replaces composition and background motion without losing nested extensions', () => {
+  for (const preset of Object.keys(VIEWER_PRESETS) as (keyof typeof VIEWER_PRESETS)[]) {
+    for (const previous of Object.values(VIEWER_PRESETS)) {
+      const current = structuredClone(previous)
+      current.layout.params!.extension = 'preserved'
+      current.layout.params!.cellW = 999
+      current.layout.params!.rx = 999
+      const next = applyViewerPreset(preset, current)
+      assert.equal(next.layout.params?.composition, VIEWER_PRESETS[preset].layout.params?.composition)
+      assert.equal(next.background?.motion, VIEWER_PRESETS[preset].background?.motion)
+      assert.equal(next.background?.mode, VIEWER_PRESETS[preset].background?.mode)
+      assert.equal(next.layout.params?.extension, 'preserved')
+      assert.equal(next.layout.params?.cellW, undefined)
+      assert.equal(next.layout.params?.rx, undefined)
+      if (next.background?.mode !== 'image') assert.equal(next.background?.image, undefined)
+    }
+  }
+})
+
+test('visitor composition controls preserve the authored atmosphere', () => {
+  const current = structuredClone(VIEWER_PRESETS['forest-dream'])
+  const next = applyCuratedStyle(current, 'carousel')
+  assert.equal(next.layout.mode, 'carousel')
+  assert.equal(next.layout.params?.composition, 'curated')
+  for (const key of ['background', 'particles', 'effects', 'lighting', 'camera', 'interaction'] as const) assert.deepEqual(next[key], current[key], key)
 })

@@ -1,6 +1,6 @@
 .viewer-app-root { position: relative; min-height: 100svh; color: var(--text-main); background: var(--bg-deep); overflow-x: clip; }
 .viewer-app-root.is-spatial {
-  --bg-deep: #171d1a; --bg-surface: #222a25; --text-main: #f3f3ec;
+  --bg-deep: var(--scene-color, #111a17); --bg-surface: #222a25; --text-main: #f3f3ec;
   --text-muted: #b4c0b6; --accent: #a0c5b2; --border: #65736b; color-scheme: dark;
 }
 .gallery-viewport { min-height: 100svh; }
@@ -12,7 +12,7 @@
 .loader-line::after, .scene-loading-line::after { content: ''; position: absolute; inset: 0; width: 45%; background: #26735d; animation: load-line 1.8s ease-in-out infinite; }
 @keyframes load-line { 0% { transform: translateX(-110%); } 100% { transform: translateX(330%); } }
 .exhibition-header { position: fixed; z-index: 40; inset: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px clamp(20px, 3.4vw, 56px); color: var(--text-main); background: var(--bg-deep); border-bottom: 1px solid var(--border); }
-.is-spatial .exhibition-header { background: #171d1aeb; border-bottom-color: #b3c3b522; }
+.is-spatial .exhibition-header { background: transparent; border-bottom-color: #ffffff18; }
 .exhibition-brand { display: flex; align-items: center; gap: 18px; padding: 0; min-height: 44px; font: italic 42px/1 var(--font-serif); color: inherit; }
 .exhibition-brand span { font: 11px/1.5 var(--font-sans); letter-spacing: .14em; color: var(--text-muted); border-left: 1px solid var(--border); padding-left: 18px; }
 .exhibition-tools { display: flex; align-items: center; gap: 12px; }
@@ -35,7 +35,7 @@
 .canvas-container { position: fixed; inset: 0; width: 100%; height: 100svh; z-index: 10; }
 .webgl-canvas { display: block; width: 100% !important; height: 100% !important; touch-action: none; cursor: grab; }.webgl-canvas:active { cursor: grabbing; }
 .webgl-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -5px; }
-.scene-loading { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; background: #171d1af2; color: #c1cbc2; font-size: 13px; }
+.scene-loading { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; background: var(--scene-color, #111a17); color: #c1cbc2; font-size: 13px; }
 .scene-loading-line { width: 120px; background: #3a4840; }.scene-loading-line::after { background: #a0c5b2; }
 .scene-loading button { padding: 12px 18px; color: #f3f3ec; border: 1px solid #829489; border-radius: 6px; font-size: 12px; }
 .composition-dock { position: fixed; bottom: max(54px, calc(36px + env(safe-area-inset-bottom))); left: 50%; transform: translateX(-50%); display: flex; gap: 4px; z-index: 30; padding: 5px; border-radius: 10px; background: #222a25; border: 1px solid #637067; }

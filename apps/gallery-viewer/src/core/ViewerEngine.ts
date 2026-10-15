@@ -257,6 +257,7 @@ export class ViewerEngine {
         if (this.disposed) return
         this.configManager.replaceConfig(candidate)
         this.eventBus.emit('config:update', this.pluginContext!.config)
+        if ((previous.layout.params?.composition === 'curated') !== (candidate.layout.params?.composition === 'curated')) this.resetView()
       } catch (error) {
         this.pendingConfig = null
         if (!this.disposed) {
@@ -320,6 +321,11 @@ export class ViewerEngine {
       ['Fog', !!effective.effects.fog?.enabled],
       ['ClickRipple', !!effective.interaction.clickRipple], ['CursorTrail', !!effective.interaction.cursorTrail]
     ])
+    // Dispose the previous composition before installing its replacement.
+    // Each composition owns photograph transforms and material state exclusively.
+    for (const [name, enabled] of wanted) {
+      if (['Layout', 'PhotoFade', 'SpatialStage'].includes(name) && !enabled && this.pluginManager.isInstalled(name)) this.pluginManager.uninstall(name)
+    }
     for (const [name, enabled] of wanted) {
       if (deferEffects && ['Particles', 'Fog', 'ClickRipple', 'CursorTrail'].includes(name)) continue
       if (enabled) {
@@ -997,7 +1003,7 @@ export class ViewerEngine {
     const direction = new THREE.Vector3()
     this.camera.getWorldDirection(direction)
     const visiblePhotos = this.photos.filter(photo => photo.visible && photo.userData.inView)
-    return { postProcessing, requestedConfig: requested, requested,
+    return { plugins: this.pluginManager.getInstalled().map(plugin => plugin.name), postProcessing, requestedConfig: requested, requested,
       renderedPhotos: { visible: visiblePhotos.length, ready: visiblePhotos.filter(photo => photo.userData.textureState === 'ready').length },
       effectiveConfig: structuredClone(this.pluginContext!.config), effectiveQuality: this.effectiveQuality, reason: this.qualityReason,
       elapsed: this.frozenTime ?? this.clock.elapsed, meshCount: this.photos.length,

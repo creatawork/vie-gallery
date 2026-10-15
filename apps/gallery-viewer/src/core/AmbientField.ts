@@ -7,11 +7,12 @@ export class AmbientField {
   constructor() {
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
       depthTest: false, depthWrite: false,
-      uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uBase: { value: new THREE.Color('#111a17') }, uTone: { value: new THREE.Color('#263b32') } },
+      uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uAngle: { value: 0 }, uBase: { value: new THREE.Color('#111a17') }, uTone: { value: new THREE.Color('#263b32') } },
       vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=vec4(position.xy,0.999,1.0);}',
-      fragmentShader: `varying vec2 vUv; uniform float uTime,uEnergy; uniform vec3 uBase,uTone;
+      fragmentShader: `varying vec2 vUv; uniform float uTime,uEnergy,uAngle; uniform vec3 uBase,uTone;
       void main(){
-        vec2 uv=vUv;
+        vec2 p=vUv-.5;
+        vec2 uv=mat2(cos(uAngle),-sin(uAngle),sin(uAngle),cos(uAngle))*p+.5;
         vec2 drift=vec2(sin(uTime*.09),cos(uTime*.07))*.08;
         float pool=exp(-length((uv-vec2(.65,.47)-drift)*vec2(1.1,1.8))*4.0);
         float rim=exp(-length((uv-vec2(.15,.28)+drift)*vec2(1.,2.))*5.0);
@@ -25,7 +26,7 @@ export class AmbientField {
     this.mesh.frustumCulled = false
     this.mesh.renderOrder = -1000
   }
-  setColors(base: string, tone: string) { this.mesh.material.uniforms.uBase.value.set(base); this.target.set(tone) }
+  setColors(base: string, tone: string, angle = 135) { this.mesh.material.uniforms.uBase.value.set(base); this.target.set(tone); this.mesh.material.uniforms.uTone.value.copy(this.target); this.mesh.material.uniforms.uAngle.value = (angle - 135) * Math.PI / 180 }
   update(delta: number, time: number, energy: number) {
     const u = this.mesh.material.uniforms
     u.uTime.value = time; u.uEnergy.value = energy

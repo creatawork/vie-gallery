@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { VIEWER_CONFIG_RULES, type ViewerConfig, type ConfigIssue } from '@vie/gallery-contracts'
-const props = defineProps<{ config: ViewerConfig; path: string; label: string; disabled?: boolean; issues: ConfigIssue[]; fallback?: string | number; hint?: string }>()
+const props = defineProps<{ config: ViewerConfig; path: string; label: string; disabled?: boolean; issues: ConfigIssue[]; fallback?: string | number; hint?: string; options?: readonly string[] }>()
 const emit = defineEmits<{ patch: [input: unknown] }>()
 const rule = computed(() => VIEWER_CONFIG_RULES[props.path]!)
 const value = computed(() => props.path.split('.').reduce<unknown>((target, key) => target && typeof target === 'object' ? (target as Record<string, unknown>)[key] : undefined, props.config) ?? props.fallback)
@@ -12,6 +12,14 @@ watch([value, issue], ([next, nextIssue], [previous, previousIssue]) => {
   if (next !== previous || (previousIssue && !nextIssue)) draft.value = next
 })
 const names: Record<string, string> = { auto: '自动', low: '低', mid: '中', high: '高', sphere: '环形展厅', carousel: '线性长廊', helix: '螺旋长廊', grid: '矩阵展墙', spiral: '旋臂漫游', random: '自由探索', solid: '纯色', gradient: '渐变', image: '全景图片', smooth: '平滑', burst: '展开', none: '无', fade: '渐显', rise: '上浮', sunrise: '清晨', noon: '正午', sunset: '黄昏', night: '夜晚', stars: '星尘', sakura: '樱花', hearts: '心形', snow: '雪花', fireflies: '萤火虫', meteors: '流星' }
+function optionLabel(option: string) {
+  if (option === 'curated') return '逐张策展'
+  if (option === 'spatial') return '自由漫游'
+  if (option === 'flat') return '平面图片'
+  if (option === 'equirectangular') return '360° 全景'
+  if (props.path === 'layout.mode' && props.config.layout.params?.composition === 'curated') return ({ helix: '螺旋', carousel: '环幕', grid: '波浪' } as Record<string, string>)[option] ?? names[option]
+  return names[option] ?? option
+}
 function update(next: unknown) {
   draft.value = next
   const keys = props.path.split('.')
@@ -38,7 +46,7 @@ function toggle(type: string, event: Event) {
   <div v-else class="config-field" :class="{ 'is-toggle': rule.kind === 'boolean' }">
     <label :for="id">{{ label }}</label>
     <select v-if="rule.kind === 'enum'" :id="id" :value="draft" :disabled="disabled" @change="onInput">
-      <option v-for="option in rule.values" :key="option" :value="option">{{ names[option] ?? option }}</option>
+      <option v-for="option in options ?? rule.values" :key="option" :value="option">{{ optionLabel(option) }}</option>
     </select>
     <input v-else :id="id" :type="rule.kind === 'boolean' ? 'checkbox' : ['number', 'integer'].includes(rule.kind) ? 'number' : 'text'"
       :value="draft" :checked="!!draft" :min="rule.min" :max="rule.max" :step="rule.kind === 'integer' ? 1 : props.path.includes('density') && props.path.includes('fog') ? .0001 : .01"

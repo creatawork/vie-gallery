@@ -3,7 +3,7 @@ export { isTrustedPreviewMessage }
 let nextSequence = 0
 const APPLY_RETRY_MS = 1200
 const MAX_APPLY_RETRIES = 2
-export function createViewerPreviewChannel(iframe: HTMLIFrameElement, onApplied: (message: PreviewApplied) => void, onReady?: (bootstrapped: boolean) => void, onConnecting?: () => void, onProgress?: () => void) {
+export function createViewerPreviewChannel(iframe: Pick<HTMLIFrameElement, 'contentWindow' | 'src'>, onApplied: (message: PreviewApplied) => void, onReady?: (bootstrapped: boolean) => void, onConnecting?: () => void, onProgress?: () => void) {
   const source = iframe.contentWindow, origin = new URL(iframe.src).origin
   let disposed = false, ready = false, sequence = 0, sentSequence = 0
   let bootstrapRequested = false, bootstrapSequence = -1, bootstrapAppliedSequence = -1

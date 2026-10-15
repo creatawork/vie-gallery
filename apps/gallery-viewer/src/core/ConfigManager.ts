@@ -42,9 +42,23 @@ export class ConfigManager {
     return this.getConfig()
   }
   savePreference(preference: Partial<ViewerConfig>): void {
-    const candidate = mergeViewerConfig(this.serverConfig ?? createRecommendedViewerConfig(), preference)
-    try { localStorage.setItem(this.PREFERENCE_KEY, JSON.stringify(preference)) } catch { /* Storage is optional. */ }
+    const base = this.serverConfig ?? createRecommendedViewerConfig()
+    mergeViewerConfig(base, preference)
+    const safe = this.preferencePatch(preference, base)
+    const candidate = mergeViewerConfig(base, safe)
+    try { localStorage.setItem(this.PREFERENCE_KEY, JSON.stringify(safe)) } catch { /* Storage is optional. */ }
     this.config = candidate
+  }
+  private preferencePatch(raw: Partial<ViewerConfig>, base: ViewerConfig): Partial<ViewerConfig> {
+    // Browser preferences may reduce display cost or remember sound settings.
+    // Authored scene, download permissions and preset identity always come from the gallery.
+    const patch: Partial<ViewerConfig> = {}
+    if (raw.audio) patch.audio = raw.audio
+    if (raw.quality) {
+      const ranks = { low: 0, mid: 1, high: 2, auto: 3 }
+      patch.quality = base.quality !== 'auto' && ranks[raw.quality] > ranks[base.quality] ? base.quality : raw.quality
+    }
+    return patch
   }
   private loadPreferenceFromStorage(): Partial<ViewerConfig> {
     try {
@@ -52,7 +66,7 @@ export class ConfigManager {
       if (!saved) return {}
       const raw: unknown = JSON.parse(saved)
       mergeViewerConfig(createDefaultViewerConfig(), raw)
-      return raw as Partial<ViewerConfig>
+      return this.preferencePatch(raw as Partial<ViewerConfig>, this.serverConfig ?? createRecommendedViewerConfig())
     } catch { return {} }
   }
   clearPreference(): void {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, type CSSProperties } from 'vue'
 import type * as Three from 'three'
 import { CURATED_STYLES, applyCuratedStyle, type CuratedStyle } from '@vie/gallery-contracts'
 import { isTrustedPreviewMessage, normalizeViewerConfig, serializeViewerConfig, ViewerConfigValidationError } from '@vie/gallery-contracts'
@@ -36,9 +36,11 @@ const VisitorShareModal = defineAsyncComponent(() => import('./components/Visito
 // 从 URL 获取 slug。生产环境没有 slug 时不回退 demo 内容。
 const slug = location.pathname.split('/').filter(Boolean).pop() || ''
 const embeddedPreview = new URLSearchParams(location.search).get('embed') === 'preview'
+const creatorPreview = new URLSearchParams(location.search).has('preview')
+const liveWindowPreview = creatorPreview && new URLSearchParams(location.search).get('live') === 'config' && !!window.opener
 
 // 状态机
-const viewer = useViewerState(slug, { isPreviewEmbed: isEmbedPreview })
+const viewer = useViewerState(slug, { isPreviewEmbed: isConfigPreview })
 let previewProgressTimer: number | null = null
 let previewProgressDeadline: number | null = null
 function stopPreviewProgress() {
@@ -73,9 +75,10 @@ const storedViewMode = (() => {
     return null
   }
 })()
-const viewMode = ref<ViewerViewMode>(storedViewMode === '2d' ? '2d' : '3d')
+const viewMode = ref<ViewerViewMode>(!creatorPreview && storedViewMode === '2d' ? '2d' : '3d')
 const fullscreenAvailable = typeof document.documentElement.requestFullscreen === 'function'
 watch(viewMode, (mode) => {
+  if (creatorPreview || webglFallbackMessage.value) return
   try {
     window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode)
   } catch {
@@ -88,7 +91,7 @@ watch(
     if ((!isReady && !isEmpty) || mode !== '2d') return
     await nextTick()
     performance.mark('viewer:interactive')
-    if (isEmbedPreview()) notifyParentReady()
+    if (isConfigPreview()) notifyParentReady()
   }
 )
 const webglFallbackMessage = ref('')
@@ -128,6 +131,11 @@ const lightboxIndex = ref(0)
 const stageIndex = ref(0)
 const stageActive = ref(false)
 const stagePhoto = computed(() => viewer.photos.value[stageIndex.value])
+const sceneConfig = computed(() => viewer.viewerConfig.value)
+const sceneStyle = computed<CSSProperties>(() => ({
+  '--scene-color': sceneConfig.value?.background?.color ?? '#111a17',
+  '--scene-tone': sceneConfig.value?.background?.secondaryColor ?? '#263b32'
+}))
 const stageCaption = computed(() => CURATED_STYLES.find(style => style.id === selectedStyle.value)?.caption || '让照片，在空间里相遇')
 function stepStage(direction: number) {
   engine?.getEventBus().emit('stage:step', direction)
@@ -143,6 +151,7 @@ async function selectStyle(mode: CuratedStyle) {
   try {
     await engine.replaceConfig(applyCuratedStyle(engine.getRequestedConfig(), mode))
     selectedStyle.value = mode
+    viewer.setAppliedConfigSnapshot(engine.getRequestedConfig())
     stageActive.value = true
     applyAutoTour(isAutoTour.value)
     engine.wakeUp(2500)
@@ -174,10 +183,10 @@ let lastHoveredMesh: Three.Mesh | null = null
 onMounted(() => {
   theatreMotion.addEventListener('change', theatreMotionChanged)
   window.addEventListener('message', handlePostMessage)
-  if (isEmbedPreview()) {
-    window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_REQUEST' }, adminEmbedOrigin())
+  if (isConfigPreview()) {
+    previewHost()?.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_REQUEST' }, adminEmbedOrigin())
     previewProgressTimer = window.setInterval(() => {
-      window.parent.postMessage({ type: 'VIE_PREVIEW_PROGRESS' }, adminEmbedOrigin())
+      previewHost()?.postMessage({ type: 'VIE_PREVIEW_PROGRESS' }, adminEmbedOrigin())
     }, 5000)
     previewProgressDeadline = window.setTimeout(stopPreviewProgress, 120000)
     if (viewMode.value === '3d') {
@@ -215,6 +224,8 @@ watch(gyroEnabled, (enabled) => {
 function isEmbedPreview() {
   return embeddedPreview && window.parent !== window
 }
+function isConfigPreview() { return isEmbedPreview() || liveWindowPreview }
+function previewHost(): Window | null { return isEmbedPreview() ? window.parent : liveWindowPreview ? window.opener : null }
 
 function adminEmbedOrigin() {
   if (import.meta.env.VITE_ADMIN_ORIGIN) return new URL(import.meta.env.VITE_ADMIN_ORIGIN).origin
@@ -225,7 +236,8 @@ function adminEmbedOrigin() {
 let previewSequence = 0
 async function handlePostMessage(event: MessageEvent) {
   const origin = adminEmbedOrigin()
-  if (!isEmbedPreview() || !isTrustedPreviewMessage(event, window.parent, origin)) return
+  const host = previewHost()
+  if (!host || !isTrustedPreviewMessage(event, host, origin)) return
   const bootstrap = event.data?.type === 'VIE_PREVIEW_BOOTSTRAP'
   if (bootstrap && !engineReady.value && Number.isSafeInteger(event.data.sequence)) {
     const result = normalizeViewerConfig(event.data.config)
@@ -234,7 +246,7 @@ async function handlePostMessage(event: MessageEvent) {
     // Once init has captured a config, seed state but defer acknowledgment so
     // READY triggers CONFIG_UPDATE after init instead of racing plugin setup.
     if (!engine) {
-      window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_APPLIED', sequence: event.data.sequence }, origin)
+      host.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_APPLIED', sequence: event.data.sequence }, origin)
     }
     return
   }
@@ -248,7 +260,6 @@ async function handlePostMessage(event: MessageEvent) {
     const activeEngine = engine
     if (activeEngine) {
       const runtimeConfig = structuredClone(result.config)
-      if (isEmbedPreview()) runtimeConfig.layout.transition = { ...runtimeConfig.layout.transition, style: 'smooth', duration: 0.2 }
       await activeEngine.replaceConfig(runtimeConfig)
       if (sequence !== previewSequence || activeEngine !== engine) return
     } else if (viewMode.value !== '2d') {
@@ -258,22 +269,22 @@ async function handlePostMessage(event: MessageEvent) {
     viewer.setAppliedConfigSnapshot(result.config)
     applyAutoTour(result.config.camera?.autoRotate === true)
     if (bootstrap) {
-      window.parent.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_APPLIED', sequence }, origin)
+      host.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_APPLIED', sequence }, origin)
     } else {
-      window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence,
+      host.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence,
         effectiveQuality: activeEngine?.getEffectiveQuality() ?? 'low',
         reason: activeEngine?.getQualityReason() ?? (viewMode.value === '2d' ? 'classic 2D preview' : null) }, origin)
     }
   } catch (cause) {
     if (sequence !== previewSequence) return
-    window.parent.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence, effectiveQuality: engine?.getEffectiveQuality() ?? 'low', reason: null,
+    host.postMessage({ type: 'VIE_CONFIG_APPLIED', sequence, effectiveQuality: engine?.getEffectiveQuality() ?? 'low', reason: null,
       error: cause instanceof ViewerConfigValidationError ? cause.message : '预览应用失败，请重试。' }, origin)
   }
 }
 function notifyParentReady() {
-  if (isEmbedPreview()) {
+  if (isConfigPreview()) {
     stopPreviewProgress()
-    window.parent.postMessage({ type: 'VIE_PREVIEW_READY' }, adminEmbedOrigin())
+    previewHost()?.postMessage({ type: 'VIE_PREVIEW_READY' }, adminEmbedOrigin())
   }
 }
 
@@ -375,7 +386,7 @@ async function init3DEngine() {
       const initialConfig = isEmbedPreview()
         ? viewer.viewerConfig.value
         : viewer.state.value === 'ready' || viewer.state.value === 'empty' ? viewer.viewerConfig.value : undefined
-      await activeEngine.init(slug, initialConfig, { applyLocalPreferences: !isEmbedPreview() })
+      await activeEngine.init(slug, initialConfig, { applyLocalPreferences: !creatorPreview })
     } catch (err) {
       if (!isEmbedPreview() || viewer.viewerConfig.value) throw err
       await activeEngine.init()
@@ -388,6 +399,7 @@ async function init3DEngine() {
 
     // 初始相机行为跟随已发布配置
     const initialConfig = activeEngine.getConfigManager().getConfig() as Record<string, any>
+    viewer.setAppliedConfigSnapshot(activeEngine.getRequestedConfig())
     selectedStyle.value = initialConfig?.layout?.mode ?? ''
     stageActive.value = initialConfig?.layout?.params?.composition === 'curated'
     stageIndex.value = 0
@@ -679,7 +691,7 @@ function resetView() {
 </script>
 
 <template>
-  <div class="viewer-app-root" :class="{ 'is-spatial': viewMode === '3d' && viewer.isReady.value, 'is-editorial': viewMode === '2d', 'is-embedded': isEmbedPreview() }">
+  <div class="viewer-app-root" :style="sceneStyle" :class="{ 'is-spatial': viewMode === '3d' && (viewer.isReady.value || isEmbedPreview()), 'is-editorial': viewMode === '2d', 'is-embedded': isEmbedPreview() }">
     <!-- 1. 加载中状态 -->
     <div v-if="viewer.state.value === 'loading'" class="loading-screen" role="status" aria-live="polite" aria-busy="true">
       <div class="loader-box">

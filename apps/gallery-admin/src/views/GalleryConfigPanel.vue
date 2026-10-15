@@ -15,7 +15,7 @@ import Icon from '../components/Icon.vue'
 import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useAuth } from '../composables/useAuth'
-import { creatorPreviewUrl, issuePreviewToken, openCreatorPreview } from '../lib/preview'
+import { creatorPreviewUrl, issuePreviewToken } from '../lib/preview'
 import { useConfigVersionMetadata } from '../composables/useConfigVersionMetadata'
 import VersionMetadataFields from '../components/gallery-config/VersionMetadataFields.vue'
 
@@ -164,9 +164,14 @@ function tryCanonicalConfig(json: string | null | undefined): string | null {
   }
 }
 let previewChannel: ReturnType<typeof createViewerPreviewChannel> | null = null
+const previewWindows = new Map<Window, ReturnType<typeof createViewerPreviewChannel>>()
 function refreshLivePreview(force = false) {
   if (issues.value.length) return
   previewChannel?.send(config.value, { force })
+  for (const [popup, channel] of previewWindows) {
+    if (popup.closed) { channel.dispose(); previewWindows.delete(popup) }
+    else channel.send(config.value, { force })
+  }
 }
 watch(previewIframeRef, iframe => {
   previewChannel?.dispose(); previewChannel = null
@@ -371,7 +376,7 @@ async function loadGalleryAndConfig() {
       previewChannel?.send(config.value)
       void reloadVersionHistory()
     } else if (response.status === 404) {
-      // 新相册还没有配置行：直接以推荐场景（星空夜曲）作为草稿与预览起点。
+      // New galleries use the same authored preset as the viewer's fallback.
       editor.replace(serializeViewerConfig(createRecommendedViewerConfig()), true)
       configLoaded.value = true
       previewChannel?.send(config.value)
@@ -624,9 +629,25 @@ async function openLivePreview() {
     toast.error(previewIssueError.value || '还没有可用的预览地址。')
     return
   }
+  if (issues.value.length) { toast.error('请先修正配置字段错误。'); return }
+  // Reserve the window inside the click gesture, before the token request.
+  const popup = window.open('about:blank', '_blank')
+  if (!popup) { toast.error('浏览器拦截了新窗口，请允许弹窗后再试。'); return }
   try {
-    await openCreatorPreview(galleryId, galleryInfo.value.slug)
+    const issued = await issuePreviewToken(galleryId)
+    if (popup.closed) return
+    const url = new URL(creatorPreviewUrl(galleryInfo.value.slug, issued.token))
+    url.searchParams.set('live', 'config')
+    const channel = createViewerPreviewChannel({ contentWindow: popup, src: url.toString() }, message => {
+      if (message.error) toast.error(message.error)
+    })
+    previewWindows.set(popup, channel)
+    channel.send(config.value)
+    popup.location.replace(url.toString())
   } catch (cause) {
+    previewWindows.get(popup)?.dispose()
+    previewWindows.delete(popup)
+    popup.close()
     toast.error(cause instanceof Error ? cause.message : '暂时无法打开内部预览，请稍后重试。')
   }
 }
@@ -671,6 +692,8 @@ onUnmounted(() => {
   previewRequestVersion += 1
   if (saveTimer) window.clearTimeout(saveTimer)
   previewChannel?.dispose()
+  for (const channel of previewWindows.values()) channel.dispose()
+  previewWindows.clear()
   clearHandshakeTimer()
   window.removeEventListener('beforeunload', handleConfigBeforeUnload)
 })
@@ -765,7 +788,7 @@ onUnmounted(() => {
         <div id="config-panel-basics" role="tabpanel" aria-labelledby="config-tab-basics" v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
         <div id="config-panel-atmosphere" role="tabpanel" aria-labelledby="config-tab-atmosphere" v-if="configTab === 'atmosphere'">
           <PresetCards :config="config" :disabled="!canConfigWrite || !configLoaded" @preset="applyPreset" @reset="resetPreset" />
-          <p class="atmosphere-hint">选好场景即可发布；粒子、辉光、雾效等微调已收入「高级」。</p>
+          <p class="atmosphere-hint">一键应用整套构图、背景与光效；所有预览实时同步，发布后访客可见。</p>
         </div>
         <div id="config-panel-advanced" role="tabpanel" aria-labelledby="config-tab-advanced" v-if="configTab === 'advanced'">
           <MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />

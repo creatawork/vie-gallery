@@ -43,7 +43,7 @@ export class BackgroundPlugin implements ViewerPlugin {
       this.texture?.dispose(); this.texture = null
       this.context.scene.background = new THREE.Color(config.color)
       if (!this.field) { this.field = new AmbientField(); this.context.scene.add(this.field.mesh) }
-      this.field.setColors(config.color, config.secondaryColor ?? config.color)
+      this.field.setColors(config.color, config.secondaryColor ?? config.color, config.angle)
       this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
       return
     }
@@ -54,6 +54,10 @@ export class BackgroundPlugin implements ViewerPlugin {
       this.context.scene.background = new THREE.Color(config?.color ?? '#0f172a'); return
     }
     if (config.mode === 'image' && config.image?.url) {
+      // Never leave the previous scene visible while the next image downloads.
+      this.texture?.dispose(); this.texture = null
+      this.context.scene.background = new THREE.Color(config.color)
+      this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
       const url = imageUrl!
       const loader = new THREE.TextureLoader()
       let finished = false

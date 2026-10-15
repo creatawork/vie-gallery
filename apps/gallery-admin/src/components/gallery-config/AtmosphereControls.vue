@@ -7,7 +7,8 @@ const emit = defineEmits<{ patch: [input: unknown] }>()
 // 渐变副色与角度只对渐变背景有意义；全景图片/纯色/关闭时隐藏。
 const groups = computed(() => {
   const backgroundFields: [string, string][] = [['background.mode', '背景类型'], ['background.color', '背景主色']]
-  if (props.config.background?.mode === 'gradient') backgroundFields.push(['background.secondaryColor', '背景副色'], ['background.angle', '渐变角度'])
+  if (props.config.background?.mode === 'gradient') backgroundFields.push(['background.motion', '流动光影'], ['background.secondaryColor', '背景副色'], ['background.angle', '渐变角度'])
+  if (props.config.background?.mode === 'image') backgroundFields.push(['background.image.url', '背景图片地址'], ['background.image.projection', '图片投影'])
   return [
     { title: '背景', fields: backgroundFields },
     { title: '粒子', fields: [['particles.enabled', '启用粒子'], ['particles.types', '粒子类型'], ['particles.density', '粒子密度'], ['particles.speed', '粒子速度'], ['particles.size', '粒子大小'], ['particles.color', '粒子颜色']] },
