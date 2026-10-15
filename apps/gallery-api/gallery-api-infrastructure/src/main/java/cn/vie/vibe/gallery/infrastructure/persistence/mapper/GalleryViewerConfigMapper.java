@@ -15,8 +15,8 @@ public interface GalleryViewerConfigMapper {
     @Select("SELECT " + COLUMNS + " FROM gallery_viewer_config WHERE gallery_id = UUID_TO_BIN(#{galleryId})")
     Map<String, Object> findByGalleryId(@Param("galleryId") String galleryId);
 
-    @Insert("INSERT INTO gallery_viewer_config (id, gallery_id, config_json, enabled, preset_name, created_at, updated_at, schema_version, updated_by_user_id, published_version_id) " +
-            "VALUES (UUID_TO_BIN(#{id}), UUID_TO_BIN(#{galleryId}), #{configJson}, #{enabled}, #{presetName}, #{createdAt}, #{updatedAt}, #{schemaVersion}, UUID_TO_BIN(#{updatedByUserId}), UUID_TO_BIN(#{publishedVersionId})) " +
+    @Insert("INSERT INTO gallery_viewer_config (id, gallery_id, config_json, enabled, preset_name, created_at, updated_at, schema_version, updated_by_user_id, last_published_at, published_version_id) " +
+            "VALUES (UUID_TO_BIN(#{id}), UUID_TO_BIN(#{galleryId}), #{configJson}, #{enabled}, #{presetName}, #{createdAt}, #{updatedAt}, #{schemaVersion}, UUID_TO_BIN(#{updatedByUserId}), #{lastPublishedAt}, UUID_TO_BIN(#{publishedVersionId})) " +
             "ON DUPLICATE KEY UPDATE config_json = VALUES(config_json), enabled = VALUES(enabled), " +
             "preset_name = VALUES(preset_name), schema_version = VALUES(schema_version), updated_by_user_id = VALUES(updated_by_user_id), " +
             "last_published_at = VALUES(last_published_at), published_version_id = VALUES(published_version_id), updated_at = VALUES(updated_at)")
@@ -30,6 +30,7 @@ public interface GalleryViewerConfigMapper {
             @Param("updatedAt") LocalDateTime updatedAt,
             @Param("schemaVersion") int schemaVersion,
             @Param("updatedByUserId") String updatedByUserId,
+            @Param("lastPublishedAt") LocalDateTime lastPublishedAt,
             @Param("publishedVersionId") String publishedVersionId
     );
 

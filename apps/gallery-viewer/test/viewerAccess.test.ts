@@ -1,7 +1,63 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { toRaw } from 'vue'
 import { useViewerState } from '../src/composables/useViewerState'
 import { createDefaultViewerConfig } from '@vie/gallery-contracts'
+
+test('public retries fetch the latest published scene after a runtime snapshot was applied', async () => {
+  const oldWindow = globalThis.window, oldFetch = globalThis.fetch
+  Object.assign(globalThis, { window: { location: { search: '?t=visitor-link', hash: '' } } })
+  let configurations = 0
+  globalThis.fetch = async (url, init) => {
+    const path = String(url)
+    if (path.endsWith('/viewer-config')) {
+      configurations++
+      assert.equal(init?.cache, 'no-store')
+      assert.equal((init?.headers as Record<string, string>)['X-Share-Token'], 'visitor-link')
+      return Response.json({ configJson: JSON.stringify({
+        layout: { mode: configurations === 1 ? 'spiral' : 'helix' },
+        camera: { autoRotate: configurations > 1 }, effects: { photoFloat: configurations > 1 }
+      }) })
+    }
+    if (path.includes('/photos')) return Response.json({ items: [], page: 0, pageSize: 50, total: 0 })
+    return Response.json({ accessState: 'READY' })
+  }
+  try {
+    const viewer = useViewerState('shared')
+    await viewer.initialize()
+    viewer.setAppliedConfigSnapshot(toRaw(viewer.viewerConfig.value!))
+    await viewer.retry()
+    assert.equal(configurations, 2)
+    assert.equal(viewer.viewerConfig.value?.layout.mode, 'helix')
+    assert.equal(viewer.viewerConfig.value?.camera.autoRotate, true)
+    assert.equal(viewer.viewerConfig.value?.effects.photoFloat, true)
+  } finally { globalThis.fetch = oldFetch; globalThis.window = oldWindow }
+})
+
+test('a failed published config read is retryable and cannot become a default scene', async () => {
+  const oldWindow = globalThis.window, oldFetch = globalThis.fetch
+  Object.assign(globalThis, { window: { location: { search: '', hash: '' } } })
+  let failed = true
+  globalThis.fetch = async url => {
+    const path = String(url)
+    if (path.endsWith('/viewer-config')) return failed
+      ? Response.json({ code: 'UNAVAILABLE' }, { status: 503 })
+      : Response.json({ configJson: '{"presetName":"ocean-breeze","camera":{"autoRotate":true}}' })
+    if (path.includes('/photos')) return Response.json({ items: [], page: 0, pageSize: 50, total: 0 })
+    return Response.json({ accessState: 'READY' })
+  }
+  try {
+    const viewer = useViewerState('shared')
+    await viewer.initialize()
+    assert.equal(viewer.state.value, 'error')
+    assert.equal(viewer.viewerConfig.value, null)
+    failed = false
+    await viewer.retry()
+    assert.equal(viewer.state.value, 'empty')
+    assert.equal(viewer.viewerConfig.value?.presetName, 'ocean-breeze')
+    assert.equal(viewer.viewerConfig.value?.camera.autoRotate, true)
+  } finally { globalThis.fetch = oldFetch; globalThis.window = oldWindow }
+})
 
 for (const update of ['bootstrap', 'applied'] as const) test(`photos finishing cannot replace a newer ${update} draft`, async () => {
   const oldWindow = globalThis.window, oldFetch = globalThis.fetch

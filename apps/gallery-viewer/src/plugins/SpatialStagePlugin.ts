@@ -229,7 +229,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
       material.emissiveIntensity = .85
       if (material.toneMapped) { material.toneMapped = false; material.needsUpdate = true }
       for (const child of mesh.children) {
-        if (!(child instanceof THREE.Mesh)) continue
+        if (!(child instanceof THREE.Mesh) || child.material === material) continue
         const mat = child.material as THREE.MeshStandardMaterial
         mat.transparent = true; mat.opacity = presence * entrance
         child.scale.set((width + .65) / (width + 2), (height + .65) / (height + 2), 1)

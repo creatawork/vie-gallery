@@ -101,8 +101,9 @@ export function useViewerState(slug: string, options: { isPreviewEmbed?: () => b
       if (configSnapshot !== undefined && !(cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403))) {
         return structuredClone(configSnapshot)
       }
-      if (cause instanceof PublicApiError && (cause.isSessionExpired || cause.isPasswordRequired || cause.status === 403)) throw cause
-      return null
+      // Only a successful empty response means the gallery has no authored
+      // config. A failed read must not silently show a different default scene.
+      throw cause
     }
   }
   function setConfigSnapshot(config: ViewerConfig): boolean {
@@ -113,7 +114,9 @@ export function useViewerState(slug: string, options: { isPreviewEmbed?: () => b
     return true
   }
   function setAppliedConfigSnapshot(config: ViewerConfig) {
-    latestPreviewConfig = structuredClone(config)
+    // Public runtime changes belong to the current visit. Only creator
+    // previews retain a draft across retries and password unlocks.
+    if (latestPreviewConfig !== undefined || options.isPreviewEmbed?.()) latestPreviewConfig = structuredClone(config)
     viewerConfig.value = structuredClone(config)
   }
   async function loadFirstPage(version: number) {

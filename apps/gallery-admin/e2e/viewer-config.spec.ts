@@ -261,6 +261,44 @@ test('publishing metadata counts Unicode code points and sends normalized option
   expect(data.errors).toEqual([])
 })
 
+test('publishing a new preset cannot skip the version when legacy readiness says unchanged', async ({ page }) => {
+  const data = await fixture(page)
+  const previous = JSON.stringify(VIEWER_PRESETS['ocean-breeze'])
+  let draft = previous, published = previous, publishes = 0
+  await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ status: 503 }))
+  await page.route('**/api/galleries/config-fixture/viewer-config', async route => {
+    if (route.request().method() === 'PUT') draft = route.request().postDataJSON().configJson
+    await route.fulfill({ json: { configJson: draft, publishedConfigJson: previous, publishedVersionId: 'version-1', lastPublishedAt: null, schemaVersion: 1 } })
+  })
+  await page.route('**/api/galleries/config-fixture/viewer-config/versions**', route => {
+    const version = { id: publishes ? 'version-2' : 'version-1', galleryId: 'config-fixture', configJson: published, schemaVersion: 1,
+      createdAt: '2026-10-07T00:00:00Z', versionNumber: publishes ? '2' : '1', title: null, note: null, isCurrent: true }
+    return route.fulfill({ json: route.request().url().includes('/versions?') ? { items: [version], total: 1, page: 0, pageSize: 20 } : version })
+  })
+  await page.route('**/api/galleries/config-fixture/publish-readiness', route => route.fulfill({ json: {
+    galleryStatus: 'PUBLISHED', readyPhotoCount: 17, galleryPublishable: true, configDraftChanged: false,
+    publishedConfigVersionId: 'version-1', lastConfigPublishedAt: null, blockers: []
+  } }))
+  await page.route('**/api/galleries/config-fixture/viewer-config/publish', route => {
+    publishes++; published = draft
+    return route.fulfill({ json: { id: 'version-2', versionNumber: '2', createdAt: '2026-10-15T09:30:00Z' } })
+  })
+  await page.goto('/app/galleries/config-fixture/config')
+  await page.getByRole('tab', { name: '氛围', exact: true }).click()
+  await page.getByRole('button', { name: /星空夜曲/ }).click()
+  await page.getByRole('button', { name: '同步到访客端', exact: true }).click()
+  await page.getByRole('button', { name: '确认同步', exact: true }).click()
+  await expect.poll(() => publishes).toBe(1)
+  expect(JSON.parse(published).presetName).toBe('starry-night')
+  expect(JSON.parse(published).particles.enabled).toBe(true)
+  await expect(page.getByText('已发布 v2', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '同步到访客端', exact: true }).click()
+  await page.getByRole('button', { name: '发布展厅', exact: true }).click()
+  await expect(page.getByText('配置已同步到访客端。', { exact: true })).toBeVisible()
+  expect(publishes).toBe(1)
+  expect(data.errors).toEqual([])
+})
+
 test('draft and publish states are explicit, and a draft gallery can go live in one click from config', async ({ page }) => {
   let draft = JSON.stringify({ ...VIEWER_PRESETS['film-gallery'] })
   const calls: string[] = []

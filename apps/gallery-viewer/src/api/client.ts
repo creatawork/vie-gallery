@@ -213,6 +213,7 @@ export class PublicApiClient {
   async getViewerConfig(slug: string): Promise<ViewerConfigResponse | null> {
     const response = await this.fetch(`${this.baseUrl}/g/${encodeURIComponent(slug)}/viewer-config`, {
       headers: this.headers(),
+      cache: 'no-store',
       credentials: 'include'
     })
     const secrets = this.secrets()

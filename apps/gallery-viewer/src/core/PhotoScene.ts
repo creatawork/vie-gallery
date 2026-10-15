@@ -40,6 +40,13 @@ export class PhotoScene {
           new THREE.MeshStandardMaterial({ color: '#76859b', metalness: .65, roughness: .28 }))
         mount.position.z = -1.05
         mesh.add(mount)
+        // Put the same photograph outside the rear of the mount. Sharing the
+        // surface resources keeps texture upgrades and entrance fades in sync.
+        const back = new THREE.Mesh(mesh.geometry, material)
+        back.name = 'photo-back'
+        back.position.z = -2.1
+        back.rotation.y = Math.PI
+        mesh.add(back)
         mesh.userData = { index, url: '', thumbnailUrl: '', textureState: 'placeholder' }
         this.meshes.set(photo, mesh); this.scene.add(mesh); added.push(mesh)
         this.load(photo, mesh)
@@ -143,14 +150,17 @@ export class PhotoScene {
   }
   retryFailed(): void { for (const [photo, mesh] of this.meshes) if (mesh.userData.textureState === 'failed') this.retry(photo) }
   private remove(mesh: PhotoMesh): void {
+    const geometries = new Set<THREE.BufferGeometry>([mesh.geometry])
+    const materials = new Set<THREE.Material>(Array.isArray(mesh.material) ? mesh.material : [mesh.material])
     for (const child of mesh.children) {
       if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
-        child.geometry.dispose()
-        for (const material of Array.isArray(child.material) ? child.material : [child.material]) material.dispose()
+        geometries.add(child.geometry)
+        for (const material of Array.isArray(child.material) ? child.material : [child.material]) materials.add(material)
       }
     }
-    this.scene.remove(mesh); mesh.geometry.dispose()
-    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) material.dispose()
+    this.scene.remove(mesh)
+    for (const geometry of geometries) geometry.dispose()
+    for (const material of materials) material.dispose()
   }
   dispose(): void {
     if (this.disposed) return

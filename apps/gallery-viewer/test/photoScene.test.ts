@@ -4,6 +4,35 @@ import * as THREE from 'three'
 import { PhotoScene } from '../src/core/PhotoScene'
 import { TexturePool } from '../src/core/TexturePool'
 
+test('both sides show an upright photograph outside the mount and share texture updates', async () => {
+  const texture = new THREE.Texture()
+  const pool = new TexturePool({ maxEdge: 1, bytes: 1000, concurrent: 1, resident: 2 }, async () => ({ texture, bytes: 4 }))
+  const scene = new THREE.Scene(), photos = new PhotoScene(scene, pool)
+  const photo = { thumbnailUrl: 'photo', width: 800, height: 600, sortOrder: 0 }
+  const mesh = photos.sync([photo]).all[0]
+  const material = mesh.material as THREE.MeshStandardMaterial
+  pool.touch(photo, 0)
+  await new Promise(resolve => setImmediate(resolve))
+  try {
+    scene.updateMatrixWorld(true)
+    const raycaster = new THREE.Raycaster()
+    for (const side of [1, -1]) {
+      raycaster.set(new THREE.Vector3(0, 0, side * 100), new THREE.Vector3(0, 0, -side))
+      const surface = raycaster.intersectObject(mesh, true)[0].object as THREE.Mesh
+      assert.equal(surface.material, material, 'the mount must not occlude the photograph')
+      assert.equal((surface.material as THREE.MeshStandardMaterial).map, texture)
+      // Looking at either outward face, image-right and image-up remain readable.
+      const right = new THREE.Vector3(1, 0, 0).transformDirection(surface.matrixWorld)
+      const up = new THREE.Vector3(0, 1, 0).transformDirection(surface.matrixWorld)
+      assert.ok(right.x * side > .99)
+      assert.ok(up.y > .99)
+    }
+    pool.setBudget({ maxEdge: 1, bytes: 0, concurrent: 1, resident: 0 })
+    assert.equal(material.map, null)
+    assert.equal((mesh.getObjectByName('photo-back') as THREE.Mesh).material, material)
+  } finally { photos.dispose(); pool.dispose() }
+})
+
 test('extreme photo ratios preserve the full image within bounded mounts', () => {
   const pool = new TexturePool({ maxEdge: 512, bytes: 1000, concurrent: 1, resident: 2 }, async () => ({ texture: new THREE.Texture(), bytes: 4 }))
   const scene = new PhotoScene(new THREE.Scene(), pool)

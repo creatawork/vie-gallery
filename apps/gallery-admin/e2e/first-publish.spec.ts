@@ -103,8 +103,8 @@ test('publishing a never-configured gallery auto-creates the recommended scene d
   await expect(page.getByRole('dialog', { name: '展览已就绪' })).toBeVisible()
   expect(data.calls()).toEqual(['put-config', 'config-publish', 'gallery-publish'])
   const saved = data.savedConfig() as { configJson: string; presetName: string }
-  expect(saved.presetName).toBe('starry-night')
-  expect(saved.configJson).toContain('/g/backgrounds/starry-night.webp')
+  expect(saved.presetName).toBe('jade-flow')
+  expect(JSON.parse(saved.configJson).layout.params.composition).toBe('curated')
 })
 
 test('ready guidance leads to the visible publish center and one publish action', async ({ page }) => {

@@ -53,6 +53,7 @@ public class MyBatisGalleryViewerConfigRepository implements GalleryViewerConfig
                 MyBatisValueMapper.localDateTime(config.updatedAt()),
                 config.schemaVersion(),
                 config.updatedByUserId() == null ? null : config.updatedByUserId().toString(),
+                MyBatisValueMapper.localDateTime(config.lastPublishedAt()),
                 config.publishedVersionId() == null ? null : config.publishedVersionId().toString()
         );
     }

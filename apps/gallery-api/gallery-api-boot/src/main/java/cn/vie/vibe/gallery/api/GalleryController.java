@@ -104,8 +104,7 @@ public class GalleryController {
             Optional<GalleryViewerConfig> configOpt = configs.findByGalleryId(gallery.id());
             if (configOpt.isPresent()) {
                 GalleryViewerConfig config = configOpt.get();
-                hasUnpublishedConfig = config.publishedVersionId() == null ||
-                        (config.lastPublishedAt() != null && config.updatedAt().isAfter(config.lastPublishedAt()));
+                hasUnpublishedConfig = config.hasUnpublishedChanges();
             }
         }
 
@@ -144,8 +143,7 @@ public class GalleryController {
                     publishedVersionId = cfg.publishedVersionId().toString();
                 }
                 lastConfigPublishedAt = cfg.lastPublishedAt();
-                configDraftChanged = cfg.publishedVersionId() == null ||
-                        (cfg.lastPublishedAt() != null && cfg.updatedAt().isAfter(cfg.lastPublishedAt()));
+                configDraftChanged = cfg.hasUnpublishedChanges();
                 // Draft content lives on the config row until publish creates a version snapshot.
                 draftVersionId = null;
             }

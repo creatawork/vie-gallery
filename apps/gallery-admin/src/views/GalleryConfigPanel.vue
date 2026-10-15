@@ -466,7 +466,7 @@ async function publishDraft() {
       toast.warning(readiness.blockers[0]?.message || '展厅尚未就绪，请完成发布前检查。')
       return
     }
-    if (readiness.configDraftChanged) {
+    if (readiness.configDraftChanged || configNeedsPublish.value) {
       const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

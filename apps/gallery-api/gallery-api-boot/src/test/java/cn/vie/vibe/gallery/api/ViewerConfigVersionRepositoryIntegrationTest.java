@@ -2,6 +2,8 @@ package cn.vie.vibe.gallery.api;
 
 import cn.vie.vibe.gallery.GalleryApiApplication;
 import cn.vie.vibe.gallery.application.ViewerConfigVersionRepository;
+import cn.vie.vibe.gallery.application.GalleryViewerConfigRepository;
+import cn.vie.vibe.gallery.domain.GalleryViewerConfig;
 import cn.vie.vibe.gallery.domain.ViewerConfigVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,13 +16,53 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(classes = GalleryApiApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ViewerConfigVersionRepositoryIntegrationTest extends AbstractIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired ViewerConfigVersionRepository versions;
+    @Autowired GalleryViewerConfigRepository configs;
     @Autowired PlatformTransactionManager transactionManager;
+
+    @Test
+    void draftSavesPreservePublicationTimeAndTheNextPresetCanBePublished() {
+        UUID tenantId = UUID.randomUUID(), galleryId = UUID.randomUUID();
+        insertGallery(tenantId, galleryId);
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        configs.save(GalleryViewerConfig.create(galleryId, "{\"presetName\":\"ocean-breeze\"}", "ocean-breeze"));
+        Instant firstTime = Instant.now().minusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        transaction.executeWithoutResult(status -> versions.withGalleryLock(tenantId, galleryId, () -> {
+            GalleryViewerConfig draft = configs.findByGalleryId(galleryId).orElseThrow();
+            ViewerConfigVersion version = ViewerConfigVersion.create(tenantId, galleryId,
+                    versions.allocateVersionNumber(tenantId, galleryId), draft.configJson(), draft.presetName(), 1, null, null, null);
+            versions.save(version);
+            assertEquals(1, versions.publish(tenantId, galleryId, version.id(), firstTime));
+            configs.save(draft.withPublishedVersion(version.id(), firstTime));
+            return null;
+        }));
+        GalleryViewerConfig published = configs.findByGalleryId(galleryId).orElseThrow();
+        assertEquals(firstTime, published.lastPublishedAt());
+        assertFalse(published.hasUnpublishedChanges());
+
+        configs.save(published.withDraft("{\"presetName\":\"starry-night\"}", "starry-night", null));
+        GalleryViewerConfig next = configs.findByGalleryId(galleryId).orElseThrow();
+        assertEquals(firstTime, next.lastPublishedAt());
+        assertTrue(next.hasUnpublishedChanges());
+        assertEquals("ocean-breeze", versions.findPublishedByGallery(tenantId, galleryId).orElseThrow().presetName());
+        transaction.executeWithoutResult(status -> versions.withGalleryLock(tenantId, galleryId, () -> {
+            ViewerConfigVersion version = ViewerConfigVersion.create(tenantId, galleryId,
+                    versions.allocateVersionNumber(tenantId, galleryId), next.configJson(), next.presetName(), 1, null, null, null);
+            versions.save(version);
+            Instant now = Instant.now();
+            assertEquals(1, versions.publish(tenantId, galleryId, version.id(), now));
+            configs.save(next.withPublishedVersion(version.id(), now));
+            return null;
+        }));
+        assertEquals("starry-night", versions.findPublishedByGallery(tenantId, galleryId).orElseThrow().presetName());
+        assertFalse(configs.findByGalleryId(galleryId).orElseThrow().hasUnpublishedChanges());
+    }
 
     @Test
     void allocationDeletionAndMetadataUseGalleryScopedTransactionalRepository() {

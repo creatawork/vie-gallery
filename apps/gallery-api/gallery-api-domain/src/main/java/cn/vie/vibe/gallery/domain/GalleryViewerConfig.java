@@ -92,12 +92,18 @@ public record GalleryViewerConfig(
                 this.enabled,
                 this.presetName,
                 this.createdAt,
-                Instant.now(),
+                publishedAt,
                 this.schemaVersion,
                 this.updatedByUserId,
                 publishedAt,
                 versionId
         );
+    }
+
+    public boolean hasUnpublishedChanges() {
+        // Older saves could clear lastPublishedAt. Missing metadata must never
+        // suppress publishing a newer draft while a previous version is pinned.
+        return publishedVersionId == null || lastPublishedAt == null || updatedAt.isAfter(lastPublishedAt);
     }
 
     public GalleryViewerConfig withDraft(String configJson, String presetName, UUID updatedByUserId) {

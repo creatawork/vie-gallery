@@ -142,6 +142,39 @@ class GalleryControllerTest {
     }
 
     @Test
+    void missingPublicationTimeCannotHideANewerDraftBehindAnOldPublishedVersion() {
+        UUID galleryId = UUID.randomUUID();
+        Instant now = Instant.now();
+        when(facade.get(galleryId)).thenReturn(new Gallery(galleryId, tenantId, "shared", "Shared",
+                GalleryVisibility.PUBLIC, null, null, false, now, GalleryStatus.PUBLISHED, now, now));
+        when(photos.countPublicReadyByGalleryId(tenantId, galleryId)).thenReturn(17);
+        when(tasks.summaryByGallery(tenantId, galleryId)).thenReturn(TaskSummary.empty());
+        when(configs.findByGalleryId(galleryId)).thenReturn(Optional.of(new GalleryViewerConfig(
+                UUID.randomUUID(), galleryId, "{\"presetName\":\"starry-night\"}", true, "starry-night",
+                now.minusSeconds(60), now, 1, userId, null, UUID.randomUUID())));
+
+        assertTrue(controller.getPublishReadiness(galleryId).configDraftChanged());
+        assertTrue(controller.get(galleryId).hasUnpublishedConfig());
+    }
+
+    @Test
+    void aFreshPublicationIsSynchronizedUntilTheNextDraftSave() {
+        UUID galleryId = UUID.randomUUID();
+        Instant now = Instant.now();
+        when(facade.get(galleryId)).thenReturn(new Gallery(galleryId, tenantId, "shared", "Shared",
+                GalleryVisibility.PUBLIC, null, null, false, now, GalleryStatus.PUBLISHED, now, now));
+        when(photos.countPublicReadyByGalleryId(tenantId, galleryId)).thenReturn(17);
+        GalleryViewerConfig published = GalleryViewerConfig.create(galleryId,
+                "{\"presetName\":\"starry-night\"}", "starry-night").withPublishedVersion(UUID.randomUUID(), now.minusSeconds(1));
+        when(configs.findByGalleryId(galleryId)).thenReturn(Optional.of(published));
+
+        assertFalse(controller.getPublishReadiness(galleryId).configDraftChanged());
+        when(configs.findByGalleryId(galleryId)).thenReturn(Optional.of(
+                published.withDraft("{\"presetName\":\"ocean-breeze\"}", "ocean-breeze", userId)));
+        assertTrue(controller.getPublishReadiness(galleryId).configDraftChanged());
+    }
+
+    @Test
     void passwordGalleryReadinessRequiresAnAccessPasswordEvenWhenPhotosAreReady() {
         UUID galleryId = UUID.randomUUID();
         Instant now = Instant.now();
