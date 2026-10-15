@@ -86,6 +86,8 @@ test('recommended scene is a valid, clone-isolated curated helix without a backg
   assert.equal(recommended.layout.params?.composition, 'curated')
   assert.equal(normalizeViewerConfig(recommended).issues.length, 0)
   assert.equal(recommended.background?.mode, 'gradient')
+  assert.equal(recommended.background?.color, '#111a17')
+  assert.equal(recommended.background?.secondaryColor, '#263b32')
   recommended.effects.bloom!.strength = 9
   recommended.presetName = 'mutated'
   assert.equal(VIEWER_PRESETS['starry-night'].effects.bloom!.strength, .5, 'preset registry must not be mutated')

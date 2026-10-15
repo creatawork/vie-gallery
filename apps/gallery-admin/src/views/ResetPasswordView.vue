@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
 import { useToast } from '../composables/useToast'
 import Icon from '../components/Icon.vue'
+import BrandMark from '../components/BrandMark.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,8 +19,10 @@ const confirmPassword = ref('')
 const loading = ref(false)
 const error = ref('')
 const resetSuccess = ref(false)
+const successAction = ref<HTMLButtonElement | null>(null)
 
 async function handleResetPassword() {
+  if (loading.value) return
   error.value = ''
   if (!effectiveToken.value) {
     error.value = '缺少重置令牌，请通过邮件中的重置链接访问或输入令牌。'
@@ -52,6 +55,8 @@ async function handleResetPassword() {
 
     resetSuccess.value = true
     toast.success('密码已成功重置！请使用新密码登录。')
+    await nextTick()
+    successAction.value?.focus()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '重置密码失败。'
   } finally {
@@ -70,13 +75,7 @@ function goToLogin() {
 
     <div class="reset-card">
       <div class="brand-badge">
-        <span class="fold-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none">
-            <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
-            <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
-            <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
-          </svg>
-        </span>
+        <BrandMark :size="32" />
         <h2>VIE Gallery</h2>
       </div>
 
@@ -84,28 +83,28 @@ function goToLogin() {
         <div class="success-icon">
           <Icon name="check" :size="28" stroke-width="3" />
         </div>
-        <h3>密码重置成功</h3>
+        <h1>密码重置成功</h1>
         <p>您的账户密码已成功更新。现在可以使用新密码登录系统。</p>
-        <button class="btn btn-primary full-width" type="button" @click="goToLogin">
+        <button ref="successAction" class="btn btn-primary full-width" type="button" @click="goToLogin">
           立即前往登录
         </button>
       </div>
 
       <form v-else class="reset-form" @submit.prevent="handleResetPassword">
         <div class="form-header">
-          <h3>设置新密码</h3>
+          <h1>设置新密码</h1>
           <p>请输入您的新登录密码（至少 12 个字符）</p>
         </div>
 
         <div v-if="!token" class="form-group">
-          <label for="manual-token">重置令牌 (Token)</label>
+          <label for="manual-token">邮件中的重置码</label>
           <input
             id="manual-token"
             v-model="manualToken"
             class="form-input"
             type="text"
             required
-            placeholder="输入邮件或日志中的重置令牌"
+            placeholder="输入重置邮件中的完整重置码"
           />
         </div>
 
@@ -116,6 +115,8 @@ function goToLogin() {
             v-model="newPassword"
             class="form-input"
             type="password"
+            autocomplete="new-password"
+            :disabled="loading"
             minlength="12"
             maxlength="128"
             required
@@ -130,6 +131,8 @@ function goToLogin() {
             v-model="confirmPassword"
             class="form-input"
             type="password"
+            autocomplete="new-password"
+            :disabled="loading"
             minlength="12"
             maxlength="128"
             required
@@ -137,13 +140,13 @@ function goToLogin() {
           />
         </div>
 
-        <div v-if="error" class="error-banner">
+        <div v-if="error" class="error-banner" role="alert">
           <Icon name="alert-circle" :size="14" />
           <span>{{ error }}</span>
         </div>
 
         <button class="btn btn-primary full-width submit-btn" type="submit" :disabled="loading">
-          <Icon v-if="loading" name="refresh" :size="14" />
+          <Icon v-if="loading" name="refresh" :size="14" class="spin" />
           <span>{{ loading ? '正在重置…' : '确认重置密码' }}</span>
         </button>
 
@@ -158,194 +161,25 @@ function goToLogin() {
 </template>
 
 <style scoped>
-.reset-page {
-  position: relative;
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  font-family: var(--font-family, 'Plus Jakarta Sans', system-ui, sans-serif);
-}
-
-.reset-scene {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background-color: #eef6f1;
-  background-image: url('/hall-bg.png');
-  background-size: cover;
-  background-position: center;
-}
-
-.reset-card {
-  position: relative;
-  z-index: 1;
-  width: min(440px, 100%);
-  padding: 36px 32px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
-  border-radius: 24px;
-  box-shadow: 0 20px 50px rgba(15, 40, 28, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-}
-
-.brand-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 24px;
-}
-
-.fold-mark svg {
-  width: 32px;
-  height: 32px;
-}
-
-.brand-badge h2 {
-  font-size: 20px;
-  font-weight: 800;
-  color: #0f172a;
-  margin: 0;
-}
-
-.form-header {
-  text-align: center;
-  margin-bottom: 22px;
-}
-
-.form-header h3 {
-  font-size: 18px;
-  font-weight: 750;
-  color: #0f172a;
-  margin: 0 0 6px;
-}
-
-.form-header p {
-  font-size: 13px;
-  color: #64748b;
-  margin: 0;
-}
-
-.reset-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-group label {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: #334155;
-}
-
-.form-input {
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  font-size: 13.5px;
-  color: #0f172a;
-  outline: none;
-  transition: all 0.15s ease;
-}
-
-.form-input:focus {
-  border-color: var(--brand-accent, #10b981);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-}
-
-.error-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #dc2626;
-  font-size: 12.5px;
-}
-
-.full-width {
-  width: 100%;
-}
-
-.submit-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 700;
-  background: var(--brand-accent, #10b981);
-  color: #ffffff;
-  border: none;
-  cursor: pointer;
-  margin-top: 6px;
-}
-
-.submit-btn:hover {
-  background: var(--brand-deep, #047857);
-}
-
-.form-footer {
-  text-align: center;
-  margin-top: 12px;
-}
-
-.link-btn {
-  background: none;
-  border: none;
-  color: var(--brand-accent, #10b981);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.link-btn:hover {
-  text-decoration: underline;
-}
-
-/* Success state */
-.reset-success-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 12px 0;
-  gap: 12px;
-}
-
-.success-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: #ecfdf5;
-  color: #047857;
-  display: grid;
-  place-items: center;
-}
-
-.reset-success-box h3 {
-  font-size: 18px;
-  font-weight: 750;
-  color: #0f172a;
-  margin: 0;
-}
-
-.reset-success-box p {
-  font-size: 13.5px;
-  color: #64748b;
-  margin: 0 0 12px;
-  line-height: 1.5;
-}
+.reset-page { position: relative; min-height: 100dvh; display: grid; place-items: center; padding: 32px 24px; background: var(--bg-app); }
+.reset-scene { display: none; }
+.reset-card { width: min(440px, 100%); padding: 40px 32px; background: var(--bg-surface); border-radius: 16px; border: 1px solid var(--border-strong); }
+.brand-badge { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 36px; }
+.brand-badge h2 { font-size: 20px; font-weight: 650; letter-spacing: -.025em; }
+.form-header { margin-bottom: 28px; }
+.form-header h1 { font-size: 26px; font-weight: 550; line-height: 1.4; }
+.form-header p { margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
+.form-group { margin-bottom: 22px; }
+.form-group label { font-size: 13px; font-weight: 600; }
+.error-banner { display: flex; align-items: flex-start; gap: 8px; padding: 14px; margin-bottom: 20px; background: #faece8; color: #943d2c; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.error-banner svg { flex-shrink: 0; margin-top: 2px; }
+.full-width { width: 100%; min-height: 46px; }
+.form-footer { margin-top: 24px; text-align: center; }
+.link-btn { min-height: 40px; color: var(--brand-deep); font-size: 13px; }
+.link-btn:hover { text-decoration: underline; text-underline-offset: 4px; }
+.reset-success-box { display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
+.success-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; color: var(--brand-deep); background: var(--mint-soft); }
+.reset-success-box h1 { font-size: 23px; font-weight: 550; }
+.reset-success-box p { color: var(--text-secondary); font-size: 14px; line-height: 1.8; margin-bottom: 8px; }
+@media (max-width: 520px) { .reset-page { background: var(--bg-surface); align-items: start; padding: 40px 24px; } .reset-card { padding: 0; border: 0; } .brand-badge { justify-content: flex-start; margin-bottom: 44px; } }
 </style>

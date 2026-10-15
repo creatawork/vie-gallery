@@ -50,9 +50,9 @@ function count(value: string) { return Array.from(value).length }
 
 <style scoped>
 .version-metadata { display: grid; gap: 6px; min-width: 0; }
-.field-label { margin-top: 8px; color: #475569; font-size: 12px; font-weight: 650; }
-.text-field { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #d7e1dc; border-radius: 8px; background: #fff; color: #18372a; font: inherit; font-size: 13px; }
-.text-field:focus-visible { outline: 2px solid #19815c; outline-offset: 2px; }
+.field-label { margin-top: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 650; }
+.text-field { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #d7e1dc; border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 13px; }
+.text-field:focus-visible { outline: 2px solid var(--brand-deep); outline-offset: 2px; }
 .text-field:disabled { background: #f4f6f5; }
 .note-field { resize: vertical; white-space: pre-wrap; }
 .field-meta { display: flex; justify-content: space-between; gap: 8px; color: #74827b; font-size: 11px; }

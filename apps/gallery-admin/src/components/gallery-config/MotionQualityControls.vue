@@ -16,4 +16,4 @@ const groups = [
     <ConfigField v-for="field in group.fields" :key="field[0]" :path="field[0]!" :label="field[1]!" :config="config" :issues="issues" :disabled="disabled" @patch="emit('patch', $event)" />
   </section>
 </template>
-<style scoped>.quality-note { color: #475569; font-size: .8125rem; line-height: 1.6; }</style>
+<style scoped>.quality-note { color: var(--text-secondary); font-size: .8125rem; line-height: 1.6; }</style>

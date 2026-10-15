@@ -11,14 +11,20 @@ const props = withDefaults(defineProps<{
   unpublishing?: boolean
   canPublish?: boolean
   canConfig?: boolean
+  canShare?: boolean
   isOwner?: boolean
+  busy?: boolean
+  error?: string | null
 }>(), {
   loading: false,
   publishing: false,
   unpublishing: false,
   canPublish: false,
   canConfig: false,
-  isOwner: false
+  canShare: false,
+  isOwner: false,
+  busy: false,
+  error: null
 })
 
 const emit = defineEmits<{
@@ -27,9 +33,12 @@ const emit = defineEmits<{
   (event: 'preview'): void
   (event: 'openConfig'): void
   (event: 'refresh'): void
+  (event: 'openShare'): void
+  (event: 'editMetadata'): void
 }>()
 
 const isPublished = computed(() => props.gallery?.status === 'PUBLISHED')
+const readinessKnown = computed(() => !!props.readiness && !props.loading && !props.error)
 const hasBlockers = computed(() => (props.readiness?.blockers.length ?? 0) > 0)
 const hasChangesToPublish = computed(() => {
   if (!props.gallery) return false
@@ -53,12 +62,13 @@ function formatDateTime(value?: string | null) {
     <div class="publish-header">
       <div class="header-title">
         <Icon name="send" :size="18" />
-        <h3>发布中心</h3>
+        <div><span class="publish-kicker">03 / 发布与分享</span><h3>让作品被看见</h3></div>
       </div>
       <button
         class="refresh-btn"
         type="button"
         title="刷新状态"
+        aria-label="刷新发布状态"
         :disabled="loading"
         @click="emit('refresh')"
       >
@@ -68,14 +78,14 @@ function formatDateTime(value?: string | null) {
 
     <!-- 1. 访客当前看到 -->
     <section class="section-card visitor-section">
-      <h4>访客当前看到</h4>
+      <h4>访客访问状态</h4>
       <div class="status-badge-row">
         <span class="status-pill" :class="isPublished ? 'is-published' : 'is-draft'">
           <span class="dot"></span>
-          {{ isPublished ? '已发布至访客' : '草稿状态（访客不可见）' }}
+          {{ isPublished ? '展厅已上线' : '草稿 · 尚未公开' }}
         </span>
         <span v-if="gallery" class="vis-pill" :class="gallery.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
-          {{ gallery.visibility === 'PUBLIC' ? '公开访问' : '需要密码/分享凭证' }}
+          {{ gallery.visibility === 'PUBLIC' ? '公开访问' : gallery.visibility === 'PASSWORD' ? '凭密码进入' : '凭专属链接进入' }}
         </span>
       </div>
 
@@ -85,24 +95,26 @@ function formatDateTime(value?: string | null) {
           <span class="meta-val">{{ formatDateTime(readiness.publishedAt) }}</span>
         </div>
         <div v-if="readiness?.publishedConfigVersionId" class="meta-row">
-          <span class="meta-label">已生效配置版本：</span>
-          <span class="meta-val code">{{ readiness.publishedConfigVersionId.slice(0, 8) }}…</span>
+          <span class="meta-label">场景配置</span>
+          <span class="meta-val">已同步给访客</span>
         </div>
       </div>
 
       <div class="visitor-actions">
         <button class="btn btn-secondary btn-sm" type="button" @click="emit('preview')">
           <Icon name="eye" :size="14" />
-          <span>内部完整预览</span>
+          <span>预览展厅</span>
         </button>
       </div>
     </section>
 
     <!-- 2. 待发布变更与检查 -->
     <section class="section-card changes-section">
-      <h4>待发布变更与就绪检查</h4>
+      <h4>发布前检查</h4>
+      <p v-if="error" class="readiness-error" role="alert">{{ error }}<br />刷新状态后再试。</p>
+      <p v-else-if="!readinessKnown" class="readiness-loading" role="status">{{ loading ? '正在检查照片与场景…' : '尚未确认发布状态，请刷新。' }}</p>
       
-      <div v-if="hasBlockers" class="blockers-list">
+      <div v-else-if="hasBlockers" class="blockers-list">
         <div v-for="blocker in readiness?.blockers" :key="blocker.code" class="blocker-item">
           <Icon name="alert-circle" :size="16" class="blocker-icon" />
           <span>{{ blocker.message }}</span>
@@ -117,11 +129,11 @@ function formatDateTime(value?: string | null) {
       <div v-else class="pending-changes-list">
         <div v-if="!isPublished" class="change-item">
           <span class="change-dot"></span>
-          <span>展厅尚未发布（包含 {{ readiness?.readyPhotoCount ?? 0 }} 张就绪照片）</span>
+          <span>{{ readiness?.readyPhotoCount ?? 0 }} 张照片已就绪</span>
         </div>
         <div v-if="readiness?.configDraftChanged" class="change-item">
           <span class="change-dot warn"></span>
-          <span>3D/氛围配置有草稿修改尚未同步给访客</span>
+          <span>展示风格将随本次发布一起生效</span>
         </div>
       </div>
     </section>
@@ -133,13 +145,16 @@ function formatDateTime(value?: string | null) {
           v-if="canPublish"
           class="btn btn-primary"
           type="button"
-          :disabled="loading || hasBlockers || publishing || (!hasChangesToPublish && isPublished)"
+          :disabled="!readinessKnown || hasBlockers || busy || publishing || unpublishing || (!hasChangesToPublish && isPublished)"
           @click="emit('publish')"
         >
           <Icon v-if="publishing" name="refresh" :size="15" class="spinning" />
           <Icon v-else name="send" :size="15" />
-          <span>{{ publishing ? '正在发布…' : (isPublished ? '同步最新变更到访客' : '一键发布展厅') }}</span>
+          <span>{{ publishing ? '正在发布…' : (isPublished ? '同步最新变更到访客' : '发布展厅') }}</span>
         </button>
+
+        <p v-if="busy" class="publish-helper" role="status">上传与风格载入、保存完成后，即可发布。</p>
+        <button v-if="canPublish && readiness?.configDraftChanged" type="button" class="btn btn-outline-secondary" :disabled="!readinessKnown || busy || publishing" @click="emit('editMetadata')">添加版本说明</button>
 
         <button
           v-if="canPublish && isOwner && isPublished"
@@ -150,6 +165,16 @@ function formatDateTime(value?: string | null) {
         >
           <Icon v-if="unpublishing" name="refresh" :size="15" class="spinning" />
           <span>{{ unpublishing ? '正在撤回…' : '撤回发布' }}</span>
+        </button>
+
+        <button
+          v-if="canShare"
+          class="btn btn-outline-secondary"
+          type="button"
+          @click="emit('openShare')"
+        >
+          <Icon name="lock" :size="14" />
+          <span>访问与分享设置</span>
         </button>
 
         <button
@@ -168,278 +193,258 @@ function formatDateTime(value?: string | null) {
 
 <style scoped>
 .publish-center {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+  display:grid;
+  gap:22px;
+  padding:24px 20px;
+  background:var(--bg-surface);
+  border:1px solid var(--border-strong);
+  border-radius:12px
+}
+
+.publish-header,.header-title {
+  display:flex;
+  align-items:center;
+  gap:10px
 }
 
 .publish-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-content:space-between
 }
 
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #00b88f;
+.header-title>svg {
+  display:none
 }
 
-.header-title h3 {
-  font-size: 15px;
-  font-weight: 750;
-  color: #111827;
-  margin: 0;
+.publish-kicker {
+  font-size:10px;
+  letter-spacing:.12em;
+  color:var(--brand-deep)
+}
+
+h3 {
+  margin:7px 0 0;
+  font-size:21px;
+  font-weight:650;
+  letter-spacing:-.03em
+}
+
+h4 {
+  font-size:12px;
+  font-weight:600;
+  color:var(--text-secondary);
+  margin:0 0 12px
 }
 
 .refresh-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: #f3f4f6;
-  color: #6b7280;
-  border: none;
-  cursor: pointer;
-}
-
-.refresh-btn:hover:not(:disabled) {
-  background: #e5e7eb;
-}
-
-.spinning {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  border:1px solid var(--border-strong);
+  border-radius:8px;
+  color:var(--text-secondary);
+  background:var(--bg-surface)
 }
 
 .section-card {
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  padding:0;
+  background:none;
+  border:0;
+  border-radius:0
 }
 
-.section-card h4 {
-  font-size: 12px;
-  font-weight: 700;
-  color: #64748b;
-  margin: 0 0 8px 0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.visitor-section {
+  padding-bottom:20px;
+  border-bottom:1px solid var(--border-strong)
 }
 
 .status-badge-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px
 }
 
 .status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.status-pill.is-published {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.status-pill.is-draft {
-  background: #fef3c7;
-  color: #b45309;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-primary)
 }
 
 .status-pill .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#a09b87
+}
+
+.status-pill.is-published .dot {
+  background:var(--brand-accent)
 }
 
 .vis-pill {
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.vis-pill.is-public {
-  background: #f0fdf4;
-  color: #16a34a;
-}
-
-.vis-pill.is-private {
-  background: #f1f5f9;
-  color: #475569;
+  padding:4px 7px;
+  border-radius:5px;
+  font-size:11px;
+  background:var(--bg-app);
+  color:var(--text-secondary)
 }
 
 .meta-details {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 10px;
+  display:grid;
+  gap:8px;
+  margin-top:14px;
+  font-size:11px;
+  color:var(--text-secondary)
 }
 
 .meta-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.meta-val.code {
-  font-family: monospace;
-  font-weight: 600;
-  color: #0f172a;
+  display:flex;
+  justify-content:space-between;
+  gap:8px
 }
 
 .visitor-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
+  margin-top:16px
 }
 
-.blockers-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.visitor-actions .btn {
+  width:100%
+}
+
+.blockers-list,.pending-changes-list {
+  display:grid;
+  gap:12px
+}
+
+.blocker-item,.no-changes,.change-item {
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  font-size:12px;
+  line-height:1.65;
+  color:var(--text-secondary)
 }
 
 .blocker-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: #fef2f2;
-  border: 1px solid #fee2e2;
-  border-radius: 8px;
-  color: #dc2626;
-  font-size: 12px;
+  color:#a43730
 }
 
-.blocker-icon {
-  flex-shrink: 0;
+.blocker-icon,.check-icon {
+  flex-shrink:0;
+  margin-top:2px
 }
 
-.no-changes {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #059669;
-  font-size: 12px;
-  padding: 4px 0;
-}
-
-.check-icon {
-  color: #059669;
-}
-
-.pending-changes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: #334155;
-}
-
-.change-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.no-changes,.check-icon {
+  color:var(--brand-deep)
 }
 
 .change-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #00b88f;
-  flex-shrink: 0;
+  width:5px;
+  height:5px;
+  min-width:5px;
+  margin-top:7px;
+  border-radius:50%;
+  background:var(--brand-accent)
 }
 
 .change-dot.warn {
-  background: #f59e0b;
+  background:#9b701f
 }
 
-.publish-actions-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.readiness-error {
+  color:#a43730;
+  font-size:12px;
+  line-height:1.7
+}
+
+.readiness-loading,.publish-helper {
+  color:var(--text-secondary);
+  font-size:12px;
+  line-height:1.7
+}
+
+.publish-helper {
+  width:100%;
+  margin:0
 }
 
 .actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  display:grid;
+  gap:9px
 }
 
 .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 650;
-  cursor: pointer;
-  border: none;
-  transition: all 0.15s ease;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  min-height:40px;
+  padding:9px 12px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:600;
+  box-shadow:none;
+  transition:background .18s,border-color .18s
 }
 
 .btn-primary {
-  background: #00b88f;
-  color: #fff;
+  background:var(--brand-accent);
+  color:white
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #00a67f;
+  background:var(--brand-deep);
+  transform:none;
+  box-shadow:none
 }
 
-.btn-primary:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.btn-secondary,.btn-outline-secondary {
+  background:var(--bg-surface);
+  border:1px solid var(--border-strong);
+  color:var(--text-secondary)
+}
+
+.btn-secondary:hover,.btn-outline-secondary:hover {
+  background:var(--mint-soft);
+  color:var(--brand-deep)
 }
 
 .btn-danger-outline {
-  background: #fff;
-  border: 1px solid #fecaca;
-  color: #dc2626;
+  background:none;
+  color:#a43730;
+  min-height:34px
 }
 
-.btn-danger-outline:hover:not(:disabled) {
-  background: #fef2f2;
+.btn:disabled,.refresh-btn:disabled {
+  opacity:.5;
+  cursor:not-allowed
 }
 
-.btn-outline-secondary {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  color: #475569;
+.btn:focus-visible,.refresh-btn:focus-visible {
+  outline:2px solid var(--brand-accent);
+  outline-offset:3px
 }
 
-.btn-outline-secondary:hover {
-  background: #f8fafc;
-  color: #0f172a;
+.spinning {
+  animation:publish-spin 1s linear infinite
 }
 
-.btn-sm {
-  padding: 5px 10px;
-  font-size: 12px;
+@keyframes publish-spin {
+  to {
+    transform:rotate(360deg)
+  }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .spinning {
+    animation:none
+  }
+  .btn {
+    transition:none
+  }
 }
 </style>

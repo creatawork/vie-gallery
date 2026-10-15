@@ -104,11 +104,7 @@ function handleSelectClick(event: Event) {
       <!-- Status badges (All Chinese) -->
       <div class="badges-row">
         <span v-if="photo.cover" class="badge-cover" title="相册封面">封面</span>
-        <span v-if="photo.status === 'READY'" class="badge-status is-ready" title="已就绪">
-          <Icon name="check" :size="10" stroke-width="3" />
-          <span>就绪</span>
-        </span>
-        <span v-else-if="photo.status === 'PROCESSING'" class="badge-status is-processing" title="处理中">
+        <span v-if="photo.status === 'PROCESSING'" class="badge-status is-processing" title="处理中">
           <span class="dot-pulse"></span>
           <span>处理中</span>
         </span>
@@ -143,29 +139,29 @@ function handleSelectClick(event: Event) {
 <style scoped>
 .photo-card {
   position: relative;
-  background: #fff;
-  border-radius: 14px;
+  background: var(--bg-surface);
+  border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(15, 40, 28, 0.05);
-  border: 2px solid transparent;
-  transition: all 0.2s ease;
+  border: 1px solid var(--border-strong);
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .photo-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(15, 40, 28, 0.09);
+  transform: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .photo-card.is-selected {
-  border-color: var(--brand-accent, #10b981);
-  box-shadow: 0 0 0 1px var(--brand-accent, #10b981), 0 8px 20px rgba(16, 185, 129, 0.18);
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 1px var(--brand-accent), 0 8px 20px var(--mint-soft);
 }
 
 .photo-img-box {
   position: relative;
   aspect-ratio: 4 / 3;
-  background: #f1f5f9;
+  background: var(--bg-app);
   overflow: hidden;
 }
 
@@ -181,7 +177,7 @@ function handleSelectClick(event: Event) {
   height: 100%;
   display: grid;
   place-items: center;
-  color: #94a3b8;
+  color: var(--text-tertiary);
 }
 
 .select-btn {
@@ -191,24 +187,29 @@ function handleSelectClick(event: Event) {
   width: 44px;
   height: 44px;
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.45);
-  border: 1.5px solid rgba(255, 255, 255, 0.85);
-  color: #fff;
+  background: transparent;
+  border: 0;
+  color: var(--bg-surface);
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
   z-index: 2;
+  opacity: 0;
 }
 
+.select-btn::before { content: ''; position: absolute; width: 22px; height: 22px; border: 1.5px solid white; border-radius: 5px; background: rgba(20, 31, 25, .3); }
+.select-btn svg { position: relative; z-index: 1; }
+.photo-card:hover .select-btn, .select-btn.is-checked { opacity: 1; }
+
 .select-btn:hover {
-  background: rgba(15, 23, 42, 0.7);
+  background: transparent;
 }
 
 .select-btn.is-checked {
-  background: var(--brand-accent, #10b981);
-  border-color: var(--brand-accent, #10b981);
+  background: transparent;
 }
+.select-btn.is-checked::before { background: var(--brand-accent); border-color: var(--brand-accent); }
 
 .badges-row {
   position: absolute;
@@ -225,9 +226,9 @@ function handleSelectClick(event: Event) {
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 700;
-  background: #f59e0b;
-  color: #fff;
-  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);
+  background: var(--brand-deep);
+  color: var(--bg-surface);
+  box-shadow: none;
 }
 
 .badge-status {
@@ -238,11 +239,11 @@ function handleSelectClick(event: Event) {
   border-radius: 9999px;
   font-size: 10.5px;
   font-weight: 700;
-  color: #fff;
+  color: var(--bg-surface);
 }
 
 .badge-status.is-ready {
-  background: rgba(16, 185, 129, 0.9);
+  background: var(--mint-soft);
 }
 
 .badge-status.is-processing {
@@ -257,7 +258,7 @@ function handleSelectClick(event: Event) {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--bg-surface);
   animation: pulse 1.5s infinite ease-in-out;
 }
 
@@ -273,7 +274,7 @@ function handleSelectClick(event: Event) {
 .photo-info h3 {
   font-size: 13.5px;
   font-weight: 700;
-  color: #111827;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -300,14 +301,14 @@ function handleSelectClick(event: Event) {
   height: 44px;
   display: grid;
   place-items: center;
-  color: #9ca3af;
+  color: var(--text-tertiary);
   border-radius: 6px;
   background: transparent;
 }
 
 .ghost-btn:hover {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--bg-app);
+  color: var(--text-primary);
 }
 
 .card-menu {
@@ -316,7 +317,7 @@ function handleSelectClick(event: Event) {
   bottom: calc(100% + 4px);
   min-width: 110px;
   padding: 6px;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 10px;
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
   z-index: 10;
@@ -329,12 +330,12 @@ function handleSelectClick(event: Event) {
   padding: 7px 8px;
   border-radius: 7px;
   font-size: 12px;
-  color: #374151;
+  color: var(--text-primary);
   background: transparent;
 }
 
 .card-menu button:hover {
-  background: #ecfdf5;
+  background: var(--mint-soft);
 }
 
 .card-menu .danger {
@@ -358,11 +359,12 @@ function handleSelectClick(event: Event) {
 .select-btn:focus-visible,
 .ghost-btn:focus-visible,
 .card-menu button:focus-visible {
-  outline: 2px solid var(--brand-deep, #047857);
+  outline: 2px solid var(--brand-deep);
   outline-offset: -3px;
 }
 
 @media (max-width: 768px), (hover: none) {
+  .select-btn { opacity: 1; }
   .photo-card, .photo-card:hover, .photo-card.tilt-active,
   .photo-card .photo-img-box, .photo-card .photo-info,
   .photo-card .select-btn, .photo-card .ghost-btn {

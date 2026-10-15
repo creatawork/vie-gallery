@@ -269,7 +269,7 @@ async function copyRequestId(id: string) {
   flex-direction: column;
   gap: 14px;
   padding: 18px;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 16px;
   box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
 }
@@ -284,13 +284,13 @@ async function copyRequestId(id: string) {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #00b88f;
+  color: var(--brand-accent);
 }
 
 .task-title h2 {
   font-size: 15px;
   font-weight: 750;
-  color: #111827;
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -300,16 +300,16 @@ async function copyRequestId(id: string) {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--bg-app);
+  color: var(--text-secondary);
   border: none;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background: #e5e7eb;
-  color: #111827;
+  background: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .refresh-btn:disabled {
@@ -332,23 +332,23 @@ async function copyRequestId(id: string) {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .summary-chip strong {
-  color: #0f172a;
+  color: var(--text-primary);
   font-weight: 700;
 }
 
 .summary-chip.queued strong { color: #0284c7; }
-.summary-chip.processing strong { color: #00b88f; }
-.summary-chip.succeeded strong { color: #059669; }
+.summary-chip.processing strong { color: var(--brand-accent); }
+.summary-chip.succeeded strong { color: var(--brand-accent); }
 .summary-chip.failed strong { color: #dc2626; }
-.summary-chip.cancelled strong { color: #64748b; }
+.summary-chip.cancelled strong { color: var(--text-secondary); }
 
 .summary-sep {
   color: #cbd5e1;
@@ -364,31 +364,31 @@ async function copyRequestId(id: string) {
 .filter-chip {
   padding: 4px 10px;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
   font-size: 11px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .filter-chip:hover {
-  border-color: #00b88f;
-  color: #00b88f;
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
 }
 
 .filter-chip.active {
-  background: #ecfdf5;
-  border-color: #00b88f;
-  color: #00b88f;
+  background: var(--mint-soft);
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
   font-weight: 700;
 }
 
 .task-empty {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--text-tertiary);
   padding: 12px 0;
   text-align: center;
 }
@@ -399,7 +399,7 @@ async function copyRequestId(id: string) {
 
 .group-empty {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-tertiary);
   padding: 8px 0;
 }
 
@@ -417,7 +417,7 @@ async function copyRequestId(id: string) {
   justify-content: space-between;
   font-size: 12px;
   font-weight: 700;
-  color: #6b7280;
+  color: var(--text-secondary);
   margin-bottom: 8px;
   border: none;
   background: transparent;
@@ -438,7 +438,7 @@ async function copyRequestId(id: string) {
   align-items: center;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--bg-app);
 }
 
 .task-item:last-child {
@@ -451,16 +451,16 @@ async function copyRequestId(id: string) {
   height: 36px;
   border-radius: 8px;
   object-fit: cover;
-  background: #ecfdf5;
-  color: #00b88f;
+  background: var(--mint-soft);
+  color: var(--brand-accent);
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
 
 .thumb-fallback.success-thumb {
-  background: #ecfdf5;
-  color: #00b88f;
+  background: var(--mint-soft);
+  color: var(--brand-accent);
 }
 
 .thumb-fallback.failed-thumb {
@@ -469,8 +469,8 @@ async function copyRequestId(id: string) {
 }
 
 .thumb-fallback.cancelled-thumb {
-  background: #f3f4f6;
-  color: #9ca3af;
+  background: var(--bg-app);
+  color: var(--text-tertiary);
 }
 
 .task-copy {
@@ -481,7 +481,7 @@ async function copyRequestId(id: string) {
 .task-copy strong {
   display: block;
   font-size: 12px;
-  color: #111827;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -489,7 +489,7 @@ async function copyRequestId(id: string) {
 
 .task-copy span {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--text-tertiary);
 }
 
 .task-copy span.error-msg {
@@ -506,7 +506,7 @@ async function copyRequestId(id: string) {
 .req-id {
   font-family: monospace;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 140px;
@@ -517,16 +517,16 @@ async function copyRequestId(id: string) {
   padding: 1px 5px;
   border-radius: 4px;
   border: 1px solid #cbd5e1;
-  background: #f8fafc;
-  color: #475569;
+  background: var(--bg-app);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .ready-tag {
   font-size: 11px;
   font-weight: 750;
-  color: #00b88f;
-  background: #ecfdf5;
+  color: var(--brand-accent);
+  background: var(--mint-soft);
   padding: 2px 6px;
   border-radius: 999px;
   white-space: nowrap;
@@ -545,20 +545,20 @@ async function copyRequestId(id: string) {
 .pct {
   font-size: 11px;
   font-weight: 700;
-  color: #00b88f;
+  color: var(--brand-accent);
 }
 
 .bar {
   height: 5px;
   margin-top: 6px;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: var(--border-strong);
   overflow: hidden;
 }
 
 .fill {
   height: 100%;
-  background: #00b88f;
+  background: var(--brand-accent);
   transition: width 0.3s ease;
 }
 
@@ -567,7 +567,7 @@ async function copyRequestId(id: string) {
   height: 24px;
   display: grid;
   place-items: center;
-  color: #9ca3af;
+  color: var(--text-tertiary);
   border: none;
   background: transparent;
   cursor: pointer;
@@ -575,7 +575,7 @@ async function copyRequestId(id: string) {
 }
 
 .icon-x:hover {
-  background: #f3f4f6;
+  background: var(--bg-app);
   color: #ef4444;
 }
 
@@ -591,7 +591,7 @@ async function copyRequestId(id: string) {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .retry-btn:hover {
@@ -603,8 +603,8 @@ async function copyRequestId(id: string) {
   border-radius: 8px;
   font-size: 12px;
   font-weight: 650;
-  color: #00b88f;
-  background: #ecfdf5;
+  color: var(--brand-accent);
+  background: var(--mint-soft);
   border: none;
   cursor: pointer;
 }
@@ -614,8 +614,8 @@ async function copyRequestId(id: string) {
   gap: 10px;
   padding: 12px;
   border-radius: 12px;
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
 }
 
 .tip-box strong {
@@ -627,7 +627,7 @@ async function copyRequestId(id: string) {
 .tip-box p {
   font-size: 12px;
   line-height: 1.5;
-  color: #4b5563;
+  color: var(--text-secondary);
   margin: 0;
 }
 </style>

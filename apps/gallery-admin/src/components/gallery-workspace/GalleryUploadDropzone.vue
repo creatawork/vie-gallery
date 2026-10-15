@@ -88,7 +88,8 @@ onUnmounted(() => document.removeEventListener('paste', handlePaste))
     class="upload-tile"
     :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
     role="button"
-    tabindex="0"
+    :tabindex="uploading ? -1 : 0"
+    :aria-disabled="uploading"
     aria-label="上传照片"
     @dragover.prevent="isDragOver = true"
     @dragleave.prevent="isDragOver = false"
@@ -101,7 +102,8 @@ onUnmounted(() => document.removeEventListener('paste', handlePaste))
       <span class="upload-icon">
         <Icon name="upload" :size="28" />
       </span>
-      <strong>拖拽 / 点击 / Ctrl+V 粘贴上传</strong>
+      <strong>添加你的作品</strong>
+      <span class="upload-instruction">拖拽到这里，或点击选择照片</span>
       <small>JPG / PNG / WebP，单张不超过 50MB</small>
     </template>
     <div v-else class="upload-progress" role="status" @click.stop>
@@ -113,7 +115,7 @@ onUnmounted(() => document.removeEventListener('paste', handlePaste))
         <div class="progress-bar" :style="{ width: `${Math.min(100, Math.max(2, progress))}%` }"></div>
       </div>
       <small v-if="typeof progress === 'number' && progress > 0">{{ progress }}%</small>
-      <small>处理进度请查看右侧任务中心</small>
+      <small>处理进度可在上传任务中查看</small>
     </div>
     <input ref="input" type="file" multiple accept="image/jpeg,image/png,image/webp" hidden @change="handleInput" />
   </section>
@@ -121,268 +123,116 @@ onUnmounted(() => document.removeEventListener('paste', handlePaste))
 
 <style scoped>
 .upload-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 248px;
-  padding: 20px 16px;
-  border-radius: 14px;
-  border: 1.5px dashed #7dd3b5;
-  background: rgba(236, 253, 245, 0.55);
-  color: #00b88f;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:236px;
+  padding:24px 16px;
+  border:1px dashed var(--border-strong);
+  border-radius:10px;
+  background:var(--bg-app);
+  color:var(--text-secondary);
+  cursor:pointer;
+  text-align:center;
+  transition:background .18s,border-color .18s;
+  position:relative
 }
 
-/* 拖拽波纹背景 */
-.upload-tile::before {
-  content: '';
-  position: absolute;
-  inset: -50%;
-  background: radial-gradient(circle, rgba(0, 184, 143, 0.1) 0%, transparent 70%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
+.upload-tile:hover,.upload-tile.drag-over {
+  border-color:var(--brand-accent);
+  background:var(--mint-soft)
 }
 
-.upload-tile:hover,
 .upload-tile:focus-visible {
-  background: rgba(220, 252, 231, 0.75);
-  border-color: #00b88f;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 184, 143, 0.15);
+  outline:2px solid var(--brand-accent);
+  outline-offset:3px
 }
 
-.upload-tile:hover::before {
-  opacity: 1;
-  animation: upload-ripple-pulse 2s ease-in-out infinite;
-}
-
-@keyframes upload-ripple-pulse {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 0.3;
-  }
-  50% {
-    transform: scale(1.5);
-    opacity: 0.6;
-  }
-}
-
-/* 拖拽悬浮状态 */
-.upload-tile.drag-over {
-  background: rgba(220, 252, 231, 0.95);
-  border-color: #00b88f;
-  border-width: 2.5px;
-  border-style: solid;
-  transform: scale(1.02);
-  box-shadow: 0 12px 32px rgba(0, 184, 143, 0.25),
-              inset 0 0 40px rgba(0, 184, 143, 0.1);
-  animation: upload-drag-bounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
-}
-
-@keyframes upload-drag-bounce {
-  0%, 100% {
-    transform: scale(1.02);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-}
-
-.upload-tile.drag-over::before {
-  opacity: 1;
-  animation: upload-drag-ripple 1s ease-in-out infinite;
-}
-
-@keyframes upload-drag-ripple {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.8;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
-  }
-}
-
-/* 上传中状态 */
 .upload-tile.is-uploading {
-  pointer-events: none;
-  background: rgba(236, 253, 245, 0.85);
-  border-style: solid;
-}
-
-.upload-tile:focus-visible {
-  outline: 2px solid #00b88f;
-  outline-offset: 4px;
+  cursor:progress
 }
 
 .upload-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 184, 143, 0.12);
-  margin-bottom: 4px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.upload-tile:hover .upload-icon,
-.upload-tile.drag-over .upload-icon {
-  background: rgba(0, 184, 143, 0.2);
-  transform: scale(1.1) rotate(5deg);
-  box-shadow: 0 4px 16px rgba(0, 184, 143, 0.3);
-}
-
-.upload-tile.drag-over .upload-icon {
-  animation: upload-icon-bounce 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
-}
-
-@keyframes upload-icon-bounce {
-  0%, 100% {
-    transform: scale(1.1) rotate(5deg) translateY(0);
-  }
-  50% {
-    transform: scale(1.2) rotate(-5deg) translateY(-8px);
-  }
-}
-
-.spinning-icon {
-  animation: spin 1.2s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  display:grid;
+  place-items:center;
+  width:44px;
+  height:44px;
+  margin-bottom:7px;
+  color:var(--brand-accent)
 }
 
 .upload-tile strong {
-  font-size: 15px;
-  font-weight: 750;
-  transition: all 0.2s ease;
+  font-size:14px;
+  font-weight:600;
+  color:var(--text-primary);
+  line-height:1.6
 }
 
-.upload-tile:hover strong,
-.upload-tile.drag-over strong {
-  transform: translateY(-2px);
+.upload-instruction {
+  font-size:12px;
+  line-height:1.6
 }
 
 .upload-tile small {
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.45;
-  color: #9ca3af;
-  transition: color 0.2s ease;
-}
-
-.upload-tile:hover small,
-.upload-tile.drag-over small {
-  color: #047857;
+  font-size:11px;
+  line-height:1.7;
+  color:var(--text-tertiary)
 }
 
 .upload-progress {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  color: #047857;
-  animation: upload-progress-fade-in 0.3s ease;
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px
 }
 
 .progress-track {
-  width: min(220px, 70%);
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(0, 184, 143, 0.15);
-  overflow: hidden;
+  width:min(220px,85%);
+  height:4px;
+  border-radius:4px;
+  background:var(--border-strong);
+  overflow:hidden
 }
 
 .progress-bar {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #34d399, #00b88f);
-  transition: width 0.25s ease;
+  height:100%;
+  background:var(--brand-accent);
+  border-radius:4px;
+  transition:width .2s
 }
 
-@keyframes upload-progress-fade-in {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
+.spinning-icon {
+  animation:upload-spin 1.2s linear infinite
+}
+
+@keyframes upload-spin {
   to {
-    opacity: 1;
-    transform: scale(1);
+    transform:rotate(360deg)
   }
 }
 
-/* 上传成功标记 */
-@keyframes upload-success-mark {
-  0% {
-    opacity: 0;
-    transform: scale(0) rotate(-180deg);
-  }
-  50% {
-    transform: scale(1.2) rotate(10deg);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-/* 焦点流光效果 */
-.upload-tile:focus-visible::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 14px;
-  background: linear-gradient(
-    135deg,
-    transparent 0%,
-    rgba(0, 184, 143, 0.1) 50%,
-    transparent 100%
-  );
-  animation: upload-focus-shimmer 2s ease-in-out infinite;
-}
-
-@keyframes upload-focus-shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-/* 移动端优化 */
-@media (max-width: 640px) {
+@media(max-width:640px) {
   .upload-tile {
-    min-height: 200px;
+    min-height:220px;
+    padding:20px 12px
   }
-  
-  .upload-icon {
-    width: 44px;
-    height: 44px;
+  .upload-instruction {
+    font-size:11px
+  }
+  .upload-tile small {
+    font-size:10px
   }
 }
 
-/* 无障碍 */
-@media (prefers-reduced-motion: reduce) {
-  .upload-tile,
-  .upload-tile::before,
-  .upload-tile::after,
-  .upload-icon,
-  .upload-progress {
-    animation: none !important;
-    transition: none !important;
+@media(prefers-reduced-motion:reduce) {
+  .upload-tile,.progress-bar {
+    transition:none
+  }
+  .spinning-icon {
+    animation:none
   }
 }
 </style>

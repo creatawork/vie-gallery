@@ -10,7 +10,7 @@ for (const count of [200, 500]) test(`pagination to ${count} keeps photo identit
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().textures.resident)).toBeGreaterThan(0)
   const ids = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.photoMeshIds())
   for (let loaded = 100; loaded <= count; loaded += 50) {
-    await page.getByRole('button', { name: '加载更多照片', exact: true }).click()
+    await page.getByRole('button', { name: /^继续浏览 · 还有 \d+ 张$/ }).click()
     await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.photoMeshIds().length)).toBe(loaded)
     const next = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.photoMeshIds())
     expect(next.slice(0, 50)).toEqual(ids)
@@ -19,6 +19,7 @@ for (const count of [200, 500]) test(`pagination to ${count} keeps photo identit
     expect(textures.bytes).toBeLessThanOrEqual(textures.budget.bytes)
     expect(textures.active).toBeLessThanOrEqual(textures.budget.concurrent)
   }
+  await expect(page.getByRole('button', { name: /^继续浏览 · 还有 \d+ 张$/ })).toHaveCount(0)
   expect(requests.size).toBeGreaterThan(0)
   // Admission may legitimately evict textures. It must not restart all original URLs on append.
   expect([...requests.values()].filter(value => value > 1).length).toBeLessThan(50)
@@ -38,9 +39,9 @@ test('failed preview textures can retry and loading work cannot survive mode rep
   await page.getByRole('button', { name: '重试照片预览' }).click()
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().textures.failed)).toBe(0)
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().textures.resident)).toBeGreaterThan(0)
-  await page.getByRole('button', { name: '经典网格', exact: true }).click()
+  await page.getByRole('button', { name: '平面展览', exact: true }).click()
   await expect.poll(() => page.evaluate(() => !!window.__VIE_VIEWER_DIAGNOSTICS__)).toBe(false)
-  await page.getByRole('button', { name: '3D 空间', exact: true }).click()
+  await page.getByRole('button', { name: '空间漫游', exact: true }).click()
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.photoMeshIds().length)).toBe(12)
   expect(errors.filter(message => !message.includes('503 (Service Unavailable)'))).toEqual([])
 })

@@ -37,10 +37,7 @@ VIE Gallery Admin 是创作者管理后台：可靠保存照片、管理相册�
 
 ## Brand Commitments
 
-- 产品名：**VIE Gallery**；Admin 副标语境为「3D 沉浸式画廊 / 创作者工作区」。
-- 品牌图形：折叠立方体 mark（翠绿渐变 `#12B981` → `#047857`），见于总览与工作区导航。
-- 视觉气质（已落地，见 `DESIGN.md`）：清新薄荷绿 + 磨砂玻璃 + 画廊空间摄影背景；登录页为深色玻璃卡片浮于全屏背景之上。
-- 登录页原型规格：`docs/superpowers/specs/2026-09-08-admin-login-immersive-design.md`。
+品牌名 VIE Gallery 与折叠立方体图形沿用。2026-10-15 用户授权全流程重设计：暖纸白工作台、深炭文字、低饱和青绿操作色，摄影作品优先。登录采用摄影空间与表单双栏；旧薄荷玻璃风格不再作为约束。详见 DESIGN.md。
 
 ## Evidence on Hand
 
@@ -60,5 +57,5 @@ VIE Gallery Admin 是创作者管理后台：可靠保存照片、管理相册�
 
 ## Accessibility & Inclusion
 
-- 目标：WCAG 2.1 AA 为方向；已知缺口包括部分低对比度（白字 on 翠绿按钮）、10px 功能标签、模态 Esc/焦点陷阱不完整（见 critique 记录，需在后续 harden 任务修复）。
+- 目标：WCAG 2.1 AA 为方向。本轮统一了操作色、12px 及以上功能标签、模态焦点约束与归还、菜单 Esc 和减少动效；完整辅助技术与真实设备评估仍需专项实测。
 - 表单控件需有可见 label；图标按钮需 `aria-label` 或可见文字。

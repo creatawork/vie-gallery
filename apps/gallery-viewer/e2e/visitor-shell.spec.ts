@@ -1,0 +1,98 @@
+import { test, expect } from '@playwright/test'
+import { mockGallery } from './helpers/mockGallery'
+
+test('share dialog supports keyboard dismissal, focus return and manual copy recovery', async ({ page }, info) => {
+  const { errors } = await mockGallery(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('vie:view-mode', '2d')
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('blocked')) } })
+  })
+  await page.goto('/g/effects-fixture?preview=draft-credential#s=visitor-link')
+  const share = page.getByRole('button', { name: '分享', exact: true })
+  await share.click()
+  const dialog = page.getByRole('dialog', { name: '把影展分享给朋友' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '关闭分享' })).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true)
+  await expect(dialog.getByRole('textbox', { name: '展厅链接' })).toHaveValue(/#s=visitor-link$/)
+  await expect(dialog.getByRole('textbox', { name: '展厅链接' })).not.toHaveValue(/preview=/)
+  await dialog.getByRole('button', { name: '复制链接', exact: true }).click()
+  await expect(dialog.getByRole('status')).toContainText('未能自动复制')
+  await expect(dialog.getByRole('textbox', { name: '展厅链接' })).toBeFocused()
+  await page.screenshot({ path: info.outputPath('share-desktop.png') })
+  await page.setViewportSize({ width: 320, height: 700 })
+  await page.screenshot({ path: info.outputPath('share-mobile.png') })
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(share).toBeFocused()
+  expect(errors).toEqual([])
+})
+
+test('password entry has labels, preserves retry feedback and opens the gallery', async ({ page }, info) => {
+  let unlocked = false
+  await mockGallery(page)
+  await page.addInitScript(() => localStorage.setItem('vie:view-mode', '2d'))
+  await page.route('**/api/public/g/effects-fixture', route => route.fulfill({ json: {
+    slug: 'effects-fixture', title: '山川来信', visibility: 'PASSWORD', accessState: unlocked ? 'READY' : 'PASSWORD_REQUIRED', cover: null, photoCount: 12,
+  } }))
+  await page.route('**/api/public/g/effects-fixture/unlock', route => {
+    unlocked = route.request().postDataJSON().password === 'correct'
+    return unlocked ? route.fulfill({ json: { unlocked: true } }) : route.fulfill({ status: 401, json: { code: 'PASSWORD_INVALID' } })
+  })
+  await page.goto('/g/effects-fixture')
+  await expect(page.getByRole('heading', { name: '山川来信' })).toBeVisible()
+  const password = page.getByLabel('访问密码', { exact: true })
+  await password.fill('incorrect')
+  await page.getByRole('button', { name: '显示密码' }).click()
+  await expect(password).toHaveAttribute('type', 'text')
+  await page.getByRole('button', { name: '进入影展' }).click()
+  await expect(page.getByRole('alert')).toHaveText('密码不正确，请重新输入。')
+  await expect(password).toHaveAttribute('aria-invalid', 'true')
+  await page.screenshot({ path: info.outputPath('password-desktop.png') })
+  await page.setViewportSize({ width: 320, height: 700 })
+  await page.screenshot({ path: info.outputPath('password-mobile.png') })
+  await password.fill('correct')
+  await page.getByRole('button', { name: '进入影展' }).click()
+  await expect(page.locator('.photo-wall img').first()).toBeVisible()
+})
+
+test('gallery controls and editorial photos fit a narrow viewport', async ({ page }, info) => {
+  const { errors } = await mockGallery(page)
+  await page.addInitScript(() => localStorage.setItem('vie:view-mode', '2d'))
+  for (const width of [320, 768, 1440]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 1000 : 900 })
+    await page.goto('/g/effects-fixture')
+    await expect(page.locator('.photo-wall img').first()).toBeVisible()
+    await expect(page.getByRole('button', { name: '平面展览', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    const tools = await page.locator('.exhibition-tools').boundingBox()
+    expect(tools!.x).toBeGreaterThan(40)
+    expect(tools!.x + tools!.width).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: info.outputPath('editorial-' + width + '.png'), fullPage: true })
+  }
+  expect(errors).toEqual([])
+})
+
+test('spatial controls fit touch screens and respect reduced motion', async ({ page }, info) => {
+  const { errors } = await mockGallery(page)
+  await page.setViewportSize({ width: 320, height: 740 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/g/effects-fixture')
+  const helix = page.getByRole('button', { name: '螺旋', exact: true })
+  await expect(helix).toBeVisible()
+  await helix.click()
+  await expect(page.getByRole('button', { name: '查看当前作品' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '自动漫游', exact: true })).toBeHidden()
+  for (const selector of ['.composition-dock', '.stage-info', '.stage-navigation']) {
+    const bounds = await page.locator(selector).boundingBox()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
+  }
+  await page.screenshot({ path: info.outputPath('spatial-mobile.png') })
+  await page.getByRole('button', { name: '查看当前作品' }).click()
+  await expect(page.getByRole('dialog').first()).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: '查看当前作品' })).toBeFocused()
+  expect(errors).toEqual([])
+})

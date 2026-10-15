@@ -49,12 +49,12 @@ function toggle(type: string, event: Event) {
 </template>
 <style scoped>
 .config-field { display: grid; gap: .5rem; margin-block: 1rem; }
-label, legend { font-size: .8125rem; font-weight: 650; color: #334f42; }
-input:not([type=checkbox]), select { width: 100%; min-width: 0; min-height: 2.5rem; padding: .5rem .75rem; border: 1px solid #d7e1e9; border-radius: .625rem; background: #fff; color: #17212b; font: inherit; }
-input:focus-visible, select:focus-visible { outline: 2px solid #19815c; outline-offset: 3px; }
+label, legend { font-size: .8125rem; font-weight: 650; color: var(--brand-deep); }
+input:not([type=checkbox]), select { width: 100%; min-width: 0; min-height: 2.5rem; padding: .5rem .75rem; border: 1px solid var(--border-strong); border-radius: .625rem; background: var(--bg-surface); color: var(--text-primary); font: inherit; }
+input:focus-visible, select:focus-visible { outline: 2px solid var(--brand-deep); outline-offset: 3px; }
 input[aria-invalid=true] { border-color: #b91c1c; }
 input:disabled, select:disabled { opacity: .65; cursor: not-allowed; }
-small { color: #6a7c71; font-size: .75rem; }
+small { color: var(--text-tertiary); font-size: .75rem; }
 p { color: #b91c1c; font-size: .8125rem; margin: 0; }
 .is-toggle { grid-template-columns: 1fr auto; align-items: center; }.is-toggle small, .is-toggle p { grid-column: 1/-1; }
 .particle-field { border: 1px solid #cbd5e1; border-radius: .5rem; padding: .75rem; grid-template-columns: 1fr 1fr; }

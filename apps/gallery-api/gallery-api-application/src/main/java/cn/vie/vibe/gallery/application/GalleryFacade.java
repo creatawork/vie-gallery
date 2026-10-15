@@ -87,6 +87,9 @@ public class GalleryFacade {
         if (gallery.status() == GalleryStatus.ARCHIVED) {
             throw new DomainException("GALLERY_ALREADY_ARCHIVED", "Archived gallery cannot be published");
         }
+        if (passwordMissing(gallery.visibility(), gallery.passwordHash())) {
+            throw new DomainException("GALLERY_PASSWORD_REQUIRED", "请先设置展厅访问密码，再发布展厅。");
+        }
         if (gallery.status() == GalleryStatus.PUBLISHED) return gallery;
         if (photos == null || photos.countPublicReadyByGalleryId(context.tenantId(), galleryId) < 1) {
             throw new DomainException("GALLERY_NOT_READY", "Gallery must contain at least one READY photo");
@@ -142,9 +145,10 @@ public class GalleryFacade {
         Gallery gallery = galleries.findById(context.tenantId(), galleryId)
                 .orElseThrow(() -> new DomainException("GALLERY_NOT_FOUND", "Gallery not found"));
         
+        boolean withdraw = gallery.status() == GalleryStatus.PUBLISHED && gallery.visibility() == GalleryVisibility.PASSWORD;
         Gallery updated = new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
                 gallery.visibility(), null, gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
-                gallery.status(), gallery.publishedAt());
+                withdraw ? GalleryStatus.DRAFT : gallery.status(), withdraw ? null : gallery.publishedAt());
         galleries.update(updated);
         return updated;
     }
@@ -158,11 +162,16 @@ public class GalleryFacade {
             throw new DomainException("VALIDATION_FAILED", "Visibility cannot be null");
         }
         String passwordHash = visibility == GalleryVisibility.PASSWORD ? gallery.passwordHash() : null;
+        boolean withdraw = gallery.status() == GalleryStatus.PUBLISHED && passwordMissing(visibility, passwordHash);
         Gallery updated = new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
                 visibility, passwordHash, gallery.coverPhotoId(), gallery.deleted(), gallery.createdAt(),
-                gallery.status(), gallery.publishedAt());
+                withdraw ? GalleryStatus.DRAFT : gallery.status(), withdraw ? null : gallery.publishedAt());
         galleries.update(updated);
         return updated;
+    }
+
+    private static boolean passwordMissing(GalleryVisibility visibility, String passwordHash) {
+        return visibility == GalleryVisibility.PASSWORD && (passwordHash == null || passwordHash.isBlank());
     }
 
     @Transactional

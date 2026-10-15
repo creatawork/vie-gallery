@@ -26,8 +26,7 @@ export class CursorTrailPlugin implements ViewerPlugin {
   private seeds: Float32Array = new Float32Array(0)
   private velocities: Float32Array = new Float32Array(0)
   private cursor = 0
-  private lastEmit = 0
-  private lastElapsed = 0
+  private lastEmit = -Infinity
 
   private canvas: HTMLCanvasElement | null = null
   private handleMove: ((event: PointerEvent) => void) | null = null
@@ -35,9 +34,8 @@ export class CursorTrailPlugin implements ViewerPlugin {
   install(context: ViewerContext): void {
     this.context = context
 
-    if (context.isMobile() || context.getQuality() === 'low') {
-      this.poolSize = 48
-    }
+    this.poolSize = context.isMobile() || context.getQuality() === 'low' ? 48 : 96
+    this.cursor = 0; this.lastEmit = -Infinity
 
     const geometry = new THREE.BufferGeometry()
     this.positions = new Float32Array(this.poolSize * 3)
@@ -99,6 +97,7 @@ export class CursorTrailPlugin implements ViewerPlugin {
     this.geometry = geometry
     this.mesh = new THREE.Points(geometry, this.material)
     this.mesh.frustumCulled = false
+    this.mesh.visible = !context.reducedMotion()
     context.addToScene(this.mesh)
 
     // 指针移动时沿视线撒出星尘（挂到渲染画布上，与 OrbitControls 手势共存）
@@ -111,7 +110,7 @@ export class CursorTrailPlugin implements ViewerPlugin {
    * 将指针位置反投影为相机前固定深度的世界坐标，并发射一小批星尘
    */
   private emitTrail(event: PointerEvent): void {
-    if (!this.context || !this.mesh) return
+    if (!this.context || !this.mesh || this.context.reducedMotion() || event.pointerType !== 'mouse' || event.buttons) return
 
     const now = performance.now()
     if (now - this.lastEmit < 24) return
@@ -150,12 +149,17 @@ export class CursorTrailPlugin implements ViewerPlugin {
     }
   }
 
-  update(_delta: number, elapsed: number): void {
+  update(delta: number, _elapsed: number): void {
     if (!this.mesh || !this.geometry) return
+    this.mesh.visible = !this.context?.reducedMotion()
+    if (!this.mesh.visible) {
+      this.life.fill(0)
+      this.geometry.attributes.aLife.needsUpdate = true
+      return
+    }
 
     // 帧率无关的生命周期与位移积分
-    const dt = Math.min(0.1, Math.max(0, elapsed - this.lastElapsed))
-    this.lastElapsed = elapsed
+    const dt = Math.min(0.1, Math.max(0, delta))
 
     let alive = false
     for (let i = 0; i < this.poolSize; i++) {

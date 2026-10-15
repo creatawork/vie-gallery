@@ -49,6 +49,7 @@ const publishCenter = usePublishCenter(
 const versionMetadata = useConfigVersionMetadata()
 const showPublishMetadata = ref(false)
 const styleSaving = ref(true)
+const styleLoaded = ref(false)
 const publishingFlow = ref(false)
 
 const photoViewMode = ref<'grid' | 'list'>('grid')
@@ -86,6 +87,7 @@ const workflowStep = computed(() => {
   const gallery = workspace.gallery.value
   if (!gallery) return 1
   if (gallery.status === 'PUBLISHED') return 4
+  if (workspace.photos.value.length > 0 && !styleLoaded.value) return 2
   if (workspace.photos.value.length > 0) return 3
   return 1
 })
@@ -191,6 +193,12 @@ function goToConfig() {
   router.push({ name: 'gallery-config', params: { id: galleryId.value } })
 }
 
+function focusWorkflowSection(id: string) {
+  const section = document.getElementById(id)
+  section?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' })
+  section?.focus({ preventScroll: true })
+}
+
 async function openViewer() {
   const gallery = workspace.gallery.value
   if (!gallery || previewOpening.value) return
@@ -220,6 +228,12 @@ async function handlePublish() {
   await handlePublishAll()
 }
 
+function openPublishMetadata() {
+  if (!canPublish.value || styleSaving.value || !styleLoaded.value || workspace.uploading.value || publishCenter.publishing.value) return
+  versionMetadata.reset()
+  showPublishMetadata.value = true
+}
+
 async function handlePublishAll() {
   if (!canPublish.value || styleSaving.value || publishingFlow.value || publishCenter.publishing.value) return
   publishingFlow.value = true
@@ -227,6 +241,10 @@ async function handlePublishAll() {
     await publishCenter.loadReadiness()
     if (publishCenter.error.value) {
       toast.error(publishCenter.error.value)
+      return
+    }
+    if (!publishCenter.readiness.value || publishCenter.readiness.value.blockers.length) {
+      toast.warning(publishCenter.readiness.value?.blockers[0]?.message || '发布状态尚未确认，请刷新后重试。')
       return
     }
     versionMetadata.reset()
@@ -536,9 +554,14 @@ async function loadGalleryConfig() {
 async function openShareModal() {
   if (!canShareManage.value) return
   const gallery = workspace.gallery.value
-  if (!gallery || gallery.status !== 'PUBLISHED') return
+  if (!gallery) return
   await loadGalleryConfig()
   showShareModal.value = true
+}
+
+async function reloadGalleryAccess() {
+  await workspace.reload()
+  await publishCenter.loadReadiness()
 }
 </script>
 
@@ -610,7 +633,7 @@ async function openShareModal() {
               <div class="title-row">
                 <h1>{{ workspace.gallery.value.name }}</h1>
                 <span class="vis-pill" :class="workspace.gallery.value.visibility === 'PUBLIC' ? 'is-public' : 'is-private'">
-                  {{ workspace.gallery.value.visibility === 'PUBLIC' ? '公开' : '私密' }}
+                  {{ workspace.gallery.value.visibility === 'PUBLIC' ? '公开' : workspace.gallery.value.visibility === 'PASSWORD' ? '密码保护' : '私密' }}
                 </span>
                 <span class="vis-pill" :class="workspace.gallery.value.status === 'PUBLISHED' ? 'is-public' : 'is-private'">
                   {{ workspace.gallery.value.status === 'PUBLISHED' ? '已发布' : '草稿' }}
@@ -619,13 +642,13 @@ async function openShareModal() {
               <p>{{ hallDescription }}</p>
               <ol class="workflow-steps" aria-label="展厅上线步骤">
                 <li :class="{ done: workspace.photos.value.length > 0, current: workflowStep === 1 }">
-                  <span>1</span>上传照片
+                  <button type="button" @click="focusWorkflowSection('workspace-photos')" :aria-current="workflowStep === 1 ? 'step' : undefined"><span>1</span><div><strong>整理作品</strong><small>上传与排序</small></div></button>
                 </li>
-                <li :class="{ done: workspace.photos.value.length > 0 }">
-                  <span>2</span>选择风格
+                <li :class="{ done: styleLoaded, current: workflowStep === 2 }">
+                  <button type="button" @click="focusWorkflowSection('workspace-style')" :aria-current="workflowStep === 2 ? 'step' : undefined"><span>2</span><div><strong>选择风格</strong><small>塑造展示空间</small></div></button>
                 </li>
                 <li :class="{ done: workspace.gallery.value.status === 'PUBLISHED', current: workflowStep === 3 }">
-                  <span>3</span>发布分享
+                  <button type="button" @click="focusWorkflowSection('workspace-publish')" :aria-current="workflowStep === 3 ? 'step' : undefined"><span>3</span><div><strong>发布分享</strong><small>邀请访客进入</small></div></button>
                 </li>
               </ol>
               <div class="meta-row">
@@ -649,13 +672,12 @@ async function openShareModal() {
             </button>
             <button
               v-if="canPublish && workspace.gallery.value.status !== 'PUBLISHED'"
-              class="btn solid"
+              class="btn outline"
               type="button"
-              :disabled="publishingFlow || publishCenter.publishing.value || styleSaving || workspace.uploading.value"
-              @click="handlePublish"
+              @click="focusWorkflowSection('workspace-publish')"
             >
               <Icon name="send" :size="15" />
-              <span>{{ publishCenter.publishing.value ? '正在发布…' : '发布并分享' }}</span>
+              <span>前往发布</span>
             </button>
             <button
               v-else-if="canShareManage && workspace.gallery.value.status === 'PUBLISHED'"
@@ -679,13 +701,10 @@ async function openShareModal() {
           <template v-else>
             <div class="nudge-copy">
               <strong>照片已就绪</strong>
-              <span>在下方选择喜欢的风格，然后发布分享。</span>
+              <span>选择展示风格，预览满意后即可发布。</span>
             </div>
             <div class="nudge-actions">
-              <button class="btn solid" type="button" :disabled="publishCenter.publishing.value || styleSaving || workspace.uploading.value" @click="handlePublish">
-                <Icon name="send" :size="15" />
-                <span>{{ workspace.publishing.value ? '发布中…' : '发布展厅' }}</span>
-              </button>
+              <button class="btn ghost" type="button" @click="focusWorkflowSection('workspace-publish')">查看发布检查 <Icon name="arrow-right" :size="14" /></button>
               <button class="btn outline" type="button" :disabled="previewOpening" @click="openViewer">先预览</button>
               <button v-if="canConfig" class="btn ghost" type="button" @click="goToConfig">调整场景</button>
             </div>
@@ -693,12 +712,11 @@ async function openShareModal() {
           <button class="nudge-close" type="button" aria-label="暂不发布，关闭提示" @click="dismissPublishNudge">×</button>
         </section>
 
-        <QuickStylePicker :key="galleryId" :gallery-id="galleryId" :can-write="canConfig && !publishingFlow" :photos="workspace.photos.value" @busy="styleSaving = $event" @saved="publishCenter.loadReadiness" />
-
         <div class="hall-split">
-          <section class="photo-panel">
+          <div class="workspace-main">
+          <section id="workspace-photos" class="photo-panel" tabindex="-1">
             <div class="photo-toolbar">
-              <h2>照片管理 ({{ workspace.photos.value.length }})</h2>
+              <div><span class="section-kicker">01 / 作品</span><h2>照片管理 <span class="photo-total">{{ workspace.photos.value.length }}</span></h2><p class="section-description">拖动调整展出顺序，选择一张照片作为封面。</p></div>
               <div class="photo-tools">
                 <div class="view-toggle">
                   <button class="view-btn" :class="{ active: photoViewMode === 'grid' }" type="button" aria-label="网格视图" title="网格视图（G）" @click="photoViewMode = 'grid'">
@@ -767,25 +785,32 @@ async function openShareModal() {
               <p v-if="!workspace.photos.value.length && !canPhotoWrite" class="list-empty">还没有照片。</p>
             </div>
           </section>
+          <div id="workspace-style" tabindex="-1"><QuickStylePicker :key="galleryId" :gallery-id="galleryId" :can-write="canConfig && !publishingFlow" :photos="workspace.photos.value" @busy="styleSaving = $event" @ready="styleLoaded = $event" @saved="publishCenter.loadReadiness" /></div>
+          </div>
 
           <div class="workspace-sidebar">
-            <details class="publishing-details"><summary>发布状态与管理</summary>
+            <section id="workspace-publish" class="publish-section" tabindex="-1">
             <PublishCenterPanel
               :gallery="workspace.gallery.value"
               :readiness="publishCenter.readiness.value"
               :loading="publishCenter.loading.value"
-              :publishing="publishCenter.publishing.value || styleSaving"
+              :publishing="publishCenter.publishing.value || publishingFlow"
+              :busy="styleSaving || !styleLoaded || workspace.uploading.value"
+              :error="publishCenter.error.value"
               :unpublishing="publishCenter.unpublishing.value"
               :can-publish="canPublish"
               :can-config="canConfig"
+              :can-share="canShareManage"
               :is-owner="isOwner"
               @publish="handlePublishAll"
               @unpublish="promptUnpublish"
               @preview="openViewer"
               @open-config="goToConfig"
               @refresh="publishCenter.loadReadiness"
+              @open-share="openShareModal"
+              @edit-metadata="openPublishMetadata"
             />
-            </details>
+            </section>
 
             <details class="publishing-details" :open="workspace.uploading.value || taskCenter.summary.value.queued > 0 || taskCenter.summary.value.processing > 0 || taskCenter.summary.value.failed > 0">
             <summary>上传进度与记录</summary>
@@ -818,7 +843,7 @@ async function openShareModal() {
       :visitor-allow-download="visitorAllowDownload"
       @close="showShareModal = false"
       @open-config="goToConfig"
-      @gallery-updated="workspace.reload"
+      @gallery-updated="reloadGalleryAccess"
     />
 
     <ConfirmModal
@@ -910,721 +935,803 @@ async function openShareModal() {
 
 <style scoped>
 .hall-page {
-  position: relative;
-  min-height: 100dvh;
-  color: #111827;
+  min-height:100dvh;
+  color:var(--text-primary);
+  background:var(--bg-app)
 }
 
 .hall-scene {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background-color: #eef6f1;
-  background-image: url('/hall-bg.png');
-  background-size: cover;
-  background-position: center;
-}
-
-.hall-nav,
-.hall-body,
-.hall-state {
-  position: relative;
-  z-index: 1;
+  display:none
 }
 
 .hall-nav {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  width: min(1280px, calc(100% - 40px));
-  margin: 16px auto 0;
-  padding: 8px 20px;
-  height: 64px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.07);
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:24px;
+  width:min(1400px,calc(100% - 80px));
+  margin:auto;
+  min-height:84px;
+  border-bottom:1px solid var(--border-strong)
 }
 
 .brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 750;
-}
-
-.fold-mark svg {
-  width: 28px;
-  height: 28px;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  font-size:14px;
+  font-weight:750;
+  letter-spacing:.04em
 }
 
 .hall-tabs {
-  display: flex;
-  justify-content: center;
-  gap: 4px;
+  display:flex;
+  justify-content:center;
+  gap:8px
 }
 
 .hall-tab {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 4px 10px;
-  color: #9ca3af;
-  font-size: 12px;
-  font-weight: 650;
-  background: transparent;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:12px 16px;
+  border-radius:8px;
+  color:var(--text-secondary);
+  font-size:13px
 }
 
 .hall-tab.is-active {
-  color: #00b88f;
-  box-shadow: inset 0 -3px 0 #00b88f;
+  color:var(--brand-deep);
+  background:var(--mint-soft)
 }
 
 .hall-user {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  position:relative
 }
 
 .user-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-height:44px;
+  border-radius:8px
 }
 
 .avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #12b981;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 750;
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  background:var(--brand-accent);
+  color:white;
+  font-size:12px;
+  font-weight:700
 }
 
 .user-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.2;
+  display:grid;
+  gap:2px;
+  text-align:left
 }
 
 .user-meta strong {
-  font-size: 13px;
+  font-size:13px
 }
 
 .user-meta em {
-  font-size: 11px;
-  font-style: normal;
-  color: #9ca3af;
+  font-size:11px;
+  font-style:normal;
+  color:var(--text-secondary)
 }
 
 .user-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 140px;
-  padding: 6px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  position:absolute;
+  top:calc(100% + 8px);
+  right:0;
+  z-index:20;
+  min-width:150px;
+  padding:6px;
+  border:1px solid var(--border-strong);
+  border-radius:10px;
+  background:var(--bg-surface);
+  box-shadow:var(--shadow-lg)
 }
 
-.user-menu a,
-.user-menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 13px;
+.user-menu a,.user-menu button {
+  display:block;
+  width:100%;
+  min-height:40px;
+  padding:10px;
+  text-align:left;
+  font-size:13px;
+  border-radius:6px
+}
+
+.user-menu a:hover,.user-menu button:hover {
+  background:var(--mint-soft)
 }
 
 .hall-body {
-  width: min(1280px, calc(100% - 40px));
-  margin: 18px auto 0;
-  padding-bottom: 28px;
+  width:min(1400px,calc(100% - 80px));
+  margin:auto;
+  padding:36px 0 24px
 }
 
 .hall-hero {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 22px 24px;
-  background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  gap:24px;
+  padding-bottom:28px
 }
 
 .hero-left {
-  display: flex;
-  gap: 12px;
+  display:flex;
+  flex:1;
+  min-width:300px;
+  gap:14px
+}
+
+.hero-left>div {
+  min-width:0;
+  flex:1
 }
 
 .back-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #f3f4f6;
-  display: grid;
-  place-items: center;
-  color: #6b7280;
+  width:36px;
+  min-width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--border-strong);
+  border-radius:8px;
+  color:var(--text-secondary);
+  background:var(--bg-surface)
 }
 
 .title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px
 }
 
 .title-row h1 {
-  font-size: 26px;
-  font-weight: 800;
+  max-width:100%;
+  margin-right:4px;
+  font-size:clamp(25px,3vw,34px);
+  font-weight:650;
+  line-height:1.3;
+  letter-spacing:-.04em;
+  overflow-wrap:anywhere
 }
 
 .vis-pill {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  padding:3px 8px;
+  font-size:11px;
+  font-weight:600;
+  border:1px solid var(--border-strong);
+  border-radius:5px;
+  background:var(--bg-surface);
+  color:var(--text-secondary)
 }
 
 .vis-pill.is-public {
-  background: #ecfdf5;
-  color: #00b88f;
-}
-
-.vis-pill.is-private {
-  background: #f3f4f6;
-  color: #6b7280;
+  background:var(--mint-soft);
+  color:var(--brand-deep);
+  border-color:transparent
 }
 
 .hero-left p {
-  margin-top: 6px;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.workflow-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0 4px;
-  padding: 0;
-  list-style: none;
-}
-
-.workflow-steps li {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #f3f4f6;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 650;
-  position: relative;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* 步骤连接线 */
-.workflow-steps li:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  width: 8px;
-  height: 2px;
-  background: #e5e7eb;
-  transform: translateY(-50%);
-  transition: background 0.3s ease;
-}
-
-.workflow-steps li.done:not(:last-child)::after {
-  background: #00b88f;
-  animation: workflow-line-expand 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes workflow-line-expand {
-  from {
-    width: 0;
-    opacity: 0;
-  }
-  to {
-    width: 8px;
-    opacity: 1;
-  }
-}
-
-.workflow-steps li span {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #e5e7eb;
-  font-size: 11px;
-  font-weight: 800;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* 已完成步骤 */
-.workflow-steps li.done {
-  color: #047857;
-  background: #ecfdf5;
-  animation: workflow-step-complete 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-}
-
-@keyframes workflow-step-complete {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.workflow-steps li.done span {
-  background: #00b88f;
-  color: #fff;
-  position: relative;
-  overflow: hidden;
-}
-
-/* 对勾展开动画 */
-.workflow-steps li.done span::before {
-  content: '✓';
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  animation: workflow-check-draw 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
-}
-
-@keyframes workflow-check-draw {
-  0% {
-    opacity: 0;
-    transform: scale(0) rotate(-180deg);
-  }
-  50% {
-    transform: scale(1.3) rotate(10deg);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-/* 当前步骤 */
-.workflow-steps li.current {
-  color: #111827;
-  background: #fff;
-  box-shadow: 0 0 0 2px #00b88f inset;
-  animation: workflow-step-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes workflow-step-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 2px #00b88f inset,
-                0 0 0 0 rgba(0, 184, 143, 0);
-  }
-  50% {
-    box-shadow: 0 0 0 2px #00b88f inset,
-                0 0 0 6px rgba(0, 184, 143, 0.2);
-  }
-}
-
-.workflow-steps li.current span {
-  background: #059669;
-  color: #fff;
-  animation: workflow-number-bounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-}
-
-@keyframes workflow-number-bounce {
-  0% {
-    transform: scale(1);
-  }
-  30% {
-    transform: scale(0.8);
-  }
-  60% {
-    transform: scale(1.2) rotate(5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-/* 未来步骤悬浮提示 */
-.workflow-steps li:not(.done):not(.current):hover {
-  background: #e5e7eb;
-  transform: translateY(-1px);
-}
-
-/* 移动端适配 */
-@media (max-width: 640px) {
-  .workflow-steps {
-    gap: 6px;
-  }
-  
-  .workflow-steps li {
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-  
-  .workflow-steps li span {
-    width: 16px;
-    height: 16px;
-    font-size: 9px;
-  }
-}
-
-/* 无障碍 */
-@media (prefers-reduced-motion: reduce) {
-  .workflow-steps li,
-  .workflow-steps li span,
-  .workflow-steps li::after {
-    animation: none !important;
-  }
+  margin-top:10px;
+  color:var(--text-secondary);
+  font-size:13px;
+  line-height:1.7
 }
 
 .meta-row {
-  display: flex;
-  gap: 16px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: #9ca3af;
+  display:flex;
+  flex-wrap:wrap;
+  gap:14px;
+  margin-top:14px;
+  font-size:11px;
+  color:var(--text-tertiary);
+  font-variant-numeric:tabular-nums
 }
 
 .hero-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  display:flex;
+  flex-wrap:wrap;
+  align-content:flex-start;
+  gap:8px;
+  padding-top:2px
 }
 
-.btn.outline {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid #00b88f;
-  color: #00b88f;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 650;
+.btn {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  min-height:40px;
+  padding:9px 14px;
+  border-radius:8px;
+  font-size:13px;
+  font-weight:600;
+  box-shadow:none;
+  transition:background .18s,color .18s,border-color .18s
 }
 
-.btn.solid {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 10px;
-  background: #00b88f;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
+.btn.outline,.btn.btn-secondary {
+  border:1px solid var(--border-strong);
+  color:var(--text-primary);
+  background:var(--bg-surface)
 }
 
 .btn.ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  color: #6b7280;
-  font-size: 13px;
-  font-weight: 650;
+  color:var(--text-secondary);
+  background:transparent
 }
 
-.publish-nudge { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 16px; padding: 14px 44px 14px 18px; border: 1px solid #cfe3d8; border-radius: 14px; background: #f2faf6; color: #14322a; }
-.publish-nudge.is-processing { border-color: #dbe7f5; background: #f0f6fd; color: #274a73; }
-.publish-nudge.is-failed { border-color: #f2ddc9; background: #fdf6ee; color: #7c4a12; }
-.publish-nudge.is-ready .nudge-copy { display: grid; gap: 2px; }
-.publish-nudge.is-ready .nudge-copy strong { font-size: 14.5px; }
-.publish-nudge.is-ready .nudge-copy span { font-size: 12.5px; color: #52736a; }
-.nudge-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.nudge-close { position: absolute; top: 8px; right: 10px; width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; color: #6a7c71; font-size: 16px; cursor: pointer; }
-.nudge-close:hover { background: rgba(20, 110, 78, .08); }
+.btn.solid,.btn.btn-primary {
+  color:white;
+  background:var(--brand-accent)
+}
+
+.btn:hover:not(:disabled) {
+  transform:none;
+  box-shadow:none
+}
+
+.btn.outline:hover:not(:disabled),.btn.ghost:hover:not(:disabled) {
+  background:var(--mint-soft);
+  color:var(--brand-deep)
+}
+
+.btn.solid:hover:not(:disabled) {
+  background:var(--brand-deep)
+}
+
+.btn:disabled {
+  cursor:not-allowed;
+  opacity:.55
+}
+
+.workflow-steps {
+  display:flex;
+  gap:0;
+  margin:24px 0 0;
+  padding:0;
+  list-style:none
+}
+
+.workflow-steps li {
+  position:relative;
+  flex:1;
+  min-width:145px;
+  padding:0;
+  animation:none;
+  background:none;
+  box-shadow:none
+}
+
+.workflow-steps li::before,.workflow-steps li::after,.workflow-steps::before {
+  display:none
+}
+
+.workflow-steps button {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  min-height:56px;
+  padding:8px 18px 8px 0;
+  color:var(--text-secondary);
+  text-align:left;
+  border-radius:8px
+}
+
+.workflow-steps button:hover {
+  color:var(--brand-deep)
+}
+
+.workflow-steps button>span {
+  display:grid;
+  place-items:center;
+  min-width:30px;
+  height:30px;
+  border:1px solid var(--border-strong);
+  border-radius:50%;
+  background:var(--bg-app);
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  box-shadow:none;
+  animation:none
+}
+
+.workflow-steps button>span::after,.workflow-steps button>span::before {
+  display:none
+}
+
+.workflow-steps button>div {
+  display:grid;
+  gap:3px
+}
+
+.workflow-steps strong {
+  font-size:13px;
+  font-weight:600
+}
+
+.workflow-steps small {
+  font-size:11px;
+  color:var(--text-tertiary)
+}
+
+.workflow-steps li.done button>span {
+  color:var(--brand-deep);
+  border-color:var(--brand-accent);
+  background:var(--mint-soft)
+}
+
+.workflow-steps li.current button>span {
+  background:var(--brand-accent);
+  border-color:var(--brand-accent);
+  color:white
+}
+
+.workflow-steps li.current strong {
+  color:var(--brand-deep)
+}
+
+.publish-nudge {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  align-items:center;
+  position:relative;
+  gap:14px;
+  margin:0 0 24px;
+  padding:16px 42px 16px 20px;
+  border:1px solid var(--border-strong);
+  border-left:3px solid var(--brand-accent);
+  border-radius:10px;
+  background:var(--bg-surface);
+  color:var(--text-secondary);
+  font-size:13px
+}
+
+.publish-nudge.is-processing {
+  border-left-color:#9b701f
+}
+
+.publish-nudge.is-failed {
+  border-left-color:#b7443d
+}
+
+.nudge-copy {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px 14px
+}
+
+.nudge-copy strong {
+  color:var(--text-primary);
+  font-weight:600
+}
+
+.nudge-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px
+}
+
+.nudge-close {
+  position:absolute;
+  right:4px;
+  top:7px;
+  width:36px;
+  height:36px;
+  color:var(--text-secondary);
+  font-size:22px;
+  border-radius:6px
+}
 
 .hall-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 18px;
-  margin-top: 18px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 312px;
+  gap:24px;
+  align-items:start
 }
 
-.workspace-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+.workspace-main {
+  display:grid;
+  min-width:0;
+  gap:24px
 }
 
 .photo-panel {
-  padding: 18px 20px 22px;
-  background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
+  padding:24px;
+  min-width:0;
+  border:1px solid var(--border-strong);
+  border-radius:12px;
+  background:var(--bg-surface)
 }
 
 .photo-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  margin-bottom:22px
 }
 
 .photo-toolbar h2 {
-  font-size: 16px;
-  font-weight: 750;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:7px 0 0;
+  font-size:21px;
+  font-weight:650;
+  letter-spacing:-.03em
 }
 
-.photo-tools {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.photo-total {
+  font-size:13px;
+  color:var(--text-secondary);
+  font-weight:500
+}
+
+.section-kicker {
+  font-size:10px;
+  letter-spacing:.12em;
+  color:var(--brand-deep)
+}
+
+.section-description {
+  color:var(--text-secondary);
+  font-size:12px;
+  margin-top:7px;
+  line-height:1.6
 }
 
 .view-toggle {
-  display: flex;
-  padding: 3px;
-  background: #f3f4f6;
-  border-radius: 10px;
+  display:flex;
+  border:1px solid var(--border-strong);
+  padding:3px;
+  border-radius:8px;
+  background:var(--bg-app)
 }
 
 .view-btn {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: #9ca3af;
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  color:var(--text-secondary);
+  border-radius:5px
 }
 
 .view-btn.active {
-  background: #00b88f;
-  color: #fff;
+  background:var(--bg-surface);
+  color:var(--brand-deep);
+  box-shadow:var(--shadow-xs)
 }
 
 .shortcut-mark {
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
+  font-size:14px
 }
 
-.shortcuts-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 600;
-  display: grid;
-  place-items: center;
-  background: rgba(15, 23, 42, 0.35);
+.photo-grid-wrapper,.photo-list {
+  min-width:0
 }
 
-.shortcuts-modal {
-  width: min(380px, calc(100% - 32px));
-  padding: 22px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.2);
-}
-
-.shortcuts-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.shortcuts-head h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 750;
-  color: #0f172a;
-}
-
-.shortcuts-close {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #9ca3af;
-  cursor: pointer;
-}
-
-.shortcuts-close:hover {
-  background: #f3f4f6;
-  color: #0f172a;
-}
-
-.shortcut-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.shortcut-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: #374151;
-}
-
-.shortcut-list kbd {
-  min-width: 24px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  border: 1px solid #e2e8f0;
-  border-bottom-width: 2px;
-  background: #f8fafc;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  color: #0f172a;
-  text-align: center;
-}
-
-.modal-fade-enter-active,
-.modal-fade-leave-active { transition: opacity 0.2s ease; }
-.modal-fade-enter-from,
-.modal-fade-leave-to { opacity: 0; }
-
-.photo-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.photo-list :deep(.list-dropzone) {
-  min-height: 120px;
+.list-dropzone {
+  margin-bottom:20px
 }
 
 .list-empty {
-  margin: 0;
-  padding: 16px;
-  color: #6b7280;
-  font-size: 13px;
+  padding:40px;
+  text-align:center;
+  color:var(--text-secondary);
+  font-size:14px
+}
+
+.workspace-sidebar {
+  display:grid;
+  gap:20px;
+  min-width:0;
+  position:sticky;
+  top:24px
+}
+
+.publishing-details {
+  border:1px solid var(--border-strong);
+  border-radius:12px;
+  background:var(--bg-surface)
+}
+
+.publishing-details summary {
+  padding:16px;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-secondary)
+}
+
+.publishing-details[open] summary {
+  border-bottom:1px solid var(--border-strong)
+}
+
+.publish-section,#workspace-style,.photo-panel {
+  scroll-margin-top:24px;
+  outline:none
+}
+
+.publish-section:focus-visible,#workspace-style:focus-visible,.photo-panel:focus-visible {
+  outline:2px solid var(--brand-accent);
+  outline-offset:5px
 }
 
 .hall-footer {
-  margin-top: 22px;
-  text-align: center;
-  font-size: 12px;
-  color: #9ca3af;
+  margin-top:40px;
+  padding-top:20px;
+  border-top:1px solid var(--border-strong);
+  font-size:11px;
+  color:var(--text-tertiary)
 }
 
 .hall-state {
-  width: min(720px, calc(100% - 40px));
-  margin: 80px auto;
-  padding: 40px;
-  text-align: center;
-  background: #fff;
-  border-radius: 18px;
+  width:min(600px,calc(100% - 40px));
+  margin:80px auto;
+  padding:40px;
+  text-align:center;
+  border:1px solid var(--border-strong);
+  border-radius:12px;
+  background:var(--bg-surface)
+}
+
+.hall-state h1 {
+  font-size:24px;
+  margin-bottom:12px
+}
+
+.hall-state p {
+  color:var(--text-secondary);
+  font-size:14px
 }
 
 .state-actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 16px;
+  display:flex;
+  justify-content:center;
+  gap:10px;
+  margin-top:20px
 }
 
-@media (max-width: 1100px) {
+.shortcuts-backdrop {
+  position:fixed;
+  inset:0;
+  z-index:1000;
+  background:rgba(20,31,25,.45);
+  display:grid;
+  place-items:center;
+  padding:20px
+}
+
+.shortcuts-modal {
+  width:min(480px,100%);
+  padding:24px;
+  border-radius:12px;
+  background:var(--bg-surface);
+  box-shadow:var(--shadow-xl)
+}
+
+.shortcuts-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:20px
+}
+
+.shortcuts-head h2 {
+  font-size:18px;
+  font-weight:650
+}
+
+.shortcuts-close {
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border-radius:8px;
+  background:var(--bg-app)
+}
+
+.shortcut-list {
+  display:grid;
+  gap:14px;
+  list-style:none
+}
+
+.shortcut-list li {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:13px;
+  color:var(--text-secondary)
+}
+
+.shortcut-list kbd {
+  min-width:26px;
+  padding:4px 7px;
+  text-align:center;
+  border:1px solid var(--border-strong);
+  border-radius:5px;
+  font-size:12px
+}
+
+.shortcut-list span {
+  margin-left:8px
+}
+
+.hall-page button:focus-visible,.hall-page a:focus-visible {
+  outline:2px solid var(--brand-accent);
+  outline-offset:3px
+}
+
+@media(max-width:1100px) {
+  .hall-nav,.hall-body {
+    width:calc(100% - 48px)
+  }
   .hall-split {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns:minmax(0,1fr) 290px;
+    gap:20px
   }
-  .hall-tabs span { display: none; }
-}
-
-@media (max-width: 768px) {
-  .hall-hero {
-    flex-direction: column;
-    padding: 18px;
-  }
-
-  .hero-left,
-  .hero-left > div,
-  .photo-panel,
-  .workspace-sidebar {
-    min-width: 0;
-  }
-
-  .back-btn {
-    flex-shrink: 0;
-  }
-
-  .title-row,
-  .meta-row,
-  .hero-actions,
-  .nudge-actions {
-    flex-wrap: wrap;
-  }
-
-  .title-row h1 {
-    overflow-wrap: anywhere;
-    font-size: 22px;
-  }
-
-  .hero-actions .btn {
-    min-height: 44px;
-  }
-
-  .publish-nudge {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .photo-panel {
-    padding: 16px 12px;
+    padding:20px
   }
-
-  .photo-toolbar {
-    flex-wrap: wrap;
-    gap: 8px;
+  .hero-actions {
+    width:100%;
+    padding-left:50px
   }
-
-  .hall-nav {
-    grid-template-columns: minmax(0, 1fr) auto;
-    height: auto;
-    gap: 8px;
-    padding: 12px 16px;
-    border-radius: 20px;
-  }
-
-  .hall-tabs {
-    grid-row: 2;
-    grid-column: 1 / -1;
-  }
-
-  .hall-tab,
-  .user-chip {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  .user-meta {
-    display: none;
+  .workflow-steps {
+    max-width:660px
   }
 }
-</style>
 
-<style scoped>
-.publishing-details { padding:18px; background:#fff; border:1px solid #e1e7ee; border-radius:16px; }.publishing-details summary { cursor:pointer; color:#566b83; font-size:13px; padding:5px 0; }.hall-hero { box-shadow:none; }.workflow-steps li.current { animation:none; box-shadow:0 0 0 1px #5578a0 inset; }.workflow-steps li.current span,.workflow-steps li.done span { background:#5578a0; }.btn.solid { background:#345778; }.btn.outline { color:#345778; border-color:#c0cfde; }.hall-hero h1 { font-family:'Songti SC','SimSun',serif; }.hall-split { grid-template-columns:minmax(0,1fr) 300px; } @media(max-width:1100px){.hall-split{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:900px) {
+  .hall-split {
+    grid-template-columns:minmax(0,1fr)
+  }
+  .workspace-sidebar {
+    position:static;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    align-items:start
+  }
+  .hall-nav {
+    gap:14px
+  }
+  .hall-tab {
+    padding:10px
+  }
+  .brand {
+    font-size:12px
+  }
+}
+
+@media(max-width:640px) {
+  .hall-nav,.hall-body {
+    width:calc(100% - 32px)
+  }
+  .hall-nav {
+    grid-template-columns:1fr auto;
+    min-height:72px
+  }
+  .hall-tabs {
+    grid-column:1/-1;
+    grid-row:2;
+    justify-content:flex-start;
+    padding-bottom:12px
+  }
+  .hall-user {
+    grid-column:2;
+    grid-row:1
+  }
+  .hall-tab {
+    min-height:40px
+  }
+  .user-meta,.user-chip>:last-child {
+    display:none
+  }
+  .hall-body {
+    padding-top:24px
+  }
+  .hero-left {
+    min-width:0;
+    width:100%
+  }
+  .hero-left p {
+    font-size:12px
+  }
+  .title-row h1 {
+    font-size:25px
+  }
+  .hero-actions {
+    padding-left:0;
+    gap:6px
+  }
+  .hero-actions .btn {
+    flex:1;
+    min-width:100px;
+    font-size:12px;
+    padding:9px
+  }
+  .workflow-steps {
+    margin-left:-50px;
+    margin-top:20px
+  }
+  .workflow-steps li {
+    min-width:0
+  }
+  .workflow-steps button {
+    gap:7px;
+    padding-right:6px
+  }
+  .workflow-steps button>span {
+    min-width:26px;
+    height:26px
+  }
+  .workflow-steps strong {
+    font-size:12px
+  }
+  .workflow-steps small {
+    display:none
+  }
+  .photo-panel {
+    padding:18px 14px
+  }
+  .photo-toolbar {
+    gap:8px
+  }
+  .photo-toolbar h2 {
+    font-size:19px
+  }
+  .section-description {
+    max-width:210px
+  }
+  .view-btn {
+    width:30px;
+    height:34px
+  }
+  .workspace-sidebar {
+    grid-template-columns:minmax(0,1fr)
+  }
+  .publish-nudge {
+    padding-left:14px
+  }
+  .nudge-actions {
+    gap:0
+  }
+  .nudge-actions .btn {
+    min-height:36px;
+    padding:7px;
+    font-size:12px
+  }
+  .hall-footer {
+    margin-top:28px
+  }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  *,*::before,*::after {
+    scroll-behavior:auto;
+    transition:none!important;
+    animation:none!important
+  }
+}
 </style>

@@ -11,8 +11,10 @@ export class SpatialStagePlugin implements ViewerPlugin {
   private cursor = 0
   private target = 0
   private autoplay = true
+  private configuredAutoplay = true
   private suspended = false
-  private hovered = false
+  private hovered: number | null = null
+  private moving = false
   private dwell = 0
   private lastIndex = -1
   private pointer = new THREE.Vector2()
@@ -30,14 +32,17 @@ export class SpatialStagePlugin implements ViewerPlugin {
     this.context = context
     this.known = new WeakSet()
     this.lastIndex = -1
+    this.cursor = 0; this.target = 0; this.dwell = 0
+    this.suspended = false; this.hovered = null; this.pointer.set(0, 0)
     this.canvas = context.renderer.domElement
-    this.autoplay = !!context.config.camera?.autoRotate
+    this.autoplay = this.configuredAutoplay = !!context.config.camera?.autoRotate
     context.on('stage:step', this.step)
     context.on('stage:reset', this.reset)
     context.on('stage:autoplay', this.setAutoplay)
     context.on('stage:suspend', this.setSuspended)
     context.on('theatre:hover', this.hover)
     context.on('photos:loaded', this.photosChanged)
+    context.on('config:update', this.configChanged)
     this.canvas.addEventListener('pointerdown', this.down)
     this.canvas.addEventListener('pointermove', this.move)
     this.canvas.addEventListener('pointerup', this.up)
@@ -51,7 +56,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
         const a = i / 192 * Math.PI * 2
         return new THREE.Vector3(Math.sin(a) * (680 + ring * 55), Math.sin(a) * 175 - 70 - ring * 20, Math.cos(a) * 420 - 420)
       })
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({color:ring ? '#e6b789' : '#829abb',transparent:true,opacity:ring ? .09 : .15,depthWrite:false}))
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({color:ring ? '#ccb493' : '#8ba399',transparent:true,opacity:ring ? .09 : .15,depthWrite:false}))
       this.paths.add(line)
     }
     context.addToScene(this.paths)
@@ -59,28 +64,39 @@ export class SpatialStagePlugin implements ViewerPlugin {
   }
 
   private step = (direction: number) => {
-    if (this.context.photos.length < 2) return
+    if (this.suspended || this.context.photos.length < 2 || !Number.isFinite(direction) || direction === 0) return
     this.target = Math.round(this.target) + Math.sign(direction)
     this.dwell = 0
     this.context.emit('stage:interaction')
   }
   private reset = () => { this.target = 0; this.pointer.set(0, 0); this.dwell = 0 }
   private setAutoplay = (enabled: boolean) => { this.autoplay = enabled; this.dwell = 0 }
-  private setSuspended = (suspended: boolean) => { this.suspended = suspended; this.dwell = 0 }
-  private hover = (index: number | null) => { this.hovered = index !== null }
+  private setSuspended = (suspended: boolean) => {
+    this.suspended = suspended; this.dwell = 0
+    if (suspended) { this.cancel(); this.target = Math.round(this.target); this.pointer.set(0, 0) }
+  }
+  private configChanged = () => {
+    const enabled = !!this.context.config.camera?.autoRotate
+    if (enabled !== this.configuredAutoplay) this.setAutoplay(enabled)
+    this.configuredAutoplay = enabled
+  }
+  private hover = (index: number | null) => { this.hovered = index }
   private photosChanged = () => { this.lastIndex = -1; this.dwell = 0 }
   private down = (event: PointerEvent) => {
-    if (event.button !== 0) return
+    if (this.suspended || this.drag || this.context.photos.length < 2 || event.button !== 0 || event.isPrimary === false) return
     this.drag = { id:event.pointerId, x:event.clientX, y:event.clientY, target:this.target }
     this.canvas.setPointerCapture(event.pointerId)
     this.dwell = 0
   }
   private move = (event: PointerEvent) => {
+    if (this.suspended) return
     const box = this.canvas.getBoundingClientRect()
+    if (!box.width || !box.height) return
     this.pointer.set((event.clientX - box.left) / box.width - .5, (event.clientY - box.top) / box.height - .5)
     if (!this.drag || event.pointerId !== this.drag.id) return
     const dx = this.drag.x - event.clientX, dy = this.drag.y - event.clientY
     this.target = this.drag.target + (Math.abs(dx) > Math.abs(dy) ? dx : dy) / Math.max(130, box.width * .25)
+    this.context.emit('stage:interaction')
   }
   private up = (event: PointerEvent) => {
     if (event.pointerId !== this.drag?.id) return
@@ -91,8 +107,9 @@ export class SpatialStagePlugin implements ViewerPlugin {
     if (this.drag && this.canvas.hasPointerCapture(this.drag.id)) this.canvas.releasePointerCapture(this.drag.id)
     this.drag = null
   }
-  private leave = () => { this.pointer.set(0, 0); this.hovered = false }
+  private leave = () => { this.pointer.set(0, 0); this.hovered = null }
   private wheel = (event: WheelEvent) => {
+    if (this.suspended || this.context.photos.length < 2) return
     event.preventDefault()
     const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
     if (Math.abs(delta) < 3 || performance.now() - this.wheelAt < 420) return
@@ -100,6 +117,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     this.step(delta)
   }
   private key = (event: KeyboardEvent) => {
+    if (this.suspended || !this.context.photos.length) return
     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault(); this.step(event.key === 'ArrowRight' ? 1 : -1)
     } else if (event.key === 'Enter') {
@@ -115,10 +133,15 @@ export class SpatialStagePlugin implements ViewerPlugin {
     const dt = Math.min(delta, .05)
     const blend = reduced ? 1 : 1 - Math.exp(-dt * 5)
     if (!this.suspended && this.autoplay && !reduced && !this.drag && count > 1) {
-      this.dwell += dt * (this.hovered ? .15 : 1)
+      this.dwell += dt * (this.hovered !== null ? .15 : 1)
       if (this.dwell > 5.5) { this.target = Math.round(this.target) + 1; this.dwell = 0 }
     }
     this.cursor += (this.target - this.cursor) * (reduced ? 1 : 1 - Math.exp(-dt * 4.5))
+    const moving = Math.abs(this.target - this.cursor) > .001
+    if (moving !== this.moving) {
+      this.moving = moving
+      context.emit(moving ? 'transition:start' : 'transition:end')
+    }
     // Normalize both values together so a long exhibition never accumulates huge coordinates.
     if (count && Math.abs(this.cursor) > count * 10) {
       const cycles = Math.trunc(this.cursor / count) * count
@@ -169,7 +192,8 @@ export class SpatialStagePlugin implements ViewerPlugin {
       const geometry = mesh.geometry as THREE.PlaneGeometry
       const width = geometry.parameters.width || 80, height = geometry.parameters.height || 60
       const fit = Math.min((mobile ? 240 : 360) / width, (mobile ? 285 : 315) / height)
-      const scale = fit * (1 - Math.min(a, 4) * .12)
+      const hover = !reduced && !this.drag && !this.suspended && this.hovered === i ? 1.028 : 1
+      const scale = fit * (1 - Math.min(a, 4) * .12) * hover
       mesh.scale.setScalar(fresh ? scale : THREE.MathUtils.lerp(mesh.scale.x, scale, blend))
       mesh.userData.layoutScale = mesh.scale.x
       mesh.visible = presence > .005
@@ -198,9 +222,11 @@ export class SpatialStagePlugin implements ViewerPlugin {
     if (!this.installed) return
     this.installed = false
     const context = this.context
+    if (this.moving) { this.moving = false; context.emit('transition:end') }
     context.off('stage:step', this.step); context.off('stage:reset', this.reset)
     context.off('stage:autoplay', this.setAutoplay); context.off('stage:suspend', this.setSuspended)
     context.off('theatre:hover', this.hover); context.off('photos:loaded', this.photosChanged)
+    context.off('config:update', this.configChanged)
     this.canvas.removeEventListener('pointerdown', this.down); this.canvas.removeEventListener('pointermove', this.move)
     this.canvas.removeEventListener('pointerup', this.up); this.canvas.removeEventListener('pointercancel', this.cancel)
     this.canvas.removeEventListener('pointerleave', this.leave); this.canvas.removeEventListener('wheel', this.wheel)

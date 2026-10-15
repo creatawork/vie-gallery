@@ -8,6 +8,7 @@ async function fixture(page: Page) {
   await page.route('**/api/me', route => route.fulfill({ json: { role: 'OWNER', capabilities: ['GALLERY_READ', 'CONFIG_READ', 'CONFIG_WRITE'], user: { displayName: '测试策展人' }, tenant: { name: '配置验收' } } }))
   await page.route('**/api/auth/csrf', route => route.fulfill({ json: { token: 'fixture-csrf' } }))
   await page.route('**/api/galleries/config-fixture', route => route.fulfill({ json: { id: 'config-fixture', slug: 'effects-fixture', name: '配置验收', visibility: 'PUBLIC', status: 'PUBLISHED', createdAt: '2026-10-05T00:00:00Z' } }))
+  await page.route('**/api/galleries/config-fixture/publish-readiness', route => route.fulfill({ json: { galleryStatus: 'PUBLISHED', readyPhotoCount: 12, galleryPublishable: true, configDraftChanged: true, publishedAt: '2026-10-05T00:00:00Z', blockers: [] } }))
   await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ json: { token: 'test-only-preview', expiresAt: '2099-01-01T00:00:00Z' } }))
   await page.route('**/api/galleries/config-fixture/viewer-config', async route => {
     if (route.request().method() === 'PUT') { draft = route.request().postDataJSON().configJson; saves++ }
@@ -165,7 +166,7 @@ test('config side panel matches the designed look', async ({ page }) => {
   await fixture(page)
   await page.goto('/app/galleries/config-fixture/config')
   await expect(page.locator('.side-heading')).toBeVisible()
-  await expect(page.locator('.config-side')).toHaveCSS('background-color', 'rgb(247, 249, 248)')
+  await expect(page.locator('.config-side')).toHaveCSS('background-color', 'rgb(255, 254, 250)')
   await page.getByRole('tab', { name: '氛围', exact: true }).click()
   await expect(page.locator('.preset-card')).toHaveCount(8)
   // 推荐场景卡片带“推荐”徽标；氛围页不再直接暴露原始参数
@@ -268,6 +269,7 @@ test('draft and publish states are explicit, and a draft gallery can go live in 
   await page.route('**/api/me', route => route.fulfill({ json: { role: 'OWNER', capabilities: ['GALLERY_READ', 'CONFIG_READ', 'CONFIG_WRITE', 'PUBLISH'], user: { displayName: '测试策展人' }, tenant: { name: '配置验收' } } }))
   await page.route('**/api/auth/csrf', route => route.fulfill({ json: { token: 'fixture-csrf' } }))
   await page.route('**/api/galleries/config-fixture', route => route.fulfill({ json: { id: 'config-fixture', slug: 'effects-fixture', name: '配置验收', visibility: 'PUBLIC', status: 'DRAFT', createdAt: '2026-10-05T00:00:00Z' } }))
+  await page.route('**/api/galleries/config-fixture/publish-readiness', route => route.fulfill({ json: { galleryStatus: 'DRAFT', readyPhotoCount: 12, galleryPublishable: true, configDraftChanged: true, publishedAt: null, blockers: [] } }))
   await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ json: { token: 'test-only-preview', expiresAt: '2099-01-01T00:00:00Z' } }))
   await page.route('**/api/galleries/config-fixture/viewer-config', async route => {
     if (route.request().method() === 'PUT') { draft = route.request().postDataJSON().configJson; calls.push('save-draft') }
@@ -300,4 +302,33 @@ test('draft and publish states are explicit, and a draft gallery can go live in 
   await expect(page.getByRole('button', { name: '同步到访客端' })).toBeVisible()
   expect(calls).toEqual(['config-publish', 'gallery-publish'])
   expect(errors).toEqual([])
+})
+
+test('configuration publishing checks fresh access blockers before creating a version', async ({ page }) => {
+  await fixture(page)
+  let versionPublishCalls = 0
+  await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ status: 503 }))
+  await page.route('**/api/galleries/config-fixture/publish-readiness', route => route.fulfill({ json: { galleryStatus: 'DRAFT', readyPhotoCount: 12, galleryPublishable: false, configDraftChanged: true, publishedAt: null, blockers: [{ code: 'PASSWORD_REQUIRED', message: '请先设置展厅访问密码，再发布展厅。' }] } }))
+  await page.route('**/api/galleries/config-fixture/viewer-config/publish', route => { versionPublishCalls++; return route.fulfill({ status: 500 }) })
+  await page.goto('/app/galleries/config-fixture/config')
+  await page.getByRole('button', { name: '同步到访客端' }).click()
+  await page.getByRole('button', { name: '确认同步' }).click()
+  await expect(page.getByText('请先设置展厅访问密码，再发布展厅。')).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '发布展厅', exact: true })).toBeVisible()
+  expect(versionPublishCalls).toBe(0)
+})
+
+test('configuration sections support keyboard tab navigation', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/galleries/config-fixture/preview-token', route => route.fulfill({ status: 503 }))
+  await page.goto('/app/galleries/config-fixture/config')
+  await page.getByRole('tab', { name: '基础', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('tab', { name: '氛围', exact: true })).toBeFocused()
+  await expect(page.getByRole('tabpanel', { name: '氛围', exact: true })).toBeVisible()
+  await page.keyboard.press('End')
+  await expect(page.getByRole('tab', { name: '版本', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('Home')
+  await expect(page.getByRole('tab', { name: '基础', exact: true })).toBeFocused()
 })

@@ -91,6 +91,67 @@ class GalleryFacadeTest {
     }
 
     @Test
+    void passwordGalleryCannotPublishWithoutAnAccessPassword() {
+        UUID tenantId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        GalleryFacade facade = passwordFacade(repository, tenantId);
+        Gallery gallery = facade.create("Protected", "protected", GalleryVisibility.PASSWORD);
+
+        for (String missing : new String[] {null, "", "   "}) {
+            repository.update(new Gallery(gallery.id(), gallery.tenantId(), gallery.slug(), gallery.name(),
+                    gallery.visibility(), missing, null, false, gallery.createdAt(), GalleryStatus.DRAFT, null));
+            DomainException exception = assertThrows(DomainException.class, () -> facade.publish(gallery.id()));
+            assertEquals("GALLERY_PASSWORD_REQUIRED", exception.code());
+            assertEquals(GalleryStatus.DRAFT, facade.get(gallery.id()).status());
+        }
+
+        facade.setPassword(gallery.id(), "secret123");
+        Gallery published = facade.publish(gallery.id());
+        assertEquals(GalleryStatus.PUBLISHED, published.status());
+        assertEquals(published, facade.publish(gallery.id()));
+    }
+
+    @Test
+    void changingPublishedGalleryToPasswordWithdrawsUntilPasswordIsSetAndRepublished() {
+        UUID tenantId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        GalleryFacade facade = passwordFacade(repository, tenantId);
+        Gallery gallery = facade.create("Public", "public-gallery", GalleryVisibility.PUBLIC);
+        facade.publish(gallery.id());
+
+        Gallery protectedDraft = facade.updateVisibility(gallery.id(), GalleryVisibility.PASSWORD);
+        assertEquals(GalleryVisibility.PASSWORD, protectedDraft.visibility());
+        assertEquals(GalleryStatus.DRAFT, protectedDraft.status());
+        assertEquals(null, protectedDraft.publishedAt());
+        assertEquals(protectedDraft, facade.get(gallery.id()));
+        Gallery configured = facade.setPassword(gallery.id(), "secret123");
+        assertEquals(GalleryStatus.DRAFT, configured.status(), "setting a password never publishes implicitly");
+        assertEquals(GalleryStatus.PUBLISHED, facade.publish(gallery.id()).status());
+    }
+
+    @Test
+    void clearingPublishedPasswordWithdrawsButAnExistingPasswordAndPublicAccessRemainPublished() {
+        UUID tenantId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        GalleryFacade facade = passwordFacade(repository, tenantId);
+        Gallery gallery = facade.create("Protected", "protected", GalleryVisibility.PASSWORD);
+        facade.setPassword(gallery.id(), "secret123");
+        Gallery published = facade.publish(gallery.id());
+        assertEquals(published, facade.updateVisibility(gallery.id(), GalleryVisibility.PASSWORD));
+        assertEquals(GalleryStatus.PUBLISHED, facade.setPassword(gallery.id(), "replacement123").status());
+
+        Gallery withdrawn = facade.clearPassword(gallery.id());
+        assertEquals(GalleryStatus.DRAFT, withdrawn.status());
+        assertEquals(null, withdrawn.passwordHash());
+        assertEquals(null, withdrawn.publishedAt());
+        assertEquals(withdrawn, facade.get(gallery.id()));
+
+        facade.updateVisibility(gallery.id(), GalleryVisibility.PUBLIC);
+        facade.publish(gallery.id());
+        assertEquals(GalleryStatus.PUBLISHED, facade.clearPassword(gallery.id()).status());
+    }
+
+    @Test
     void unpublishReturnsDraftAndArchivedCannotChange() {
         UUID tenantId = UUID.randomUUID();
         InMemoryRepository repository = new InMemoryRepository();
@@ -186,6 +247,15 @@ class GalleryFacadeTest {
         assertEquals("VALIDATION_FAILED", assertThrows(DomainException.class,
                 () -> facade.rename(created.id(), "x".repeat(161))).code());
         assertEquals("Wedding", facade.get(created.id()).name());
+    }
+
+    private static GalleryFacade passwordFacade(InMemoryRepository repository, UUID tenantId) {
+        TenantContextResolver resolver = () -> new TenantContext(UUID.randomUUID(), tenantId, MembershipRole.OWNER);
+        return new GalleryFacade(repository, resolver, new InMemoryPhotoRepository(1),
+                new WorkspaceAuthorizationPolicy(resolver), new PasswordHasher() {
+                    public String hash(String raw) { return "hash:" + raw; }
+                    public boolean matches(String raw, String hash) { return hash.equals("hash:" + raw); }
+                });
     }
 
     private static final class InMemoryPhotoRepository implements PhotoRepository {

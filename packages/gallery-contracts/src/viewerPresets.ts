@@ -34,7 +34,9 @@ export const VIEWER_PRESETS: Record<PresetName, ViewerConfig> = {
 /** 新相册/未配置相册的默认推荐场景。改这一个常量即可全端（admin 草稿、访客端兜底、发布初始化）生效。 */
 export const RECOMMENDED_SCENE_PRESET: PresetName = 'starry-night'
 export function createRecommendedViewerConfig(): ViewerConfig {
-  return applyCuratedStyle(structuredClone(VIEWER_PRESETS[RECOMMENDED_SCENE_PRESET]), 'helix')
+  return mergeViewerConfig(applyCuratedStyle(structuredClone(VIEWER_PRESETS[RECOMMENDED_SCENE_PRESET]), 'helix'), {
+    background: { color: '#111a17', secondaryColor: '#263b32' }
+  })
 }
 
 export function isViewerPreset(name: string): name is PresetName { return Object.hasOwn(VIEWER_PRESETS, name) }

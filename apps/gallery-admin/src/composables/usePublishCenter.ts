@@ -75,6 +75,10 @@ export function usePublishCenter(
       if (galleryIdValue !== id.value) return
       readiness.value = freshReadiness
 
+      if (freshReadiness.blockers.length) {
+        throw new Error(freshReadiness.blockers[0]?.message || '展厅尚未就绪，请完成发布前检查。')
+      }
+
       if (freshReadiness.configDraftChanged) {
         await ensureConfigDraft(galleryIdValue)
         const configResp = await apiFetch(`/api/galleries/${galleryIdValue}/viewer-config/publish`, {

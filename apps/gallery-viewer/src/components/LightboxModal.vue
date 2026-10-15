@@ -325,7 +325,7 @@ function hideBrokenThumbnail(event: Event) {
       </div>
 
       <footer class="lightbox-bottombar">
-        <h2 :id="titleId" class="photo-title">{{ photo.title || 'Moment in Light' }}</h2>
+        <h2 :id="titleId" class="photo-title">{{ photo.title || `作品 ${currentIndex + 1}` }}</h2>
         <div v-if="photo.width && photo.height" class="photo-meta">{{ photo.width }} × {{ photo.height }} px</div>
         <nav v-if="photos.length > 1" class="thumbnail-nav" aria-label="照片缩略图导航">
           <button
@@ -360,8 +360,8 @@ function hideBrokenThumbnail(event: Event) {
   margin: 0;
   padding: 0;
   border: 0;
-  background: rgba(5, 8, 12, 0.97);
-  color: #fff;
+  background: #171d1a;
+  color: #f3f3ec;
   overflow: auto;
   overscroll-behavior: contain;
   user-select: none;
@@ -370,7 +370,7 @@ function hideBrokenThumbnail(event: Event) {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
-.lightbox-overlay::backdrop { background: rgba(5, 8, 12, 0.85); }
+.lightbox-overlay::backdrop { background: #171d1ae6; }
 .lightbox-topbar {
   display: flex;
   align-items: center;
@@ -378,8 +378,8 @@ function hideBrokenThumbnail(event: Event) {
   gap: 12px;
   padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
 }
-.photo-indicator { font: 14px 'Inter', monospace, sans-serif; color: #94a3b8; }
-.index-current { color: #fff; font-weight: 600; }
+.photo-indicator { font-size: 13px; font-variant-numeric: tabular-nums; color: #b4c0b6; }
+.index-current { color: #f3f3ec; font-weight: 600; }
 .index-divider { margin: 0 4px; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
 .close-btn, .nav-btn, .retry-btn, .download-action-btn {
@@ -389,16 +389,16 @@ function hideBrokenThumbnail(event: Event) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #f8fafc;
+  border: 1px solid #829489;
+  border-radius: 6px;
+  background: #222a25;
+  color: #f3f3ec;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 .download-action-btn, .retry-btn { gap: 8px; padding: 8px 16px; font-size: 13px; text-decoration: none; }
-.close-btn:hover, .nav-btn:hover:not(:disabled), .retry-btn:hover, .download-action-btn:hover { background: rgba(255, 255, 255, 0.22); }
-button:focus-visible, a:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.close-btn:hover, .nav-btn:hover:not(:disabled), .retry-btn:hover, .download-action-btn:hover { background: #415448; }
+button:focus-visible, a:focus-visible { outline: 2px solid #a0c5b2; outline-offset: 4px; }
 .lightbox-stage {
   position: relative;
   min-width: 0;
@@ -413,19 +413,19 @@ button:focus-visible, a:focus-visible { outline: 2px solid #fff; outline-offset:
 .image-wrapper { position: relative; width: 100%; height: 100%; min-height: 0; display: grid; place-items: center; }
 .main-image { width: 100%; height: 100%; min-height: 0; object-fit: contain; opacity: 0; transition: opacity 0.18s ease; }
 .main-image.is-ready { opacity: 1; }
-.nav-btn { width: 44px; height: 44px; }
+.nav-btn { width: 44px; height: 44px; border-radius: 50%; }
 .nav-btn:disabled { opacity: 0.25; cursor: default; }
 .loading-status { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-.loading-label { padding: 12px 16px; border-radius: 8px; background: #0f172a; color: #cbd5e1; font-size: 14px; }
+.loading-label { padding: 12px 16px; border-radius: 6px; background: #222a25; color: #b4c0b6; font-size: 13px; }
 .image-message { max-width: 100%; padding: 12px; text-align: center; overflow-wrap: anywhere; }
 .image-message p { margin: 0 0 12px; }
-.message-detail { color: #94a3b8; font-size: 13px; }
+.message-detail { color: #b4c0b6; font-size: 13px; }
 .lightbox-bottombar { min-width: 0; padding: 12px 16px max(16px, env(safe-area-inset-bottom)); text-align: center; }
-.photo-title { margin: 0 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 18px 'Playfair Display', Georgia, serif; color: #f8fafc; }
-.photo-meta { font-size: 12px; color: #94a3b8; }
+.photo-title { margin: 0 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 20px/1.5 var(--font-serif); color: #f3f3ec; }
+.photo-meta { font-size: 11px; color: #b4c0b6; font-variant-numeric: tabular-nums; }
 .thumbnail-nav { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
-.thumbnail-btn { flex: 0 0 44px; position: relative; display: grid; place-items: center; width: 44px; height: 44px; overflow: hidden; padding: 0; border: 2px solid transparent; border-radius: 6px; background: #1e293b; color: #cbd5e1; cursor: pointer; }
-.thumbnail-btn[aria-current='true'] { border-color: #fff; }
+.thumbnail-btn { flex: 0 0 48px; position: relative; display: grid; place-items: center; width: 48px; height: 48px; overflow: hidden; padding: 0; border: 2px solid transparent; border-radius: 3px; background: #222a25; color: #b4c0b6; cursor: pointer; }
+.thumbnail-btn[aria-current='true'] { border-color: #a0c5b2; }
 .thumbnail-btn img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .thumbnail-btn img[hidden] { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

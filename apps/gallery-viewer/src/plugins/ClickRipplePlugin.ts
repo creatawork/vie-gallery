@@ -42,14 +42,23 @@ export class ClickRipplePlugin implements ViewerPlugin {
         rippleData.material.dispose()
       })
       this.ripples = []
+      this.context = null
     }
   }
 
   update(delta: number, elapsed: number): void {
+    if (this.context?.reducedMotion()) {
+      for (const ripple of this.ripples) {
+        this.context.removeFromScene(ripple.mesh)
+        ripple.mesh.geometry.dispose(); ripple.material.dispose()
+      }
+      this.ripples = []
+      return
+    }
     // 更新所有涟漪动画
     for (let i = this.ripples.length - 1; i >= 0; i--) {
       const rippleData = this.ripples[i]
-      const progress = (elapsed - rippleData.startTime) / rippleData.duration
+      const progress = Math.max(0, (elapsed - rippleData.startTime) / rippleData.duration)
 
       if (progress >= 1) {
         // 动画结束，清理
@@ -75,15 +84,17 @@ export class ClickRipplePlugin implements ViewerPlugin {
    * 处理点击事件
    */
   private handleClick = (event: MouseEvent): void => {
-    if (!this.context) return
+    if (!this.context || this.context.reducedMotion()) return
 
     // 计算归一化设备坐标
-    this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1
-    this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1
+    const rect = this.context.renderer.domElement.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
 
     // 射线检测
     this.raycaster.setFromCamera(this.pointer, this.context.camera)
-    const intersects = this.raycaster.intersectObjects(this.context.photos, false)
+    const intersects = this.raycaster.intersectObjects(this.context.photos.filter(photo => photo.visible), false)
 
     if (intersects.length > 0) {
       const point = intersects[0].point
@@ -99,14 +110,16 @@ export class ClickRipplePlugin implements ViewerPlugin {
 
     const geometry = new THREE.RingGeometry(5, 10, 32)
     const material = new THREE.MeshBasicMaterial({
-      color: 0x3C5A78,
+      color: '#b6c7bf',
       transparent: true,
       opacity: 0.8,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthWrite: false
     })
 
     const ripple = new THREE.Mesh(geometry, material)
     ripple.position.copy(position)
+    ripple.position.addScaledVector(this.context.camera.position.clone().sub(position).normalize(), 2)
 
     // 让涟漪面向相机
     ripple.lookAt(this.context.camera.position)
@@ -117,7 +130,7 @@ export class ClickRipplePlugin implements ViewerPlugin {
     this.ripples.push({
       mesh: ripple,
       material: material,
-      startTime: this.context.renderer.info.render.frame / 60, // 粗略估算时间
+      startTime: this.context.now(),
       duration: 0.8
     })
   }

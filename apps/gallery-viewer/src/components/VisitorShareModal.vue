@@ -1,256 +1,129 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import Icon from './Icon.vue'
 
-/**
- * 访客端分享面板
- *
- * 微信/QQ 内置浏览器没有「···」之外的网页分享协议（微信 JS-SDK 需要公众号配置），
- * 因此这里只做三类引导：内置浏览器引导用户点右上角「···」菜单、
- * 支持时调用系统原生分享（Web Share API）、以及复制链接兜底。
- */
-const props = defineProps<{
-  show: boolean
-  galleryTitle: string
-  photoCount: number
-}>()
-
-const emit = defineEmits<{
-  (e: 'close'): void
-}>()
-
+const props = defineProps<{ show: boolean; galleryTitle: string; photoCount: number }>()
+const emit = defineEmits<{ close: [] }>()
+const dialog = ref<HTMLDialogElement | null>(null)
+const closeButton = ref<HTMLButtonElement | null>(null)
+const linkInput = ref<HTMLInputElement | null>(null)
+const titleId = useId()
+const linkId = useId()
 const shareUrl = ref('')
 const copied = ref(false)
-const copyFailed = ref(false)
-
-const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+const busy = ref(false)
+const message = ref('')
+const userAgent = navigator.userAgent
 const isWeChat = /MicroMessenger/i.test(userAgent)
 const isQq = /QQ\/[\d.]+|MQQBrowser/i.test(userAgent)
-const canNativeShare = typeof navigator !== 'undefined' && 'share' in navigator
+const canNativeShare = typeof navigator.share === 'function'
+const shareText = computed(() => '邀请你欣赏「' + (props.galleryTitle || '光影之间') + '」，共 ' + props.photoCount + ' 件作品。')
+let previousFocus: HTMLElement | null = null
+let previousOverflow: string | null = null
+let copyTimer: number | null = null
+let disposed = false
 
-const shareText = computed(() =>
-  `「${props.galleryTitle}」沉浸式照片展厅，一起来看这 ${props.photoCount} 张照片。`
-)
-
-watch(() => props.show, (isShown) => {
-  if (isShown) {
-    shareUrl.value = window.location.href
-    copied.value = false
-    copyFailed.value = false
-  }
-})
+function release() {
+  dialog.value?.close()
+  if (previousOverflow !== null) document.body.style.overflow = previousOverflow
+  previousOverflow = null
+  if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+  previousFocus = null
+  if (copyTimer !== null) window.clearTimeout(copyTimer)
+  copyTimer = null
+}
+watch(() => props.show, async open => {
+  if (!open) { release(); return }
+  const publicUrl = new URL(window.location.href)
+  publicUrl.searchParams.delete('preview')
+  publicUrl.searchParams.delete('embed')
+  shareUrl.value = publicUrl.href
+  copied.value = false
+  message.value = ''
+  await nextTick()
+  if (disposed || !props.show || !dialog.value || dialog.value.open) return
+  previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  previousOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  dialog.value.showModal()
+  closeButton.value?.focus({ preventScroll: true })
+}, { immediate: true, flush: 'post' })
+onBeforeUnmount(() => { disposed = true; release() })
 
 async function nativeShare() {
+  if (busy.value) return
+  busy.value = true
+  message.value = ''
   try {
-    await navigator.share({ title: props.galleryTitle, text: shareText.value, url: shareUrl.value })
-  } catch {
-    // 用户取消分享时静默忽略
-  }
+    await navigator.share({ title: props.galleryTitle || '光影之间', text: shareText.value, url: shareUrl.value })
+  } catch (error) {
+    if (!(error instanceof Error && error.name === 'AbortError')) message.value = '系统分享暂不可用，可以复制下方链接发送。'
+  } finally { busy.value = false }
 }
-
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(shareUrl.value)
+    if (!props.show || disposed) return
     copied.value = true
-    copyFailed.value = false
-    window.setTimeout(() => { copied.value = false }, 2500)
+    message.value = '展厅链接已复制，可以粘贴发送给朋友。'
+    if (copyTimer !== null) window.clearTimeout(copyTimer)
+    copyTimer = window.setTimeout(() => { copied.value = false }, 3000)
   } catch {
-    copyFailed.value = true
+    message.value = '未能自动复制。链接已选中，可长按或按 Ctrl / Command + C 复制。'
+    linkInput.value?.focus()
+    linkInput.value?.select()
   }
 }
-
-const inAppGuideText = computed(() => {
-  if (isWeChat) return { first: '点击右上角「···」', second: '发送给朋友 / 分享到朋友圈' }
-  if (isQq) return { first: '点击右上角「···」', second: '分享给 QQ 好友 / QQ 空间' }
-  return null
-})
+function keepFocusInDialog(event: KeyboardEvent) {
+  if (event.key !== 'Tab') return
+  const controls = Array.from(dialog.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input') || [])
+  const first = controls[0]
+  const last = controls[controls.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
 </script>
 
 <template>
-  <Transition name="share-sheet-fade">
-    <div v-if="show" class="share-sheet-backdrop" @click.self="emit('close')">
-      <div class="share-sheet" role="dialog" aria-modal="true" aria-label="分享给朋友">
+  <Teleport to="body">
+    <dialog v-if="show" ref="dialog" class="share-sheet" :aria-labelledby="titleId" aria-modal="true" @keydown="keepFocusInDialog" @cancel.prevent="emit('close')" @click.self="emit('close')">
+      <div class="share-content">
         <header class="sheet-header">
-          <h3>分享给朋友</h3>
-          <button class="sheet-close" type="button" aria-label="关闭" @click="emit('close')">
-            <Icon name="x" :size="16" />
-          </button>
+          <h2 :id="titleId">把影展分享给朋友</h2>
+          <button ref="closeButton" class="sheet-close" type="button" aria-label="关闭分享" @click="emit('close')"><Icon name="x" :size="20" /></button>
         </header>
-
-        <!-- 内置浏览器引导：微信 / QQ 的转发入口都在右上角「···」 -->
-        <div v-if="inAppGuideText" class="app-guide">
-          <span class="dots-badge">···</span>
-          <div class="guide-steps">
-            <p>{{ inAppGuideText.first }}</p>
-            <p class="guide-strong">{{ inAppGuideText.second }}</p>
-          </div>
+        <p class="sheet-gallery">{{ galleryTitle || '光影之间' }}<span>{{ photoCount }} 件作品</span></p>
+        <p v-if="isWeChat || isQq" class="app-guide">在{{ isWeChat ? '微信' : 'QQ' }}中，点击浏览器右上角菜单，即可转发给朋友{{ isWeChat ? '或分享到朋友圈' : '' }}。</p>
+        <div class="link-field">
+          <label :for="linkId">展厅链接</label>
+          <input :id="linkId" ref="linkInput" :value="shareUrl" readonly type="url" spellcheck="false" @focus="linkInput?.select()" @click="linkInput?.select()" />
         </div>
-
         <div class="sheet-actions">
-          <button v-if="canNativeShare" class="sheet-action native" type="button" @click="nativeShare">
-            <Icon name="share" :size="16" />
-            <span>系统分享</span>
-          </button>
-          <button class="sheet-action copy" :class="{ done: copied, failed: copyFailed }" type="button" @click="copyLink">
-            <Icon :name="copied ? 'check' : 'share'" :size="16" />
-            <span>{{ copied ? '已复制，去粘贴发送' : copyFailed ? '复制失败，请长按地址栏复制' : '复制展厅链接' }}</span>
-          </button>
+          <button class="sheet-action copy" type="button" @click="copyLink"><Icon :name="copied ? 'check' : 'share'" :size="17" /><span>{{ copied ? '链接已复制' : '复制链接' }}</span></button>
+          <button v-if="canNativeShare" class="sheet-action native" type="button" :disabled="busy" @click="nativeShare"><Icon name="share" :size="17" /><span>{{ busy ? '正在打开…' : '更多分享方式' }}</span></button>
         </div>
-
-        <p class="sheet-note">{{ galleryTitle }} · {{ photoCount }} 张照片</p>
+        <p class="sheet-feedback" role="status" aria-live="polite">{{ message || '收到链接的人将按展厅的访问设置进入。' }}</p>
       </div>
-    </div>
-  </Transition>
+    </dialog>
+  </Teleport>
 </template>
 
 <style scoped>
-.share-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(4, 8, 18, 0.6);
-  backdrop-filter: blur(6px);
-}
-
-.share-sheet {
-  width: min(420px, calc(100% - 24px));
-  margin-bottom: max(16px, env(safe-area-inset-bottom));
-  padding: 18px 18px 14px;
-  border-radius: 18px;
-  background: rgba(17, 24, 39, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-  color: #f8fafc;
-  backdrop-filter: blur(14px);
-}
-
-.sheet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.sheet-header h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.sheet-close {
-  display: grid;
-  place-items: center;
-  padding: 5px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: #cbd5e1;
-  cursor: pointer;
-}
-
-.sheet-close:hover {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-}
-
-.app-guide {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  border-radius: 12px;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-}
-
-.dots-badge {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  font-weight: 800;
-  letter-spacing: 1px;
-  color: #fff;
-}
-
-.guide-steps p {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: #d1fae5;
-}
-
-.guide-steps .guide-strong {
-  font-weight: 700;
-  color: #fff;
-}
-
-.sheet-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sheet-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 11px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: #f8fafc;
-  font-size: 13.5px;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.sheet-action.native {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(59, 130, 246, 0.4);
-}
-
-.sheet-action.native:hover {
-  background: rgba(59, 130, 246, 0.28);
-}
-
-.sheet-action.copy:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.sheet-action.copy.done {
-  background: rgba(16, 185, 129, 0.2);
-  border-color: rgba(16, 185, 129, 0.5);
-}
-
-.sheet-action.copy.failed {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.45);
-}
-
-.sheet-note {
-  margin: 12px 0 0;
-  text-align: center;
-  font-size: 11.5px;
-  color: #94a3b8;
-}
-
-.share-sheet-fade-enter-active,
-.share-sheet-fade-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.share-sheet-fade-enter-from,
-.share-sheet-fade-leave-to {
-  opacity: 0;
-}
+.share-sheet { position: fixed; inset: 0; width: min(480px, calc(100% - 40px)); max-width: none; max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 0; border-radius: 12px; overflow: auto; overscroll-behavior: contain; color: #202824; background: #fffefa; box-shadow: 0 24px 80px #101b1238; }
+.share-sheet::backdrop { background: #10201899; }
+.share-content { padding: 28px; }
+.sheet-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.sheet-header h2 { padding-top: 5px; font: 400 25px/1.4 var(--font-serif); text-wrap: balance; }
+.sheet-close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; margin: -4px -8px 0 0; border-radius: 6px; color: #626c65; }.sheet-close:hover { background: #e8ede4; color: #202824; }
+.sheet-gallery { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; color: #202824; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }.sheet-gallery span { color: #626c65; }
+.app-guide { margin-top: 20px; padding: 14px 16px; border-radius: 6px; background: #e8ede4; color: #355d49; font-size: 13px; line-height: 1.8; }
+.link-field { margin-top: 28px; }.link-field label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 500; }.link-field input { width: 100%; min-height: 46px; padding: 12px; border: 1px solid #bdc7b8; border-radius: 6px; color: #626c65; background: #f4f3ef; font-size: 13px; }
+.sheet-actions { display: flex; gap: 10px; margin-top: 16px; }.sheet-action { display: inline-flex; align-items: center; justify-content: center; gap: 9px; flex: 1; min-height: 46px; border-radius: 6px; font-size: 13px; font-weight: 500; }.copy { color: #fffefa; background: #26735d; }.copy:hover { background: #1b5746; }.native { color: #26735d; background: #e8ede4; }.native:hover:not(:disabled) { background: #dae4d6; }.native:disabled { opacity: .6; cursor: wait; }
+.sheet-feedback { min-height: 38px; margin-top: 18px; color: #626c65; font-size: 12px; line-height: 1.7; }
+@media (max-width: 600px) { .share-sheet { inset: auto 0 0; width: 100%; max-height: calc(100dvh - 40px); margin: 0; border-radius: 16px 16px 0 0; }.share-content { padding: 24px 24px max(24px, env(safe-area-inset-bottom)); }.sheet-header h2 { font-size: 23px; } }
 </style>

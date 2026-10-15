@@ -2,19 +2,21 @@
 import { onMounted, ref, computed } from 'vue'
 import { CURATED_STYLES, applyCuratedStyle, serializeViewerConfig, type CuratedStyle } from '@vie/gallery-contracts'
 import { useViewerConfigEditor } from '../../composables/useViewerConfigEditor'
+import Icon from '../Icon.vue'
 const props = defineProps<{ galleryId: string; canWrite: boolean; photos: { thumbnailUrl?: string | null }[] }>()
-const emit = defineEmits<{ busy: [value: boolean]; saved: [] }>()
+const emit = defineEmits<{ busy: [value: boolean]; saved: []; ready: [value: boolean] }>()
 const editor = useViewerConfigEditor(props.galleryId, { canWrite: () => props.canWrite })
 const loaded = ref(false), message = ref('')
 const selected = computed(() => editor.config.value.layout.mode)
+const hasCuratedStyle = computed(() => CURATED_STYLES.some(style => style.id === selected.value))
 async function load() {
   emit('busy', true); message.value = ''
-  try { await editor.load(); loaded.value = true }
-  catch { message.value = '风格没有载入，请重试。' }
-  finally { emit('busy', !loaded.value) }
+  try { await editor.load(); loaded.value = true; emit('ready', true) }
+  catch { loaded.value = false; emit('ready', false); message.value = '风格没有载入，请重试。' }
+  finally { emit('busy', false) }
 }
 async function choose(mode: CuratedStyle) {
-  if (!loaded.value || editor.saving.value || !props.canWrite) return
+  if (!loaded.value || editor.saving.value || !props.canWrite || selected.value === mode) return
   emit('busy', true); message.value = ''
   const previous = serializeViewerConfig(editor.config.value)
   editor.replace(serializeViewerConfig(applyCuratedStyle(editor.config.value, mode)))
@@ -28,33 +30,227 @@ onMounted(load)
 
 <template>
   <section class="quick-styles" aria-label="选择展示风格">
-    <div class="style-heading"><span>02 / 展示风格</span><p>给照片一个空间。</p></div>
+    <div class="style-heading"><div><span>02 / 展示风格</span><h2>给照片一个空间</h2></div><span class="style-autosave"><Icon name="check" :size="13" /> 选好即保存</span></div>
+    <p class="style-intro">同一组作品，三种观看方式。随时可以切换。</p>
     <div class="style-choices">
-      <button v-for="style in CURATED_STYLES" :key="style.id" :class="style.id" :aria-pressed="selected === style.id" :disabled="!loaded || editor.saving.value || !canWrite" @click="choose(style.id)">
+      <button v-for="style in CURATED_STYLES" :key="style.id" type="button" :class="style.id" :aria-pressed="loaded && selected === style.id" :disabled="!loaded || editor.saving.value || !canWrite" @click="choose(style.id)">
         <span class="style-miniature" :style="{ '--tone': style.color }" aria-hidden="true">
           <span v-for="i in 5" :key="i" class="mini-photo" :style="{ '--i': i }"><img v-if="photos[(i - 1) % Math.max(1, photos.length)]?.thumbnailUrl" :src="photos[(i - 1) % photos.length]?.thumbnailUrl || ''" alt="" /></span>
         </span>
-        <span class="style-name">{{ style.label }} <span v-if="selected === style.id">✓</span></span>
+        <span class="style-name">{{ style.label }} <span v-if="loaded && selected === style.id" class="style-check"><Icon name="check" :size="12" /></span></span>
         <small>{{ style.caption }}</small>
       </button>
     </div>
-    <p class="style-feedback" role="status">{{ editor.saving.value ? '正在保存…' : message || '选好即保存，发布后朋友会看到同样的风格。' }}</p>
-    <button v-if="!loaded && message" class="retry-style" @click="load">重试载入</button>
+    <p class="style-feedback" :class="{ 'is-error': !loaded && message }" role="status">{{ editor.saving.value ? '正在保存风格…' : message || (!loaded ? '正在载入展示风格…' : hasCuratedStyle ? '发布后，访客会以此风格浏览作品。' : '当前为自定义布局。选择一种风格即可替换，或在更多设置中继续调整。') }}</p>
+    <button v-if="!loaded && message" class="retry-style" type="button" @click="load">重试载入</button>
   </section>
 </template>
 
 <style scoped>
-.quick-styles { padding:25px; border:1px solid #dce3ec; border-radius:18px; background:#fff; margin:22px 0; }
-.style-heading { display:flex; align-items:baseline; gap:22px; margin-bottom:20px; }.style-heading>span { font:11px system-ui; letter-spacing:.1em; color:#60738c; }.style-heading p { margin:0; font:24px 'Songti SC','SimSun',serif; color:#24364a; }
-.style-choices { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
-.style-choices button { min-width:0; padding:6px 6px 16px; text-align:left; border:1px solid #dce3ec; background:#fff; border-radius:13px; cursor:pointer; }
-.style-choices button[aria-pressed=true] { border-color:#5578a0; box-shadow:0 0 0 2px #5578a01c; background:#f3f6fa; }
-.style-choices button:disabled { cursor:default; opacity:.65; }.style-choices button:focus-visible { outline:2px solid #5578a0; outline-offset:4px; }
-.style-miniature { display:block; position:relative; height:138px; border-radius:8px; background:radial-gradient(ellipse at 70% 90%,var(--tone),#101827 80%); overflow:hidden; perspective:500px; }
-.mini-photo { position:absolute; top:38%; left:44%; width:44px; height:48px; border:1px solid #c2d1e0; background:linear-gradient(150deg,#adc4d1,#4e6c82 60%,#223244); box-shadow:4px 5px 13px #0005; }.mini-photo img { width:100%; height:100%; object-fit:cover; }
-.helix .mini-photo { transform:translate(calc((var(--i) - 3)*26px),calc((var(--i) - 3)*-17px)) rotateY(calc((var(--i) - 3)*16deg)) rotate(-12deg); }
-.carousel .mini-photo { transform:translateX(calc((var(--i) - 3)*39px)) translateZ(calc((3 - var(--i))*8px)) rotateY(calc((var(--i) - 3)*-23deg)); }
-.grid .mini-photo { transform:translate(calc((var(--i) - 3)*38px),calc((var(--i) - 3)*8px)) rotateY(-25deg); }
-.style-name { display:flex; justify-content:space-between; margin:14px 12px 6px; font-size:15px; color:#24364a; }.style-name>span { color:#5578a0; }.style-choices small { display:block; margin:0 12px; color:#687b92; font-size:11px; }.style-feedback { margin:14px 0 0; font-size:12px; color:#687b92; }.retry-style { border:0; background:#e7edf4; padding:10px 20px; margin-top:12px; border-radius:8px; }
-@media(max-width:600px) { .quick-styles { padding:16px 10px; }.style-heading { padding:0 6px; gap:14px; }.style-heading p { font-size:20px; }.style-choices { gap:7px; }.style-miniature { height:96px; }.mini-photo { width:29px; height:35px; }.style-name { margin:12px 6px 4px; }.style-choices small { margin:0 6px; line-height:1.5; font-size:10px; } }
+.quick-styles {
+  padding:24px;
+  border:1px solid var(--border-strong);
+  border-radius:12px;
+  background:var(--bg-surface)
+}
+
+.style-heading {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px
+}
+
+.style-heading>div>span {
+  font-size:10px;
+  letter-spacing:.12em;
+  color:var(--brand-deep)
+}
+
+.style-heading h2 {
+  margin:7px 0 0;
+  font-size:21px;
+  font-weight:650;
+  letter-spacing:-.03em;
+  color:var(--text-primary)
+}
+
+.style-autosave {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  color:var(--text-secondary);
+  font-size:11px;
+  white-space:nowrap
+}
+
+.style-intro {
+  margin:9px 0 20px;
+  color:var(--text-secondary);
+  font-size:12px;
+  line-height:1.6
+}
+
+.style-choices {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px
+}
+
+.style-choices button {
+  min-width:0;
+  padding:5px 5px 16px;
+  text-align:left;
+  border:1px solid var(--border-strong);
+  background:var(--bg-surface);
+  border-radius:9px;
+  transition:border-color .18s,background .18s
+}
+
+.style-choices button[aria-pressed=true] {
+  border-color:var(--brand-accent);
+  background:var(--mint-soft)
+}
+
+.style-choices button:hover:not(:disabled) {
+  border-color:var(--brand-accent)
+}
+
+.style-choices button:disabled {
+  cursor:not-allowed;
+  opacity:.65
+}
+
+.style-choices button:focus-visible {
+  outline:2px solid var(--brand-accent);
+  outline-offset:3px
+}
+
+.style-miniature {
+  display:block;
+  position:relative;
+  height:146px;
+  border-radius:5px;
+  background:radial-gradient(ellipse at 60% 100%,var(--tone),#18251f 85%);
+  overflow:hidden;
+  perspective:500px
+}
+
+.mini-photo {
+  position:absolute;
+  top:38%;
+  left:44%;
+  width:42px;
+  height:50px;
+  border:1px solid #c8d2c8;
+  background:linear-gradient(150deg,#d8d7c5,#80948b 60%,#344b41);
+  box-shadow:4px 5px 13px #0005
+}
+
+.mini-photo img {
+  width:100%;
+  height:100%;
+  object-fit:cover
+}
+
+.helix .mini-photo {
+  transform:translate(calc((var(--i) - 3)*26px),calc((var(--i) - 3)*-17px)) rotateY(calc((var(--i) - 3)*16deg)) rotate(-12deg)
+}
+
+.carousel .mini-photo {
+  transform:translateX(calc((var(--i) - 3)*39px)) translateZ(calc((3 - var(--i))*8px)) rotateY(calc((var(--i) - 3)*-23deg))
+}
+
+.grid .mini-photo {
+  transform:translate(calc((var(--i) - 3)*38px),calc((var(--i) - 3)*8px)) rotateY(-25deg)
+}
+
+.style-name {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:5px;
+  margin:14px 10px 6px;
+  font-size:14px;
+  font-weight:600;
+  color:var(--text-primary)
+}
+
+.style-check {
+  display:grid;
+  place-items:center;
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  background:var(--brand-accent);
+  color:white
+}
+
+.style-choices small {
+  display:block;
+  margin:0 10px;
+  color:var(--text-secondary);
+  font-size:11px;
+  line-height:1.6
+}
+
+.style-feedback {
+  margin:16px 0 0;
+  font-size:12px;
+  color:var(--text-secondary)
+}
+
+.style-feedback.is-error {
+  color:#a43730
+}
+
+.retry-style {
+  border:1px solid var(--border-strong);
+  background:var(--bg-surface);
+  padding:10px 18px;
+  margin-top:12px;
+  border-radius:8px;
+  font-size:12px;
+  color:var(--brand-deep)
+}
+
+@media(max-width:640px) {
+  .quick-styles {
+    padding:20px 14px
+  }
+  .style-heading h2 {
+    font-size:19px
+  }
+  .style-autosave {
+    font-size:10px
+  }
+  .style-choices {
+    gap:7px
+  }
+  .style-miniature {
+    height:108px
+  }
+  .mini-photo {
+    width:29px;
+    height:36px
+  }
+  .style-name {
+    font-size:12px;
+    margin:12px 6px 5px
+  }
+  .style-choices small {
+    margin:0 6px;
+    font-size:11px
+  }
+  .style-check {
+    width:15px;
+    height:15px
+  }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .style-choices button {
+    transition:none
+  }
+}
 </style>

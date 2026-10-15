@@ -390,23 +390,23 @@ defineExpose({ clearSelection })
   border-radius: 9999px;
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--text-secondary);
   background: rgba(241, 245, 249, 0.8);
   border: 1px solid rgba(226, 232, 240, 0.8);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .category-pill:hover {
-  color: #0f172a;
-  background: #ffffff;
+  color: var(--text-primary);
+  background: var(--bg-surface);
 }
 
 .category-pill.active {
-  color: #047857;
-  background: #ffffff;
-  border-color: rgba(16, 185, 129, 0.35);
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.12);
+  color: var(--brand-deep);
+  background: var(--bg-surface);
+  border-color: var(--mint-soft);
+  box-shadow: 0 2px 8px var(--mint-soft);
 }
 
 .count-tag {
@@ -418,8 +418,8 @@ defineExpose({ clearSelection })
 }
 
 .count-tag.is-ready {
-  background: rgba(16, 185, 129, 0.15);
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
 }
 
 .count-tag.is-processing {
@@ -450,7 +450,7 @@ defineExpose({ clearSelection })
   background: #fef3c7;
   border: 1px solid #fde68a;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .btn-retry-tool:hover {
@@ -465,15 +465,15 @@ defineExpose({ clearSelection })
   border-radius: 8px;
   font-size: 12.5px;
   font-weight: 600;
-  color: #475569;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  color: var(--text-secondary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
   cursor: pointer;
 }
 
 .select-all-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .photo-search-input {
@@ -481,16 +481,16 @@ defineExpose({ clearSelection })
   height: 32px;
   padding: 0 12px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #0f172a;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-size: 12.5px;
 }
 
 .photo-search-input:focus {
   outline: none;
-  border-color: rgba(16, 185, 129, 0.55);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  border-color: var(--mint-soft);
+  box-shadow: 0 0 0 3px var(--mint-soft);
 }
 
 .list-empty-panel {
@@ -505,15 +505,15 @@ defineExpose({ clearSelection })
 
 .clear-filter-btn {
   margin-top: 4px;
-  color: #047857;
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  background: #ffffff;
+  color: var(--brand-deep);
+  border: 1px solid var(--mint-soft);
+  background: var(--bg-surface);
 }
 
 .drag-hint {
   margin: 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-tertiary);
 }
 
 .photo-rows {
@@ -528,19 +528,19 @@ defineExpose({ clearSelection })
   gap: 12px;
   padding: 10px 14px;
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--bg-surface);
   border: 1px solid rgba(226, 232, 240, 0.9);
   cursor: pointer;
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .photo-list-row:hover {
-  border-color: rgba(16, 185, 129, 0.4);
+  border-color: var(--mint-soft);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
 }
 
 .photo-list-row.is-selected {
-  border-color: rgba(16, 185, 129, 0.6);
+  border-color: var(--mint-soft);
   background: rgba(236, 253, 245, 0.6);
 }
 
@@ -586,16 +586,16 @@ defineExpose({ clearSelection })
   height: 18px;
   border-radius: 5px;
   border: 1.5px solid #cbd5e1;
-  background: #ffffff;
+  background: var(--bg-surface);
   display: grid;
   place-items: center;
-  color: #ffffff;
-  transition: all 0.15s ease;
+  color: var(--bg-surface);
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .select-box.checked {
-  background: #10b981;
-  border-color: #10b981;
+  background: var(--brand-accent);
+  border-color: var(--brand-accent);
 }
 
 .row-drag-handle {
@@ -616,7 +616,7 @@ defineExpose({ clearSelection })
   object-fit: cover;
   border-radius: 8px;
   flex-shrink: 0;
-  background: #f1f5f9;
+  background: var(--bg-app);
 }
 
 .row-thumb-empty {
@@ -642,7 +642,7 @@ defineExpose({ clearSelection })
   text-align: left;
   font-size: 13.5px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -654,7 +654,7 @@ defineExpose({ clearSelection })
 }
 
 .row-title:hover {
-  color: #047857;
+  color: var(--brand-deep);
 }
 
 .row-title-text {
@@ -674,10 +674,10 @@ defineExpose({ clearSelection })
   font-family: inherit;
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid #10b981;
+  border: 1px solid var(--brand-accent);
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
   outline: none;
   width: min(320px, 100%);
 }
@@ -694,15 +694,15 @@ defineExpose({ clearSelection })
   padding: 1px 7px;
   border-radius: 9999px;
   background: rgba(148, 163, 184, 0.14);
-  color: #64748b;
+  color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
   gap: 3px;
 }
 
 .row-status-ready {
-  background: rgba(16, 185, 129, 0.14);
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
 }
 
 .row-status-processing {
@@ -716,8 +716,8 @@ defineExpose({ clearSelection })
 }
 
 .row-meta-tag.is-cover {
-  background: rgba(16, 185, 129, 0.18);
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
   font-weight: 700;
 }
 
@@ -736,14 +736,14 @@ defineExpose({ clearSelection })
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: #64748b;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .row-action-btn:hover:not(:disabled) {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--bg-app);
+  color: var(--text-primary);
 }
 
 .row-action-btn:disabled {
@@ -761,7 +761,7 @@ defineExpose({ clearSelection })
   padding: 0;
   text-align: center;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-tertiary);
 }
 
 .list-filtered-empty-sub {
@@ -780,8 +780,8 @@ defineExpose({ clearSelection })
   align-items: center;
   gap: 18px;
   padding: 10px 20px;
-  background: #0f172a;
-  color: #ffffff;
+  background: var(--text-primary);
+  color: var(--bg-surface);
   border-radius: 9999px;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.35);
 }
@@ -795,8 +795,8 @@ defineExpose({ clearSelection })
 }
 
 .batch-selected-badge {
-  background: var(--brand-accent, #10b981);
-  color: #ffffff;
+  background: var(--brand-accent);
+  color: var(--bg-surface);
   font-size: 12px;
   font-weight: 750;
   padding: 2px 8px;
@@ -822,7 +822,7 @@ defineExpose({ clearSelection })
 
 .btn-batch-cancel:hover {
   background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  color: var(--bg-surface);
 }
 
 .btn-danger {
@@ -834,7 +834,7 @@ defineExpose({ clearSelection })
   font-size: 12.5px;
   font-weight: 600;
   background: #ef4444;
-  color: #ffffff;
+  color: var(--bg-surface);
   border: none;
   cursor: pointer;
 }
@@ -845,7 +845,7 @@ defineExpose({ clearSelection })
 
 .slide-up-enter-active,
 .slide-up-leave-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .slide-up-enter-from,
@@ -885,7 +885,7 @@ defineExpose({ clearSelection })
     width: 100%;
     justify-content: flex-end;
     padding-top: 4px;
-    border-top: 1px solid var(--border-subtle, #e2e8f0);
+    border-top: 1px solid var(--border-subtle, var(--border-strong));
   }
 }
 </style>

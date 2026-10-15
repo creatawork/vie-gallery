@@ -140,4 +140,41 @@ class GalleryControllerTest {
         assertNotNull(readiness.publishedConfigVersionId());
         assertTrue(readiness.blockers().isEmpty());
     }
+
+    @Test
+    void passwordGalleryReadinessRequiresAnAccessPasswordEvenWhenPhotosAreReady() {
+        UUID galleryId = UUID.randomUUID();
+        Instant now = Instant.now();
+        when(photos.countPublicReadyByGalleryId(tenantId, galleryId)).thenReturn(3);
+        when(configs.findByGalleryId(galleryId)).thenReturn(Optional.empty());
+        for (String missing : new String[] {null, "", "   "}) {
+            when(facade.get(galleryId)).thenReturn(new Gallery(galleryId, tenantId, "protected", "Protected",
+                    GalleryVisibility.PASSWORD, missing, null, false, now, GalleryStatus.DRAFT, null, now));
+            GalleryController.PublishReadinessResponse readiness = controller.getPublishReadiness(galleryId);
+            assertFalse(readiness.galleryPublishable());
+            assertEquals(3, readiness.readyPhotoCount());
+            assertEquals(1, readiness.blockers().size());
+            assertEquals("PASSWORD_REQUIRED", readiness.blockers().get(0).code());
+        }
+
+        when(facade.get(galleryId)).thenReturn(new Gallery(galleryId, tenantId, "protected", "Protected",
+                GalleryVisibility.PASSWORD, "hash:secret", null, false, now, GalleryStatus.DRAFT, null, now));
+        assertTrue(controller.getPublishReadiness(galleryId).galleryPublishable());
+        assertTrue(controller.getPublishReadiness(galleryId).blockers().isEmpty());
+    }
+
+    @Test
+    void firstPublicationRequiresAConfigurationSnapshotWhenNoDraftExists() {
+        UUID galleryId = UUID.randomUUID();
+        Instant now = Instant.now();
+        when(facade.get(galleryId)).thenReturn(new Gallery(galleryId, tenantId, "first-gallery", "First Gallery",
+                GalleryVisibility.PUBLIC, null, null, false, now, GalleryStatus.DRAFT, null, now));
+        when(photos.countPublicReadyByGalleryId(tenantId, galleryId)).thenReturn(1);
+        when(configs.findByGalleryId(galleryId)).thenReturn(Optional.empty());
+
+        GalleryController.PublishReadinessResponse readiness = controller.getPublishReadiness(galleryId);
+        assertTrue(readiness.galleryPublishable());
+        assertTrue(readiness.configDraftChanged(), "the publish flow must initialize and publish its recommended scene");
+        assertNull(readiness.publishedConfigVersionId());
+    }
 }

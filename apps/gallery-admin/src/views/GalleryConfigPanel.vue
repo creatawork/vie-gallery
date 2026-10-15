@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { apiFetch } from '../api'
-import type { Gallery, ViewerConfigVersion } from '@vie/gallery-contracts'
+import type { Gallery, PublishReadinessResponse, ViewerConfigVersion } from '@vie/gallery-contracts'
 import { useToast } from '../composables/useToast'
 import { useViewerConfigEditor } from '../composables/useViewerConfigEditor'
 import { createViewerPreviewChannel } from '../lib/viewerPreviewChannel'
@@ -79,6 +79,19 @@ const CONFIG_TABS = [
   { id: 'advanced' as const, label: '高级' },
   { id: 'history' as const, label: '版本' }
 ]
+
+function handleTabKeydown(event: KeyboardEvent) {
+  const index = CONFIG_TABS.findIndex(tab => tab.id === configTab.value)
+  let next = index
+  if (event.key === 'ArrowRight') next = (index + 1) % CONFIG_TABS.length
+  else if (event.key === 'ArrowLeft') next = (index - 1 + CONFIG_TABS.length) % CONFIG_TABS.length
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = CONFIG_TABS.length - 1
+  else return
+  event.preventDefault()
+  configTab.value = CONFIG_TABS[next]!.id
+  document.getElementById(`config-tab-${configTab.value}`)?.focus()
+}
 
 function clearHandshakeTimer() {
   if (handshakeTimer) {
@@ -436,7 +449,19 @@ async function publishDraft() {
   let configVersionPublished = false
   let publishedNumber: string | null = null
   try {
-    if (configNeedsPublish.value) {
+    const readinessResponse = await apiFetch(`/api/galleries/${galleryId}/publish-readiness`)
+    if (!readinessResponse.ok) {
+      const body = await readinessResponse.json().catch(() => ({})) as { message?: string }
+      throw new Error(body.message || '发布状态尚未确认，请稍后重试。')
+    }
+    const readiness = await readinessResponse.json() as PublishReadinessResponse
+    if (galleryInfo.value) galleryInfo.value = { ...galleryInfo.value, status: readiness.galleryStatus, publishedAt: readiness.publishedAt }
+    if (readiness.blockers.length) {
+      showPublishConfirm.value = false
+      toast.warning(readiness.blockers[0]?.message || '展厅尚未就绪，请完成发布前检查。')
+      return
+    }
+    if (readiness.configDraftChanged) {
       const response = await apiFetch(`/api/galleries/${galleryId}/viewer-config/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -454,7 +479,10 @@ async function publishDraft() {
     }
     if (!isGalleryPublished.value) {
       const publishResponse = await apiFetch(`/api/galleries/${galleryId}/publish`, { method: 'POST' })
-      if (!publishResponse.ok) throw new Error('展厅发布失败，请到展厅工作区重试。')
+      if (!publishResponse.ok) {
+        const body = await publishResponse.json().catch(() => ({})) as { message?: string }
+        throw new Error(body.message || '展厅发布失败，请到展厅工作区重试。')
+      }
       if (galleryInfo.value) galleryInfo.value = { ...galleryInfo.value, status: 'PUBLISHED' }
       toast.success('展厅已发布！去展厅工作区获取分享链接。')
     } else {
@@ -465,7 +493,7 @@ async function publishDraft() {
     if (configVersionPublished) {
       showPublishConfirm.value = false
       versionMetadata.reset()
-      toast.error(`配置版本 v${publishedNumber ?? '?'} 已生效，相册发布失败。请重试发布展厅。`)
+      toast.error(`配置版本 v${publishedNumber ?? '?'} 已生效，相册发布失败。${err instanceof Error ? err.message : '请重试发布展厅。'}`)
     } else {
       toast.error(err instanceof Error ? err.message : '发布失败，请稍后重试')
     }
@@ -674,8 +702,7 @@ onUnmounted(() => {
       </nav>
 
       <div class="nav-actions">
-        <p role="status" class="status-chip" :class="`is-${draftStatus.tone}`"><span>{{ draftStatus.text }}</span></p>
-        <p role="status" class="status-chip" :class="`is-${publishStatus.tone}`"><span>{{ publishStatus.text }}</span></p>
+        <details v-if="canConfigWrite" class="config-more"><summary>更多操作 <Icon name="chevron-down" :size="12" /></summary><div class="config-more-menu">
         <button v-if="canConfigWrite" class="btn ghost" type="button" @click="requestHeaderRollback">
           <Icon name="undo" :size="14" />
           <span>恢复旧版</span>
@@ -693,6 +720,7 @@ onUnmounted(() => {
         >
           <span>{{ saving ? '保存中…' : '重试保存' }}</span>
         </button>
+        </div></details>
         <button v-if="canConfigWrite" class="btn outline" type="button" :disabled="!configLoaded || saving || !!issues.length" @click="save()">{{ saving ? '保存中…' : '保存草稿' }}</button>
         <button v-if="canConfigWrite" class="btn solid" type="button" :disabled="!configLoaded || currentVersionLoading || publishing || saving || hasDraftChanges || lastSaveFailed || !!issues.length" @click="showPublishConfirm = true">
           <Icon name="send" :size="14" />
@@ -700,6 +728,8 @@ onUnmounted(() => {
         </button>
       </div>
     </header>
+
+    <div class="config-caption"><div><span class="config-eyebrow">场景工作室</span><h1>{{ galleryInfo?.name || '展厅配置' }}</h1></div><div class="config-status"><p role="status" class="status-chip" :class="`is-${draftStatus.tone}`">{{ draftStatus.text }}</p><p role="status" class="status-chip" :class="`is-${publishStatus.tone}`">{{ publishStatus.text }}</p></div></div>
 
     <div v-if="loading" class="config-state">正在载入展厅配置…</div>
     <div v-else-if="loadError" class="config-state">
@@ -713,34 +743,37 @@ onUnmounted(() => {
 
     <div v-else class="config-split">
       <aside class="config-side">
-        <div class="side-heading"><span class="side-eyebrow">展厅设计</span><strong>让作品拥有自己的空间</strong><span>选择场景，细调每一束光</span></div>
-        <div class="side-tabs" role="tablist" aria-label="配置分区">
+        <div class="side-heading"><strong>塑造观看的方式</strong><span>调整会自动保存至草稿，发布后访客可见。</span></div>
+        <div class="side-tabs" role="tablist" aria-label="配置分区" @keydown="handleTabKeydown">
           <button
             v-for="tab in CONFIG_TABS"
             :key="tab.id"
+            :id="`config-tab-${tab.id}`"
             class="side-tab"
             :class="{ active: configTab === tab.id }"
             type="button"
             role="tab"
             :aria-selected="configTab === tab.id"
+            :aria-controls="`config-panel-${tab.id}`"
+            :tabindex="configTab === tab.id ? 0 : -1"
             @click="configTab = tab.id"
           >
             {{ tab.label }}
           </button>
         </div>
 
-        <div v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
-        <div v-if="configTab === 'atmosphere'">
+        <div id="config-panel-basics" role="tabpanel" aria-labelledby="config-tab-basics" v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
+        <div id="config-panel-atmosphere" role="tabpanel" aria-labelledby="config-tab-atmosphere" v-if="configTab === 'atmosphere'">
           <PresetCards :config="config" :disabled="!canConfigWrite || !configLoaded" @preset="applyPreset" @reset="resetPreset" />
           <p class="atmosphere-hint">选好场景即可发布；粒子、辉光、雾效等微调已收入「高级」。</p>
         </div>
-        <div v-if="configTab === 'advanced'">
+        <div id="config-panel-advanced" role="tabpanel" aria-labelledby="config-tab-advanced" v-if="configTab === 'advanced'">
           <MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
           <AtmosphereControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
         </div>
         <p v-if="issues.length" class="config-errors" role="alert">有 {{ issues.length }} 项配置错误，请修正后保存。</p>
 
-        <section v-show="configTab === 'history'" class="side-block">
+        <section id="config-panel-history" role="tabpanel" aria-labelledby="config-tab-history" v-show="configTab === 'history'" class="side-block">
           <h2>
             <Icon name="clock" :size="15" />
             版本历史
@@ -780,6 +813,8 @@ onUnmounted(() => {
 
       <section class="preview-pane" aria-label="3D 实时预览">
         <div v-if="!previewLive" class="preview-empty">
+          <div class="preview-empty-mark" aria-hidden="true"><Icon :name="embedTimedOut || previewIssueError ? 'alert-circle' : 'gallery'" :size="30" /></div>
+          <h2>{{ embedTimedOut || previewIssueError ? '预览暂未连接' : '正在布置你的展厅' }}</h2>
           <p>{{ previewEmptyText }}</p>
           <div class="preview-empty-actions">
             <button v-if="embedTimedOut || previewIssueError" class="btn outline" type="button" @click="retryEmbedPreview">重试连接</button>
@@ -799,6 +834,7 @@ onUnmounted(() => {
         ></iframe>
 
         <div class="preview-tools">
+          <span class="preview-mode"><span :class="{ 'is-live': previewLive }"></span>{{ previewLive ? '实时预览' : embedTimedOut || previewIssueError ? '预览未连接' : '预览连接中' }}</span>
           <button v-if="previewLive" class="glass-btn" type="button" :disabled="!!issues.length" @click="refreshLivePreview(true)">重新应用</button>
           <button class="glass-btn" type="button" @click="openLivePreview">
             <Icon name="external" :size="14" />
@@ -870,642 +906,754 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.config-side :deep(.side-block) { padding: 16px 12px; border: 1px solid #e6ece8; border-radius: 14px; background: #fff; }
-.config-side :deep(.side-block h2) { font-size: .9375rem; margin: 0 0 .75rem; }
-.config-side :deep(.side-block + .side-block) { margin-top: 14px; }
-.config-side button:focus-visible, .config-side :deep(button:focus-visible),
-.config-side select:focus-visible, .config-side :deep(select:focus-visible),
-.config-side input:focus-visible, .config-side :deep(input:focus-visible) { outline: 2px solid #19815c; outline-offset: 3px; }
-.config-side :deep(button:disabled) { cursor: not-allowed; opacity: .65; }
-.config-errors { color: #b91c1c; padding: 1rem; }
-
 .config-page {
-  position: relative;
-  min-height: 100dvh;
-  color: #111827;
-  --light: 0.72;
-  --fog: 0.35;
+  min-height:100dvh;
+  background:var(--bg-app);
+  color:var(--text-primary)
 }
 
 .config-scene {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background-color: #eef6f1;
-  background-image: url('/hall-bg.png');
-  background-size: cover;
-  background-position: center;
-}
-
-.config-nav,
-.config-split,
-.config-state {
-  position: relative;
-  z-index: 1;
+  display:none
 }
 
 .config-nav {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  margin: 14px 18px 0;
-  padding: 12px 22px;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 18px;
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.07);
-}
-
-.config-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  justify-self: center;
-  padding: 4px;
-  border-radius: 12px;
-  background: #f3f4f6;
-}
-
-.config-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 650;
-  color: #6b7280;
-}
-
-.config-tab.is-active {
-  color: #047857;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  min-height:80px;
+  padding:16px 32px;
+  border-bottom:1px solid var(--border-strong)
 }
 
 .brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 750;
-  color: #111827;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  font-size:14px;
+  font-weight:750;
+  white-space:nowrap;
+  letter-spacing:.03em
+}
+
+.config-tabs {
+  display:flex;
+  align-items:center;
+  gap:3px
+}
+
+.config-tab {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:10px 12px;
+  border-radius:8px;
+  color:var(--text-secondary);
+  font-size:12px;
+  white-space:nowrap
+}
+
+.config-tab.is-active {
+  color:var(--brand-deep);
+  background:var(--mint-soft)
 }
 
 .nav-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-chips-gap { display: none; }
-.nav-actions { gap: 10px; }
-.status-chip { display: inline-flex; align-items: center; min-height: 30px; margin: 0; padding: 4px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
-.status-chip.is-ok { background: #e7f4ee; color: #14624a; }
-.status-chip.is-warn { background: #fdf3e2; color: #92600a; }
-.status-chip.is-busy { background: #e8f0fb; color: #2b5cab; }
-.status-chip.is-idle { background: #eef1f4; color: #5b6b78; }
-
-.history-empty {
-  margin: 0;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.history-error { margin: 0 0 8px; color: #b91c1c; font-size: 12px; }
-.current-version-summary { margin: 0 0 12px; padding: 10px; border-left: 3px solid #00b88f; border-radius: 6px; background: #eef8f3; }
-.current-version-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
-.current-version-heading strong { overflow-wrap: anywhere; color: #18372a; font-size: 13px; }
-.current-version-heading span, .history-meta { color: #6a7c71; font-size: 11px; }
-.history-entry { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 9px 4px; border-bottom: 1px solid #edf1ee; }
-.history-copy { min-width: 0; display: grid; gap: 3px; }
-.history-copy > strong { overflow-wrap: anywhere; color: #263b31; font-size: 13px; }
-.version-note { margin: 2px 0 0; color: #66766d; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.history-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; flex-shrink: 0; }
-.history-action, .load-more-versions { border: 1px solid #dce7e0; border-radius: 7px; padding: 5px 7px; background: #fff; color: #27664e; font-size: 11px; cursor: pointer; }
-.history-action.danger { color: #b42318; border-color: #f2d4d1; }
-.history-action:disabled, .load-more-versions:disabled { cursor: not-allowed; opacity: .55; }
-.load-more-versions { width: 100%; margin-top: 10px; padding: 8px; }
-.history-action:focus-visible, .load-more-versions:focus-visible { outline: 2px solid #19815c; outline-offset: 2px; }
-
-.state-actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 16px;
+  display:flex;
+  align-items:center;
+  gap:8px
 }
 
 .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 650;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  min-height:40px;
+  padding:9px 14px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:600;
+  box-shadow:none;
+  transition:background .18s,color .18s
 }
 
-.btn.ghost {
-  color: #6b7280;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-}
-
-.btn.outline {
-  color: #00b88f;
-  background: #fff;
-  border: 1px solid #00b88f;
+.btn.ghost,.btn.outline {
+  color:var(--text-primary);
+  background:var(--bg-surface);
+  border:1px solid var(--border-strong)
 }
 
 .btn.solid {
-  color: #fff;
-  background: #059669;
+  color:white;
+  background:var(--brand-accent)
 }
 
-.config-state {
-  width: min(720px, calc(100% - 40px));
-  margin: 80px auto;
-  padding: 40px;
-  text-align: center;
-  background: #fff;
-  border-radius: 18px;
+.btn:hover:not(:disabled) {
+  transform:none;
+  box-shadow:none
+}
+
+.btn.outline:hover:not(:disabled) {
+  color:var(--brand-deep);
+  background:var(--mint-soft)
+}
+
+.btn.solid:hover:not(:disabled) {
+  background:var(--brand-deep)
+}
+
+.btn:disabled {
+  opacity:.5;
+  cursor:not-allowed
+}
+
+.config-more {
+  position:relative
+}
+
+.config-more summary {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-height:40px;
+  padding:9px 12px;
+  list-style:none;
+  border-radius:8px;
+  color:var(--text-secondary);
+  font-size:12px;
+  cursor:pointer
+}
+
+.config-more summary::-webkit-details-marker {
+  display:none
+}
+
+.config-more[open] summary {
+  background:var(--mint-soft);
+  color:var(--brand-deep)
+}
+
+.config-more-menu {
+  position:absolute;
+  top:calc(100% + 8px);
+  right:0;
+  z-index:30;
+  display:grid;
+  gap:4px;
+  min-width:150px;
+  padding:6px;
+  background:var(--bg-surface);
+  border:1px solid var(--border-strong);
+  border-radius:10px;
+  box-shadow:var(--shadow-lg)
+}
+
+.config-more-menu .btn {
+  justify-content:flex-start;
+  border:0;
+  background:none
+}
+
+.config-more-menu .btn:hover {
+  background:var(--mint-soft)
+}
+
+.config-caption {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  padding:24px 32px
+}
+
+.config-eyebrow {
+  font-size:10px;
+  letter-spacing:.12em;
+  color:var(--brand-deep)
+}
+
+.config-caption h1 {
+  font-size:24px;
+  font-weight:650;
+  letter-spacing:-.03em;
+  margin-top:5px;
+  overflow-wrap:anywhere
+}
+
+.config-status {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px
+}
+
+.status-chip {
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:4px 9px;
+  border-radius:5px;
+  font-size:11px;
+  white-space:nowrap;
+  color:var(--text-secondary);
+  background:var(--bg-surface);
+  border:1px solid var(--border-strong)
+}
+
+.status-chip.is-ok {
+  background:var(--mint-soft);
+  color:var(--brand-deep);
+  border-color:transparent
+}
+
+.status-chip.is-warn {
+  background:#f7eedb;
+  color:#87611d;
+  border-color:transparent
+}
+
+.status-chip.is-busy {
+  color:var(--brand-deep)
 }
 
 .config-split {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 16px;
-  margin: 16px 18px 18px;
-  height: calc(100dvh - 110px);
+  display:grid;
+  grid-template-columns:350px minmax(0,1fr);
+  gap:20px;
+  margin:0 24px 24px;
+  height:calc(100dvh - 212px);
+  min-height:520px
 }
 
-.side-heading { display: flex; flex-direction: column; gap: 5px; padding: 0 4px; }
-.side-eyebrow { color: #27805b; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
-.side-heading strong { color: #18372a; font-size: 17px; font-weight: 700; letter-spacing: -.4px; }
-.side-heading > span:last-child { color: #6a7c71; font-size: 11px; }
-
 .config-side {
-  overflow: auto;
-  padding: 22px 16px;
-  background: #f7f9f8;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  border-radius: 20px;
-  scrollbar-width: thin;
-  scrollbar-color: #bccdc4 transparent;
-  box-shadow: 0 12px 36px rgba(15, 40, 28, 0.09);
+  overflow:auto;
+  padding:22px 18px;
+  background:var(--bg-surface);
+  border:1px solid var(--border-strong);
+  border-radius:12px;
+  scrollbar-width:thin;
+  scrollbar-color:#c5c9bf transparent
+}
+
+.side-heading {
+  display:grid;
+  gap:7px
+}
+
+.side-heading strong {
+  font-size:17px;
+  font-weight:650;
+  letter-spacing:-.02em
+}
+
+.side-heading>span {
+  font-size:11px;
+  color:var(--text-secondary);
+  line-height:1.6
 }
 
 .side-tabs {
-  position: sticky;
-  top: -22px;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 3px;
-  padding: 5px;
-  margin: 18px 0;
-  border: 1px solid #e3eae6;
-  border-radius: 13px;
-  background: #edf2ef;
+  position:sticky;
+  top:-22px;
+  z-index:5;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:3px;
+  padding:5px 0;
+  margin:20px 0 18px;
+  background:var(--bg-surface);
+  border-bottom:1px solid var(--border-strong)
 }
 
 .side-tab {
-  min-height: 36px;
-  padding: 8px 4px;
-  border-radius: 9px;
-  border: 1px solid transparent;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 650;
-  color: #5b6b63;
-  transition: background .15s, color .15s;
+  min-height:40px;
+  padding:9px 4px;
+  border-radius:6px;
+  border:0;
+  background:none;
+  font-size:12px;
+  font-weight:600;
+  color:var(--text-secondary)
 }
 
 .side-tab.active {
-  color: #126547;
-  border-color: #dde7e1;
-  background: #fff;
-  box-shadow: 0 2px 6px rgba(23, 62, 36, 0.06);
+  color:var(--brand-deep);
+  background:var(--mint-soft)
 }
 
-.side-block h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 14px;
-  color: #18372a;
-  font-size: 14px;
-  font-weight: 750;
+.config-side :deep(.side-block) {
+  padding:18px 0;
+  border:0;
+  border-radius:0;
+  background:none
 }
 
-.layout-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+.config-side :deep(.side-block:first-child) {
+  padding-top:0
 }
 
-.layout-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 6px 8px;
-  border-radius: 12px;
-  border: 1px solid #eef0f2;
-  background: #f8fafc;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 650;
+.config-side :deep(.side-block+.side-block) {
+  border-top:1px solid var(--border-strong);
+  margin-top:8px
 }
 
-.layout-card.active {
-  background: #ecfdf5;
-  border-color: #00b88f;
-  color: #047857;
-  box-shadow: 0 0 0 1px #00b88f;
+.config-side :deep(.side-block h2) {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin:0 0 15px;
+  font-size:14px;
+  font-weight:600;
+  color:var(--text-primary)
 }
 
-.chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.config-side :deep(input[type=range]) {
+  accent-color:var(--brand-accent)
 }
 
-.particle-chips {
-  margin-top: 10px;
+.config-errors {
+  color:#a43730;
+  font-size:12px;
+  padding:12px;
+  background:#fbefec;
+  border-radius:6px
 }
 
-.chip {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid #eef0f2;
-  background: #f8fafc;
-  color: #6b7280;
-  font-size: 11px;
-  font-weight: 650;
+.atmosphere-hint {
+  margin-top:14px;
+  color:var(--text-secondary);
+  font-size:12px;
+  line-height:1.7
 }
 
-.chip.active {
-  background: #ecfdf5;
-  border-color: #00b88f;
-  color: #047857;
+.current-version-summary {
+  padding:12px;
+  margin-bottom:16px;
+  border-left:2px solid var(--brand-accent);
+  background:var(--mint-soft);
+  border-radius:4px
 }
 
-.field-inline {
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 650;
+.current-version-heading {
+  display:grid;
+  gap:5px
 }
 
-.layout-glyph {
-  width: 42px;
-  height: 32px;
-  color: inherit;
+.current-version-heading strong {
+  font-size:13px;
+  font-weight:600;
+  overflow-wrap:anywhere
 }
 
-.layout-glyph svg {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  stroke-width: 1.6;
-}
-
-.field-label {
-  display: block;
-  margin: 10px 0 6px;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.swatches {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.swatch {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
-}
-
-.swatch.active {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #00b88f;
-}
-
-.swatch:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.swatch-picker {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: none;
-  cursor: pointer;
-}
-
-.swatch-picker:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.swatch-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.swatch-label {
-  flex-shrink: 0;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.slider-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 14px;
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.slider-copy {
-  display: flex;
-  flex: 1;
-  justify-content: space-between;
-}
-
-.slider-copy strong {
-  color: #00b88f;
-  font-variant-numeric: tabular-nums;
-}
-
-.range {
-  width: 100%;
-  margin-top: 6px;
-  accent-color: #00b88f;
-}
-
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 4px;
-}
-
-.switch {
-  position: relative;
-  width: 40px;
-  height: 22px;
-}
-
-.switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.switch span {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: #d1d5db;
-  transition: 0.2s ease;
-}
-
-.switch span::before {
-  content: "";
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  left: 3px;
-  top: 3px;
-  border-radius: 50%;
-  background: #fff;
-  transition: 0.2s ease;
-}
-
-.switch input:checked + span {
-  background: #00b88f;
-}
-
-.switch input:checked + span::before {
-  transform: translateX(18px);
-}
-
-.select {
-  width: 100%;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #fff;
-  color: #111827;
-  font-size: 13px;
+.current-version-heading span,.history-meta {
+  font-size:11px;
+  color:var(--text-secondary)
 }
 
 .history {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  display:grid;
+  gap:0;
+  list-style:none
 }
 
-.history-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 8px 4px;
-  text-align: left;
+.history-entry {
+  display:grid;
+  gap:12px;
+  padding:14px 0;
+  border-bottom:1px solid var(--border-strong)
 }
 
-.history-row strong {
-  font-size: 13px;
+.history-copy {
+  display:grid;
+  gap:5px;
+  min-width:0
 }
 
-.history-row em {
-  margin-left: 6px;
-  color: #9ca3af;
-  font-style: normal;
-  font-size: 11px;
+.history-copy>strong {
+  font-size:13px;
+  font-weight:600;
+  overflow-wrap:anywhere
 }
 
-.history-row small {
-  color: #9ca3af;
-  font-size: 11px;
+.version-note {
+  margin-top:5px;
+  font-size:12px;
+  white-space:pre-wrap;
+  color:var(--text-secondary);
+  overflow-wrap:anywhere
+}
+
+.history-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px
+}
+
+.history-action,.load-more-versions {
+  min-height:34px;
+  padding:6px 10px;
+  border:1px solid var(--border-strong);
+  border-radius:6px;
+  background:var(--bg-surface);
+  font-size:11px;
+  color:var(--text-secondary)
+}
+
+.history-action.danger {
+  color:#a43730
+}
+
+.history-action:disabled,.load-more-versions:disabled {
+  opacity:.5;
+  cursor:not-allowed
+}
+
+.load-more-versions {
+  width:100%;
+  margin-top:14px
+}
+
+.history-empty,.history-error {
+  font-size:12px;
+  color:var(--text-secondary);
+  line-height:1.7
+}
+
+.history-error {
+  color:#a43730
 }
 
 .preview-pane {
-  position: relative;
-  overflow: hidden;
-  border-radius: 20px;
-  box-shadow: 0 16px 40px rgba(15, 40, 28, 0.1);
+  position:relative;
+  overflow:hidden;
+  border:1px solid var(--border-strong);
+  border-radius:12px;
+  background:#18241f
 }
 
 .preview-empty {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  display: grid;
-  place-content: center;
-  gap: 14px;
-  padding: 24px;
-  text-align: center;
-  background: #eef6f1;
-  color: #6b7280;
-  font-size: 13px;
+  position:absolute;
+  inset:0;
+  z-index:0;
+  display:grid;
+  place-content:center;
+  justify-items:center;
+  gap:14px;
+  padding:32px;
+  text-align:center;
+  background:var(--bg-surface);
+  color:var(--text-secondary);
+  font-size:13px
+}
+
+.preview-empty h2 {
+  color:var(--text-primary);
+  font-size:22px;
+  font-weight:500;
+  letter-spacing:-.03em
+}
+
+.preview-empty p {
+  max-width:420px;
+  line-height:1.8
+}
+
+.preview-empty-mark {
+  display:grid;
+  place-items:center;
+  width:64px;
+  height:64px;
+  margin-bottom:8px;
+  border:1px solid var(--border-strong);
+  border-radius:16px;
+  color:var(--brand-accent)
 }
 
 .preview-empty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 14px;
+  display:flex;
+  justify-content:center;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:8px
 }
 
 .live-preview {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  opacity: 0;
-  pointer-events: none;
+  position:absolute;
+  inset:0;
+  z-index:1;
+  width:100%;
+  height:100%;
+  border:0;
+  background:transparent;
+  opacity:0;
+  pointer-events:none
 }
 
 .live-preview.is-ready {
-  opacity: 1;
-  pointer-events: auto;
-  background: #0b1220;
+  opacity:1;
+  pointer-events:auto;
+  background:#18241f
 }
 
 .preview-tools {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: calc(100% - 32px);
-  gap: 8px;
+  position:absolute;
+  top:16px;
+  left:16px;
+  right:16px;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:7px;
+  pointer-events:none
+}
+
+.preview-tools>* {
+  pointer-events:auto
+}
+
+.preview-mode {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-height:34px;
+  margin-right:auto;
+  padding:7px 10px;
+  border-radius:6px;
+  background:var(--bg-surface);
+  color:var(--text-secondary);
+  font-size:11px;
+  border:1px solid var(--border-strong)
+}
+
+.preview-mode>span {
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:#aaa99c
+}
+
+.preview-mode>span.is-live {
+  background:var(--brand-accent)
 }
 
 .glass-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.82);
-  color: #374151;
-  font-size: 12px;
-  font-weight: 650;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:34px;
+  padding:7px 10px;
+  border-radius:6px;
+  border:1px solid var(--border-strong);
+  background:var(--bg-surface);
+  color:var(--text-primary);
+  font-size:11px
 }
 
-.config-page.is-full .config-nav,
-.config-page.is-full .config-side {
-  display: none;
+.glass-btn:disabled {
+  opacity:.55;
+  cursor:not-allowed
+}
+
+.config-state {
+  width:min(600px,calc(100% - 40px));
+  margin:70px auto;
+  padding:40px;
+  border:1px solid var(--border-strong);
+  border-radius:12px;
+  background:var(--bg-surface);
+  text-align:center
+}
+
+.config-state h1 {
+  font-size:24px;
+  margin-bottom:14px
+}
+
+.config-state p {
+  font-size:14px;
+  color:var(--text-secondary)
+}
+
+.state-actions {
+  display:flex;
+  justify-content:center;
+  gap:10px;
+  margin-top:20px
+}
+
+.config-page.is-full .config-nav,.config-page.is-full .config-caption,.config-page.is-full .config-side {
+  display:none
 }
 
 .config-page.is-full .config-split {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  grid-template-columns: 1fr !important;
-  z-index: 9999;
+  position:fixed;
+  inset:0;
+  z-index:1000;
+  display:block;
+  width:100%;
+  height:100dvh;
+  min-height:0;
+  margin:0
 }
 
 .config-page.is-full .preview-pane {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  border-radius: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
+  height:100%;
+  width:100%;
+  border:0;
+  border-radius:0
 }
 
-.config-page.is-full .live-preview {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  inset: 0 !important;
+.config-page button:focus-visible,.config-page summary:focus-visible,.config-page a:focus-visible,.config-page :deep(input:focus-visible),.config-page :deep(select:focus-visible) {
+  outline:2px solid var(--brand-accent);
+  outline-offset:3px
 }
 
-@media (max-width: 980px) {
-  .config-nav { grid-template-columns: 1fr; }
-  .config-tabs { flex-wrap: wrap; justify-self: start; }
-  .nav-actions { gap: .5rem; }
-  .config-side { overflow: visible; }
+.config-page :deep(button:disabled) {
+  cursor:not-allowed
+}
+
+.config-side :deep(input[type=checkbox]) {
+  width:18px;
+  height:18px;
+  accent-color:var(--brand-accent)
+}
+
+@media(max-width:1150px) {
+  .config-nav {
+    flex-wrap:wrap;
+    gap:12px;
+    padding:16px 24px
+  }
+  .config-tabs {
+    order:3;
+    width:100%;
+    justify-content:center
+  }
+  .nav-actions {
+    margin-left:auto
+  }
   .config-split {
-    grid-template-columns: 1fr;
-    height: auto;
+    height:calc(100dvh - 260px);
+    grid-template-columns:320px minmax(0,1fr)
+  }
+  .config-caption {
+    padding:20px 24px
+  }
+}
+
+@media(max-width:850px) {
+  .config-split {
+    grid-template-columns:1fr;
+    height:auto;
+    min-height:0
+  }
+  .config-side {
+    overflow:visible
   }
   .preview-pane {
-    height: 60dvh;
+    height:58dvh;
+    min-height:360px;
+    grid-row:1
+  }
+  .side-tabs {
+    top:0
+  }
+  .config-caption {
+    align-items:flex-start
+  }
+  .config-status {
+    max-width:240px
+  }
+  .config-more-menu {
+    right:0
   }
 }
 
-/* 帮助提示图标 */
-.help-tip {
-  display: inline-block;
-  margin-left: 4px;
-  width: 14px;
-  height: 14px;
-  line-height: 14px;
-  text-align: center;
-  font-size: 11px;
-  color: #64748b;
-  border: 1px solid #64748b;
-  border-radius: 50%;
-  cursor: help;
-  opacity: 0.6;
-  font-style: normal;
+@media(max-width:560px) {
+  .config-nav {
+    padding:12px 16px;
+    gap:12px
+  }
+  .brand {
+    font-size:12px;
+    gap:7px
+  }
+  .nav-actions {
+    gap:5px
+  }
+  .btn {
+    font-size:11px;
+    padding:8px 10px;
+    min-height:38px
+  }
+  .config-more summary {
+    font-size:11px;
+    padding:8px
+  }
+  .config-tabs {
+    justify-content:flex-start;
+    gap:0
+  }
+  .config-tab {
+    font-size:11px;
+    padding:9px 8px
+  }
+  .config-caption {
+    padding:20px 16px;
+    flex-direction:column;
+    gap:12px
+  }
+  .config-caption h1 {
+    font-size:23px
+  }
+  .config-status {
+    max-width:none;
+    justify-content:flex-start
+  }
+  .status-chip {
+    font-size:10px
+  }
+  .config-split {
+    margin:0 12px 20px;
+    gap:16px
+  }
+  .config-side {
+    padding:20px 16px
+  }
+  .preview-pane {
+    height:320px;
+    min-height:300px
+  }
+  .preview-tools {
+    top:10px;
+    left:10px;
+    right:10px;
+    gap:5px
+  }
+  .glass-btn {
+    font-size:10px;
+    min-height:34px;
+    padding:7px 8px
+  }
+  .preview-mode {
+    font-size:10px
+  }
+  .preview-empty {
+    padding:20px
+  }
+  .preview-empty h2 {
+    font-size:20px
+  }
 }
 
-.help-tip:hover {
-  opacity: 1;
-  color: #10b981;
-  border-color: #10b981;
+@media(prefers-reduced-motion:reduce) {
+  *,*::before,*::after {
+    transition:none!important;
+    animation:none!important
+  }
 }
-
-.atmosphere-hint { margin: 10px 2px 0; color: #6a7c71; font-size: .8125rem; }
 </style>

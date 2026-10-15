@@ -6,6 +6,7 @@ import { apiFetch } from '../api'
 import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
 import Icon from '../components/Icon.vue'
+import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { useModalFocus } from '../composables/useModalFocus'
 
@@ -66,6 +67,19 @@ function closeMenus(event?: Event) {
   const target = event?.target as HTMLElement | undefined
   if (target?.closest?.('.user-chip') || target?.closest?.('.row-menu')) return
   userMenuOpen.value = false
+  rowMenuId.value = null
+}
+
+function closeMenuFromKeyboard(event: KeyboardEvent) {
+  userMenuOpen.value = false
+  rowMenuId.value = null
+  ;(event.currentTarget as HTMLElement).querySelector<HTMLButtonElement>('button')?.focus()
+}
+
+function requestMemberRemoval(member: WorkspaceMember, event: Event) {
+  const container = (event.currentTarget as HTMLElement).closest('.row-menu')
+  container?.querySelector<HTMLButtonElement>('button')?.focus()
+  memberToRemove.value = member
   rowMenuId.value = null
 }
 
@@ -151,6 +165,7 @@ async function updateRole(member: WorkspaceMember, role: MembershipRole) {
 }
 
 async function removeMember() {
+  if (updatingId.value) return
   const member = memberToRemove.value
   if (!member) return
   updatingId.value = member.id
@@ -185,31 +200,27 @@ onUnmounted(() => {
 
     <header class="members-nav">
       <RouterLink to="/" class="brand">
-        <span class="fold-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none">
-            <path d="M6 9.2 16 4l10 5.2v6.1L16 21.6 6 15.3V9.2Z" fill="#12B981" />
-            <path d="M16 4v17.6l10-6.3V9.2L16 4Z" fill="#059669" />
-            <path d="M6 15.3 16 21.6 26 15.3 16 28 6 15.3Z" fill="#047857" />
-          </svg>
-        </span>
+        <BrandMark :size="28" />
         <span>VIE Gallery</span>
       </RouterLink>
 
-      <nav class="top-tabs">
+      <nav class="top-tabs" aria-label="主导航">
         <RouterLink to="/" class="top-tab">
           <Icon name="grid" :size="15" />
           <span>我的空间</span>
         </RouterLink>
-        <span class="top-tab is-active">
+        <RouterLink to="/members" class="top-tab is-active" aria-current="page">
           <Icon name="users" :size="15" />
           <span>成员管理</span>
-        </span>
+        </RouterLink>
       </nav>
 
-      <div class="user-chip" @click.stop="userMenuOpen = !userMenuOpen">
+      <div class="user-chip" @keydown.esc.stop="closeMenuFromKeyboard">
+        <button class="user-trigger" type="button" aria-label="账户菜单" :aria-expanded="userMenuOpen" @click.stop="userMenuOpen = !userMenuOpen" @keydown.esc="userMenuOpen = false">
         <span class="avatar">{{ userInitial }}</span>
         <span>{{ userDisplayName }}</span>
         <Icon name="chevron-down" :size="14" />
+        </button>
         <div v-if="userMenuOpen" class="user-menu" @click.stop>
           <button type="button" @click="handleLogout">退出登录</button>
         </div>
@@ -235,9 +246,9 @@ onUnmounted(() => {
           <button v-if="error" class="retry" type="button" @click="loadMembers">重试</button>
         </div>
 
-        <div v-else-if="loading" class="empty">正在加载成员数据…</div>
+        <div v-else-if="loading" class="empty" role="status">正在加载成员数据…</div>
 
-        <div v-else-if="!members.length" class="empty">工作区内暂无其他成员，点击右上角邀请成员加入协作。</div>
+        <div v-else-if="!members.length" class="empty">工作区内暂无其他成员，可以添加已注册的账户一起协作。</div>
 
         <table v-else class="member-table">
           <thead>
@@ -264,14 +275,14 @@ onUnmounted(() => {
               </td>
               <td class="date">{{ formatDate(member.joinedAt) }}</td>
               <td class="ops">
-                <div v-if="member.role !== 'OWNER'" class="row-menu">
-                  <button type="button" aria-label="更多操作" @click.stop="rowMenuId = rowMenuId === member.id ? null : member.id">
+                <div v-if="member.role !== 'OWNER'" class="row-menu" @keydown.esc.stop="closeMenuFromKeyboard">
+                  <button type="button" :aria-label="`${member.displayName || member.email}的更多操作`" :aria-expanded="rowMenuId === member.id" @keydown.esc="rowMenuId = null" @click.stop="rowMenuId = rowMenuId === member.id ? null : member.id">
                     <Icon name="more" :size="16" />
                   </button>
                   <div v-if="rowMenuId === member.id" class="menu-pop">
                     <button type="button" :disabled="updatingId === member.id" @click="updateRole(member, 'EDITOR')">设为编辑</button>
                     <button type="button" :disabled="updatingId === member.id" @click="updateRole(member, 'VIEWER')">设为查看者</button>
-                    <button type="button" class="danger" :disabled="!!updatingId" @click="memberToRemove = member; rowMenuId = null">移除成员</button>
+                    <button type="button" class="danger" :disabled="!!updatingId" @click="requestMemberRemoval(member, $event)">移除成员</button>
                   </div>
                 </div>
               </td>
@@ -326,12 +337,13 @@ onUnmounted(() => {
           </div>
           <form @submit.prevent="addMember">
             <label for="invite-email">电子邮箱</label>
-            <input id="invite-email" v-model="form.email" type="email" placeholder="colleague@example.com" required />
+            <input id="invite-email" v-model="form.email" class="form-input" type="email" autocomplete="email" :disabled="submitting" placeholder="colleague@example.com" required />
             <label for="invite-role">协作角色</label>
-            <select id="invite-role" v-model="form.role">
+            <select id="invite-role" v-model="form.role" class="select-input" :disabled="submitting">
               <option value="EDITOR">编辑</option>
               <option value="VIEWER">查看者</option>
             </select>
+            <p v-if="error" class="alert" role="alert">{{ error }}</p>
             <div class="modal-actions">
               <button type="button" class="ghost" :disabled="submitting" @click="showInviteModal = false">取消</button>
               <button type="submit" class="invite-btn" :disabled="submitting">
@@ -356,424 +368,4 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
-.members-page {
-  position: relative;
-  min-height: 100dvh;
-  color: #111827;
-}
-
-.members-scene {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background-color: #eef6f1;
-  background-image: url('/overview-bg.png');
-  background-size: cover;
-  background-position: center;
-}
-
-.members-nav,
-.members-body {
-  position: relative;
-}
-
-/* 导航必须高于正文，否则用户下拉菜单会被 members-body 盖住无法点击。 */
-.members-nav {
-  z-index: 50;
-}
-
-.members-body {
-  z-index: 1;
-}
-
-.members-nav {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  width: min(1280px, calc(100% - 40px));
-  height: 64px;
-  margin: 16px auto 0;
-  padding: 0 22px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 20px;
-  box-shadow: 0 10px 28px rgba(15, 40, 28, 0.06);
-  backdrop-filter: blur(18px);
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 750;
-  color: #0f766e;
-}
-
-.fold-mark svg {
-  width: 28px;
-  height: 28px;
-}
-
-.top-tabs {
-  display: flex;
-  justify-content: center;
-  gap: 4px;
-}
-
-.top-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  color: #6b7280;
-  font-size: 13px;
-  font-weight: 650;
-  background: transparent;
-}
-
-.top-tab:hover {
-  color: #0f766e;
-  background: rgba(16, 185, 129, 0.08);
-}
-
-.user-chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #111827;
-  font-size: 13px;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.avatar {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #0f766e;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 750;
-}
-
-.user-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 132px;
-  padding: 6px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
-}
-
-.user-menu button {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  text-align: left;
-}
-
-.members-body {
-  width: min(1280px, calc(100% - 40px));
-  margin: 18px auto 28px;
-}
-
-.main-card {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 22px;
-  box-shadow: 0 12px 32px rgba(15, 40, 28, 0.06);
-  backdrop-filter: blur(18px);
-}
-
-.main-card {
-  padding: 22px 24px 20px;
-}
-
-.main-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.main-head h1 {
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-.main-head p {
-  margin-top: 4px;
-  color: #9ca3af;
-  font-size: 13px;
-}
-
-.invite-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 38px;
-  padding: 0 16px;
-  border-radius: 12px;
-  background: #0f766e;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.alert,
-.empty {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px;
-  color: #6b7280;
-}
-
-.retry {
-  color: #0f766e;
-  font-weight: 650;
-}
-
-.member-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.member-table th {
-  padding: 10px 8px 12px;
-  color: #9ca3af;
-  font-size: 12px;
-  font-weight: 650;
-  border-bottom: 1px solid #eef2f0;
-}
-
-.member-table td {
-  padding: 14px 8px;
-  border-bottom: 1px solid #f3f6f4;
-  font-size: 13px;
-  vertical-align: middle;
-}
-
-.who {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.who .avatar {
-  width: 36px;
-  height: 36px;
-}
-
-.who em {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: #f3f4f6;
-  color: #6b7280;
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 650;
-}
-
-.email,
-.date {
-  color: #6b7280;
-}
-
-.role {
-  display: inline-flex;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.role-owner {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.role-editor {
-  background: #e6f7f3;
-  color: #0f766e;
-}
-
-.role-viewer {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-
-.ops {
-  text-align: right;
-}
-
-.row-menu {
-  position: relative;
-  display: inline-block;
-}
-
-.row-menu > button {
-  width: 32px;
-  height: 32px;
-  color: #9ca3af;
-}
-
-.menu-pop {
-  position: absolute;
-  top: 34px;
-  right: 0;
-  z-index: 3;
-  min-width: 132px;
-  padding: 6px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
-}
-
-.menu-pop button {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  text-align: left;
-  font-size: 12px;
-}
-
-.menu-pop .danger {
-  color: #dc2626;
-}
-
-.hint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 16px;
-  color: #0f766e;
-  font-size: 12px;
-}
-
-.rbac-panel {
-  margin-top: 22px;
-  padding: 16px 16px 14px;
-  border-radius: 16px;
-  background: #ecfdf5;
-  border: 1px solid #d1fae5;
-}
-
-.rbac-panel h2 {
-  font-size: 14px;
-  font-weight: 750;
-  color: #065f46;
-}
-
-.rbac-panel p {
-  margin: 4px 0 12px;
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.rbac-panel ul {
-  display: grid;
-  gap: 8px;
-}
-
-.rbac-panel li {
-  display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 10px;
-  align-items: start;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.rbac-panel strong {
-  color: #047857;
-  font-size: 12px;
-}
-
-.rbac-panel span {
-  color: #4b5563;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  background: rgba(15, 23, 42, 0.35);
-}
-
-.modal-card {
-  width: min(440px, calc(100% - 32px));
-  padding: 22px;
-  background: #fff;
-  border-radius: 18px;
-}
-
-.modal-head {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.modal-card label {
-  display: block;
-  margin: 12px 0 6px;
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.modal-card input,
-.modal-card select {
-  width: 100%;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 18px;
-}
-
-.ghost {
-  height: 38px;
-  padding: 0 14px;
-  color: #6b7280;
-}
-
-.modal-fade-enter-active,
-.modal-fade-leave-active { transition: opacity 0.2s ease; }
-.modal-fade-enter-from,
-.modal-fade-leave-to { opacity: 0; }
-
-@media (max-width: 960px) {
-  .members-body {
-    grid-template-columns: 1fr;
-  }
-  .side-card {
-    min-height: auto;
-  }
-  .top-tabs span {
-    display: none;
-  }
-}
-</style>
+<style scoped src="../styles/members.css"></style>

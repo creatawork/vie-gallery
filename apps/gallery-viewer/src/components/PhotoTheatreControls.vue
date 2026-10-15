@@ -42,7 +42,7 @@ function changeMode(event: Event) {
       </template>
     </div>
     <div v-if="state.active" class="theatre-caption" role="status" aria-live="polite" aria-atomic="true">
-      <span v-if="state.status === 'playing' || state.status === 'paused'">{{ state.status === 'paused' ? '已暂停' : '正在编排' }} · {{ Math.floor(state.elapsed) }} / {{ SHOW_DURATION }} 秒</span>
+      <span v-if="state.status === 'playing' || state.status === 'paused'">{{ state.status === 'paused' ? '已暂停' : '正在编排' }}<span aria-hidden="true"> · {{ Math.floor(state.elapsed) }} / {{ SHOW_DURATION }} 秒</span></span>
       <span v-else-if="state.status === 'finished'">演出结束 · 可继续自由浏览</span>
       <span v-else>本组 {{ state.indices.length }} 张 · 从第 {{ state.offset + 1 }} 张开始</span>
       <span>{{ state.reducedMotion ? '已减少动态效果' : '左右拖动换组 · 点击照片聚焦' }}</span>
@@ -52,24 +52,24 @@ function changeMode(event: Event) {
 </template>
 
 <style scoped>
-.theatre-dock { position: absolute; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 25; max-width: calc(100% - 32px); color: var(--text-main); background: var(--bg-surface, #10171d); border: 1px solid #64748b; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 28px #0005; }
+.theatre-dock { position: absolute; left: 50%; bottom: max(54px, calc(36px + env(safe-area-inset-bottom))); transform: translateX(-50%); z-index: 25; max-width: calc(100% - 32px); color: #f3f3ec; background: #222a25; border: 1px solid #637067; border-radius: 10px; overflow: hidden; }
 .theatre-row { display: flex; align-items: center; gap: 8px; padding: 8px; }
 .theatre-select { display: flex; align-items: center; gap: 8px; padding-left: 10px; }
 select { max-width: 180px; min-height: 44px; color: inherit; background: transparent; border: 0; font: inherit; font-size: 13px; cursor: pointer; }
-option, optgroup { color: var(--text-main); background: var(--bg-surface, #10171d); }
+option, optgroup { color: #f3f3ec; background: #222a25; }
 button { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: inherit; border-radius: 8px; }
 button:hover:not(:disabled) { background: #ffffff14; }
-button:focus-visible, select:focus-visible { outline: 2px solid var(--brand-emerald, #10b981); outline-offset: -2px; }
+button:focus-visible, select:focus-visible { outline: 2px solid #a0c5b2; outline-offset: -2px; }
 button:disabled, select:disabled { opacity: .5; cursor: default; }
-.theatre-play { padding: 0 12px; background: var(--brand-emerald, #10b981); color: #061b13; font-size: 13px; font-weight: 600; white-space: nowrap; }
-.theatre-play:hover:not(:disabled) { background: #6ee7b7; }
+.theatre-play { padding: 0 12px; background: #a0c5b2; color: #171d1a; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.theatre-play:hover:not(:disabled) { background: #b9d6c6; }
 .theatre-navigation { display: flex; }
-.theatre-caption { display: flex; gap: 20px; justify-content: space-between; padding: 0 16px 12px; color: #cbd5e1; font-size: 11px; line-height: 1.5; }
-.theatre-progress { display: block; width: 100%; height: 3px; border: 0; accent-color: var(--brand-emerald, #10b981); }
+.theatre-caption { display: flex; gap: 20px; justify-content: space-between; padding: 0 16px 12px; color: #b4c0b6; font-size: 11px; line-height: 1.5; }
+.theatre-progress { display: block; width: 100%; height: 3px; border: 0; accent-color: #a0c5b2; }
 .theatre-progress::-webkit-progress-bar { background: #ffffff15; }
-.theatre-progress::-webkit-progress-value { background: var(--brand-emerald, #10b981); }
+.theatre-progress::-webkit-progress-value { background: #a0c5b2; }
 @media (max-width: 650px) {
-  .theatre-dock { width: calc(100% - 24px); max-width: 430px; bottom: max(12px, env(safe-area-inset-bottom)); }
+  .theatre-dock { width: calc(100% - 32px); max-width: 430px; bottom: calc(48px + env(safe-area-inset-bottom)); }
   .theatre-row { flex-wrap: wrap; gap: 4px; }
   .theatre-select { flex: 1 0 150px; min-width: 140px; }
   .theatre-select select { width: 100%; }

@@ -25,9 +25,12 @@ withDefaults(defineProps<Props>(), {
     stroke-linecap="round"
     stroke-linejoin="round"
     class="vie-icon"
+    aria-hidden="true"
+    focusable="false"
   >
     <g v-if="name === 'play'"><path d="m8 5 11 7-11 7V5Z" /></g>
     <g v-else-if="name === 'pause'"><path d="M8 5v14M16 5v14" /></g>
+    <g v-else-if="name === 'download'"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" /></g>
     <!-- 3D Cube -->
     <g v-else-if="name === '3d' || name === 'cube'">
       <path d="m21 16-9 5-9-5V8l9-5 9 5v8Z" />

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, useId } from 'vue'
 import Icon from './Icon.vue'
+import VisitorStateShell from './VisitorStateShell.vue'
 
 defineProps<{
   isUnlocking: boolean
   error?: string | null
+  galleryTitle?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -13,228 +15,81 @@ const emit = defineEmits<{
 
 const password = ref('')
 const showPassword = ref(false)
-const hasError = ref(false)
+const inputId = useId()
+const helpId = useId()
+const errorId = useId()
+const localError = ref('')
 
 function handleSubmit() {
   if (password.value.trim()) {
     emit('unlock', password.value)
   } else {
-    hasError.value = true
-    setTimeout(() => hasError.value = false, 600)
+    localError.value = '请输入访问密码。'
   }
 }
 </script>
 
 <template>
-  <div class="password-prompt-root">
-    <div class="glow-bg"></div>
-    <div class="prompt-card" :class="{ shake: hasError }">
-      <div class="lock-icon-box">
-        <Icon name="lock" :size="24" />
-      </div>
-
-      <div class="prompt-header">
-        <h2>私密相册已加密</h2>
-        <p>此空间已被所有者设为密码保护，请输入访问密码以解锁沉浸式浏览体验。</p>
-      </div>
-
-      <p v-if="error" class="prompt-error" role="alert">{{ error }}</p>
-      <form @submit.prevent="handleSubmit" class="password-form">
+  <VisitorStateShell>
+      <span class="state-icon"><Icon name="lock" :size="28" :stroke-width="1.5" /></span>
+      <h1>{{ galleryTitle || '一场为你保留的影展' }}</h1>
+      <p :id="helpId" class="state-description">这场影展设有访问密码。输入创作者提供的密码，即可进入欣赏。</p>
+      <form @submit.prevent="handleSubmit" class="password-form" :aria-busy="isUnlocking">
+        <label :for="inputId">访问密码</label>
         <div class="input-container">
           <input
+            :id="inputId"
             v-model="password"
             :type="showPassword ? 'text' : 'password'"
-            placeholder="请输入访问密钥或密码"
+            placeholder="输入访问密码"
             :disabled="isUnlocking"
+            :aria-invalid="!!(error || localError)"
+            :aria-describedby="`${helpId} ${(error || localError) ? errorId : ''}`"
+            autocomplete="current-password"
+            autocapitalize="off"
+            spellcheck="false"
             autofocus
             class="password-input"
+            @input="localError = ''"
           />
           <button
             type="button"
             class="toggle-eye"
-            :title="showPassword ? '隐藏密码' : '显示密码'"
+            :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+            :aria-pressed="showPassword"
+            :disabled="isUnlocking"
             @click="showPassword = !showPassword"
           >
             <Icon :name="showPassword ? 'eye-off' : 'eye'" :size="18" />
           </button>
         </div>
-
+        <p v-if="error || localError" :id="errorId" class="prompt-error" role="alert">{{ error || localError }}</p>
         <button
           type="submit"
-          class="unlock-btn"
+          class="state-action unlock-btn"
           :disabled="!password.trim() || isUnlocking"
         >
           <Icon v-if="isUnlocking" name="refresh" :size="16" class="spin" />
-          <span>{{ isUnlocking ? '解密验证中…' : '验证密码并进入' }}</span>
+          <span>{{ isUnlocking ? '正在验证…' : '进入影展' }}</span>
+          <Icon v-if="!isUnlocking" name="arrow-right" :size="16" />
         </button>
       </form>
-    </div>
-  </div>
+  </VisitorStateShell>
 </template>
 
 <style scoped>
-.password-prompt-root {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  padding: 24px;
-  background: #090e11;
-  color: #f1f5f9;
-}
-
-.glow-bg {
-  position: absolute;
-  width: 440px;
-  height: 440px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent, #10b981) 18%, transparent) 0%, transparent 70%);
-  filter: blur(50px);
-  pointer-events: none;
-}
-
-.prompt-card {
-  position: relative;
-  z-index: 1;
-  width: min(420px, 100%);
-  background: rgba(18, 25, 30, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 36px 32px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  text-align: center;
-}
-
-.lock-icon-box {
-  width: 54px;
-  height: 54px;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--accent, #10b981) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent, #10b981) 30%, transparent);
-  color: var(--accent-strong, #34d399);
-  display: grid;
-  place-items: center;
-  margin: 0 auto 20px;
-  box-shadow: 0 0 20px color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
-}
-
-.prompt-header h2 {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: 22px;
-  font-weight: 600;
-  color: #ffffff;
-  margin-bottom: 8px;
-}
-
-.prompt-header p {
-  font-size: 13px;
-  color: #94a3b8;
-  line-height: 1.5;
-  margin-bottom: 24px;
-}
-
-.prompt-error {
-  margin: 0 0 16px;
-  padding: 9px 12px;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  border-radius: 9px;
-  color: #fca5a5;
-  background: rgba(127, 29, 29, 0.25);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.password-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.input-container {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.password-input {
-  width: 100%;
-  padding: 12px 42px 12px 16px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  font-size: 14px;
-  color: #ffffff;
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.password-input:focus {
-  border-color: var(--accent, #10b981);
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #10b981) 20%, transparent);
-}
-
-.toggle-eye {
-  position: absolute;
-  right: 12px;
-  background: none;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  padding: 4px;
-}
-
-.toggle-eye:hover {
-  color: #ffffff;
-}
-
-.unlock-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, var(--accent, #10b981) 0%, #059669 100%);
-  color: #ffffff;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent, #10b981) 30%, transparent);
-}
-
-.unlock-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--accent-strong, #34d399) 0%, var(--accent, #10b981) 100%);
-  transform: translateY(-1px);
-}
-
-.unlock-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.spin {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.shake {
-  animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-}
-
-@keyframes shake {
-  10%, 90% { transform: translate3d(-1px, 0, 0); }
-  20%, 80% { transform: translate3d(2px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-  40%, 60% { transform: translate3d(4px, 0, 0); }
-}
+.password-form { margin-top: 32px; }
+.password-form label { display: block; margin-bottom: 10px; font-size: 13px; font-weight: 500; }
+.input-container { position: relative; }
+.password-input { width: 100%; min-height: 50px; padding: 12px 54px 12px 14px; background: #fffefa; color: #202824; border: 1px solid #bfc8bc; border-radius: 6px; font-size: 16px; }
+.password-input:focus { border-color: #26735d; }
+.password-input[aria-invalid='true'] { border-color: #a24d41; }
+.password-input:disabled { color: #626c65; background: #e9eae3; }
+.toggle-eye { position: absolute; inset: 3px 3px 3px auto; display: grid; place-items: center; width: 44px; color: #626c65; border-radius: 4px; }
+.toggle-eye:hover:not(:disabled) { color: #202824; background: #e8ede4; }
+.prompt-error { margin-top: 12px; color: #9b453b; font-size: 13px; line-height: 1.6; }
+.unlock-btn { width: 100%; }
+.spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 </style>

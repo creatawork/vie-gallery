@@ -10,23 +10,23 @@ const labels: Record<PresetName, string> = Object.fromEntries(SCENE_PRESETS.map(
 </section></template>
 <style scoped>
 .preset-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.preset-card { position: relative; border: 1px solid #d7e1e9; border-radius: 14px; background: #fff; color: #17212b; font: inherit; cursor: pointer; overflow: hidden; text-align: left; transition: border-color .2s, transform .2s, box-shadow .2s; }
+.preset-card { position: relative; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); font: inherit; cursor: pointer; overflow: hidden; text-align: left; transition: border-color .2s, transform .2s, box-shadow .2s; }
 .preset-card:hover:not(:disabled) { border-color: #75ab91; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(20, 99, 72, .12); }
-.preset-card[aria-pressed="true"] { border-color: #168260; box-shadow: 0 0 0 2px rgba(22, 130, 96, .14); }
-.preset-card:focus-visible { outline: 2px solid #146348; outline-offset: 2px; }
+.preset-card[aria-pressed="true"] { border-color: var(--brand-accent); box-shadow: 0 0 0 2px var(--mint-soft); }
+.preset-card:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
 .preset-card:disabled { opacity: .5; cursor: default; }
 .preset-image { position: relative; display: block; height: 72px; background: #dce7df; overflow: hidden; }
 .preset-image img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .2s; }
 .preset-card:hover:not(:disabled) .preset-image img { transform: scale(1.05); }
 .preset-copy { display: grid; gap: .2rem; padding: 9px; }
-.preset-copy strong { display: block; font-size: 12.5px; color: #111827; }
-.preset-copy small { color: #6a7c71; font-size: 11px; }
-.preset-check { position: absolute; top: 7px; right: 7px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #146e4e; border: 1px solid rgba(255, 255, 255, .69); color: #fff; font-size: 12px; }
-.preset-recommend { position: absolute; top: 7px; left: 7px; z-index: 1; padding: 2px 7px; border-radius: 999px; background: #146e4e; color: #fff; font-size: 10.5px; font-weight: 650; letter-spacing: .02em; }
-.restore-preset { margin-top: .75rem; width: 100%; min-height: 36px; border: 1px solid #d7e1e9; border-radius: 10px; background: #fff; color: #334f42; font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; transition: border-color .2s; }
+.preset-copy strong { display: block; font-size: 12.5px; color: var(--text-primary); }
+.preset-copy small { color: var(--text-tertiary); font-size: 11px; }
+.preset-check { position: absolute; top: 7px; right: 7px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--brand-deep); border: 1px solid rgba(255, 255, 255, .69); color: var(--bg-surface); font-size: 12px; }
+.preset-recommend { position: absolute; top: 7px; left: 7px; z-index: 1; padding: 2px 7px; border-radius: 999px; background: var(--brand-deep); color: var(--bg-surface); font-size: 10.5px; font-weight: 650; letter-spacing: .02em; }
+.restore-preset { margin-top: .75rem; width: 100%; min-height: 36px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-surface); color: var(--brand-deep); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; transition: border-color .2s; }
 .restore-preset:hover:not(:disabled) { border-color: #75ab91; }
-.restore-preset:focus-visible { outline: 2px solid #146348; outline-offset: 2px; }
+.restore-preset:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
 .restore-preset:disabled { opacity: .5; cursor: default; }
-p { color: #475569; font-size: .8125rem; }
+p { color: var(--text-secondary); font-size: .8125rem; }
 @media (prefers-reduced-motion: reduce) { .preset-image img { transition: none; } }
 </style>

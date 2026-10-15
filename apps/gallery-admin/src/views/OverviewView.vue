@@ -18,7 +18,7 @@ const FALLBACK_COVERS = [
   '/covers/stream.png',
   '/covers/gallery.png',
   '/covers/bamboo.png'
-]
+].map(path => `${import.meta.env.BASE_URL}${path.slice(1)}`)
 
 type StatusFilter = 'ALL' | 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
 type SortOption = 'updated' | 'created' | 'name'
@@ -36,6 +36,7 @@ const authForm = ref({
 })
 const authLoading = ref(false)
 const authError = ref('')
+const showPassword = ref(false)
 const forgotEmail = ref('')
 const forgotLoading = ref(false)
 const forgotSuccess = ref(false)
@@ -53,6 +54,7 @@ const userMenuOpen = ref(false)
 
 const showCreateModal = ref(false)
 const createForm = ref({ name: '', slug: '', visibility: 'PUBLIC' })
+const createPassword = ref('')
 const creating = ref(false)
 const createError = ref('')
 const slugSeed = ref(makeSlugSeed())
@@ -67,6 +69,8 @@ function makeSlugSeed() {
 
 function openCreateModal() {
   slugSeed.value = makeSlugSeed()
+  createError.value = ''
+  createPassword.value = ''
   showCreateModal.value = true
 }
 
@@ -146,6 +150,11 @@ function closeMenus() {
   userMenuOpen.value = false
 }
 
+function closeMenuFromKeyboard(event: KeyboardEvent) {
+  closeMenus()
+  ;(event.currentTarget as HTMLElement).querySelector<HTMLButtonElement>('button')?.focus()
+}
+
 async function handleLogout() {
   await logout()
   toast.info('已安全退出登录')
@@ -200,6 +209,7 @@ watch(currentUser, user => {
 }, { immediate: true })
 
 async function handleAuthSubmit() {
+  if (authLoading.value) return
   authLoading.value = true
   authError.value = ''
   try {
@@ -227,6 +237,7 @@ async function handleAuthSubmit() {
       return
     }
     setUser(await response.json())
+    authForm.value.password = ''
     toast.success(authMode.value === 'register' ? '注册成功，欢迎进入！' : '登录成功')
   } catch (error) {
     authError.value = error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
@@ -237,6 +248,7 @@ async function handleAuthSubmit() {
 }
 
 async function handleForgotPassword() {
+  if (forgotLoading.value) return
   const email = forgotEmail.value.trim()
   if (!email) return
   forgotLoading.value = true
@@ -281,6 +293,7 @@ function slugify(text: string) {
 }
 
 async function handleCreateGallery() {
+  if (creating.value) return
   if (!canCreateGallery.value) {
     toast.error('当前角色没有创建空间的权限。')
     return
@@ -296,6 +309,11 @@ async function handleCreateGallery() {
     createError.value = '请填写访问地址，可用字母、数字和连字符。'
     return
   }
+  const draft = { ...createForm.value, password: createPassword.value }
+  if (draft.visibility === 'PASSWORD' && draft.password.length < 6) {
+    createError.value = '请设置至少 6 个字符的展厅访问密码。'
+    return
+  }
   creating.value = true
   createError.value = ''
   try {
@@ -303,9 +321,9 @@ async function handleCreateGallery() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: createForm.value.name.trim(),
-        slug: createForm.value.slug.trim(),
-        visibility: createForm.value.visibility
+        name: draft.name.trim(),
+        slug: draft.slug.trim(),
+        visibility: draft.visibility
       })
     })
     if (!response.ok) {
@@ -315,9 +333,24 @@ async function handleCreateGallery() {
       return
     }
     const newGallery = await response.json() as Gallery
+    let passwordSaved = true
+    if (draft.visibility === 'PASSWORD') {
+      try {
+        const passwordResponse = await apiFetch(`/api/galleries/${newGallery.id}/password`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: draft.password })
+        })
+        passwordSaved = passwordResponse.ok
+      } catch {
+        passwordSaved = false
+      }
+    }
     showCreateModal.value = false
     createForm.value = { name: '', slug: '', visibility: 'PUBLIC' }
-    toast.success(`空间“${newGallery.name}”创建成功！`)
+    createPassword.value = ''
+    if (passwordSaved) toast.success(`空间“${newGallery.name}”创建成功！`)
+    else toast.error('空间已创建，访问密码未保存。请在发布设置中重新设置密码后发布。')
     navigateToWorkspace(newGallery.id)
   } catch (error) {
     createError.value = error instanceof Error ? error.message : '网络请求失败，请稍后重试。'
@@ -427,28 +460,33 @@ async function handleDeleteGallery() {
 <template>
   <!-- Fullscreen Immersive Login / Register (Guest Mode) -->
   <div v-if="!currentUser" class="auth-immersive">
-    <div class="auth-scene" aria-hidden="true">
-      <div class="auth-brand-mark">VIE GALLERY</div>
+    <div class="auth-scene">
+      <div class="auth-brand-mark"><BrandMark :size="30" /><span>VIE Gallery</span></div>
+      <div class="auth-story">
+        <h2>让每一张照片，<br />拥有自己的空间。</h2>
+        <p>整理作品，布置展厅，把值得记住的瞬间分享出去。</p>
+        <div class="auth-story-path" aria-label="创作流程"><span>上传作品</span><Icon name="arrow-right" :size="15" /><span>布置展厅</span><Icon name="arrow-right" :size="15" /><span>发布分享</span></div>
+      </div>
     </div>
     <div class="auth-card">
+      <div class="auth-mobile-brand"><BrandMark :size="28" /><span>VIE Gallery</span></div>
       <div class="auth-header">
-        <div class="brand-badge"><Icon name="gallery" :size="22" /></div>
-        <h2>VIE GALLERY</h2>
-        <p>{{ authMode === 'register' ? '注册新创作者工作区，开启沉浸式相册' : authMode === 'forgot' ? '输入注册邮箱，获取重置密码链接' : '登录你的创作者管理后台' }}</p>
+        <h1>{{ authMode === 'register' ? '从这里，开始创作。' : authMode === 'forgot' ? '找回你的账户' : '欢迎回到你的空间' }}</h1>
+        <p>{{ authMode === 'register' ? '创建账户，让作品在新的空间里被看见。' : authMode === 'forgot' ? '输入注册邮箱，我们会发送重置密码链接。' : '登录后，继续整理作品与布置展厅。' }}</p>
       </div>
       <div v-if="authMode !== 'forgot'" class="auth-tabs">
-        <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'; authError = ''">账号登录</button>
-        <button :class="{ active: authMode === 'register' }" type="button" @click="authMode = 'register'; authError = ''">注册账户</button>
+        <button :class="{ active: authMode === 'login' }" :aria-pressed="authMode === 'login'" :disabled="authLoading" type="button" @click="authMode = 'login'; authError = ''; showPassword = false">账号登录</button>
+        <button :class="{ active: authMode === 'register' }" :aria-pressed="authMode === 'register'" :disabled="authLoading" type="button" @click="authMode = 'register'; authError = ''; showPassword = false">注册账户</button>
       </div>
-      <div v-if="authError" class="form-error"><Icon name="alert-circle" :size="16" /><span>{{ authError }}</span></div>
+      <div v-if="authError" class="form-error" role="alert"><Icon name="alert-circle" :size="16" /><span>{{ authError }}</span></div>
 
       <!-- Forgot Password Form -->
       <template v-if="authMode === 'forgot'">
-        <div v-if="forgotSuccess" class="forgot-success-banner">
+        <div v-if="forgotSuccess" class="forgot-success-banner" role="status">
           <Icon name="check" :size="20" />
           <div>
             <strong>重置邮件已发送</strong>
-            <p>若该邮箱已注册，系统已向您的邮箱发送重置链接。请查收邮件或日志中的重置令牌完成密码重置。</p>
+            <p>若该邮箱已注册，重置链接将发送到你的邮箱。请查收邮件，也可以检查垃圾邮件文件夹。</p>
           </div>
         </div>
         <form v-else @submit.prevent="handleForgotPassword">
@@ -456,7 +494,7 @@ async function handleDeleteGallery() {
             <label class="form-label" for="forgot-email">注册电子邮箱</label>
             <div class="auth-input-wrap">
               <Icon name="users" :size="16" class="auth-input-icon" />
-              <input id="forgot-email" v-model="forgotEmail" type="email" placeholder="name@example.com" class="form-input" required />
+               <input id="forgot-email" v-model="forgotEmail" type="email" autocomplete="email" inputmode="email" :disabled="forgotLoading" placeholder="name@example.com" class="form-input" required />
             </div>
           </div>
           <button type="submit" class="btn btn-primary auth-submit" :disabled="forgotLoading">
@@ -477,23 +515,24 @@ async function handleDeleteGallery() {
           <label class="form-label" for="auth-display-name">用户名称</label>
           <div class="auth-input-wrap">
             <Icon name="user" :size="16" class="auth-input-icon" />
-            <input id="auth-display-name" v-model="authForm.displayName" placeholder="例如：Alex Chen" class="form-input" required />
+            <input id="auth-display-name" v-model="authForm.displayName" autocomplete="nickname" maxlength="80" :disabled="authLoading" placeholder="你的创作者名称" class="form-input" required />
           </div>
         </div>
         <div class="form-group auth-field">
           <label class="form-label" for="auth-email">电子邮箱</label>
           <div class="auth-input-wrap">
             <Icon name="users" :size="16" class="auth-input-icon" />
-            <input id="auth-email" v-model="authForm.email" type="email" placeholder="name@example.com" class="form-input" required />
+            <input id="auth-email" v-model="authForm.email" type="email" autocomplete="username" inputmode="email" :disabled="authLoading" placeholder="name@example.com" class="form-input" required />
           </div>
         </div>
         <div class="form-group auth-field">
           <div class="field-label-row">
-            <label class="form-label" for="auth-password">密码（至少 12 位）</label>
+            <label class="form-label" for="auth-password">{{ authMode === 'register' ? '设置密码' : '密码' }}</label>
             <button
               v-if="authMode === 'login'"
               type="button"
               class="forgot-link-btn"
+              :disabled="authLoading"
               @click="authMode = 'forgot'; authError = ''; forgotSuccess = false"
             >
               忘记密码？
@@ -501,7 +540,8 @@ async function handleDeleteGallery() {
           </div>
           <div class="auth-input-wrap">
             <Icon name="lock" :size="16" class="auth-input-icon" />
-            <input id="auth-password" v-model="authForm.password" type="password" placeholder="至少 12 位密码" class="form-input" minlength="12" required />
+            <input id="auth-password" v-model="authForm.password" :type="showPassword ? 'text' : 'password'" :autocomplete="authMode === 'register' ? 'new-password' : 'current-password'" :placeholder="authMode === 'register' ? '至少 12 个字符' : '输入你的密码'" class="form-input password-input" :minlength="authMode === 'register' ? 12 : undefined" maxlength="128" :disabled="authLoading" required />
+            <button class="password-toggle" type="button" :aria-pressed="showPassword" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</button>
           </div>
         </div>
         <button id="btn-auth-submit" type="submit" class="btn btn-primary auth-submit" :disabled="authLoading">
@@ -509,6 +549,7 @@ async function handleDeleteGallery() {
           <span>{{ authLoading ? '认证中…' : (authMode === 'register' ? '创建并进入工作区' : '登录控制台') }}</span>
         </button>
       </form>
+      <p class="auth-footnote"><Icon name="lock" :size="14" />作品由你掌握，发布时再与世界分享。</p>
     </div>
   </div>
 
@@ -533,10 +574,12 @@ async function handleDeleteGallery() {
         </RouterLink>
       </nav>
 
-      <div class="space-user" @click.stop="userMenuOpen = !userMenuOpen">
+      <div class="space-user" @keydown.esc.stop="closeMenuFromKeyboard">
+        <button class="space-user-trigger" type="button" :aria-expanded="userMenuOpen" aria-label="账户菜单" @click.stop="userMenuOpen = !userMenuOpen" @keydown.esc="userMenuOpen = false">
         <div class="space-avatar">{{ userInitial }}</div>
         <span class="space-user-name">{{ userDisplayName }}</span>
         <Icon name="chevron-down" :size="14" />
+        </button>
         <div v-if="userMenuOpen" class="space-user-menu" @click.stop>
           <button type="button" @click="handleLogout">退出登录</button>
         </div>
@@ -546,7 +589,7 @@ async function handleDeleteGallery() {
     <div class="space-body">
       <div class="space-heading">
         <h1>我的空间</h1>
-        <p>在这里创建、管理和编辑您的 3D 沉浸式画廊空间</p>
+        <p>从一组照片，到一场属于你的展览。</p>
       </div>
 
       <div class="space-toolbar">
@@ -614,6 +657,8 @@ async function handleDeleteGallery() {
               :class="{ active: viewMode === 'grid' }"
               type="button"
               title="网格视图"
+              aria-label="网格视图"
+              :aria-pressed="viewMode === 'grid'"
               @click="viewMode = 'grid'"
             >
               <Icon name="grid" :size="15" />
@@ -623,6 +668,8 @@ async function handleDeleteGallery() {
               :class="{ active: viewMode === 'list' }"
               type="button"
               title="列表视图"
+              aria-label="列表视图"
+              :aria-pressed="viewMode === 'list'"
               @click="viewMode = 'list'"
             >
               <Icon name="list" :size="15" />
@@ -636,6 +683,7 @@ async function handleDeleteGallery() {
               type="text"
               class="search-input"
               placeholder="搜索空间名称或地址"
+              aria-label="搜索空间名称或地址"
             />
           </div>
         </div>
@@ -654,7 +702,8 @@ async function handleDeleteGallery() {
           class="space-card"
           tabindex="0"
           @click="navigateToWorkspace(gallery.id)"
-          @keydown.enter="navigateToWorkspace(gallery.id)"
+          @keydown.enter.self="navigateToWorkspace(gallery.id)"
+          @keydown.space.prevent.self="navigateToWorkspace(gallery.id)"
         >
           <div class="card-cover">
             <img :src="coverFor(gallery)" class="cover-image" :alt="gallery.name" loading="lazy" />
@@ -688,11 +737,13 @@ async function handleDeleteGallery() {
                 <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
                 <span>{{ statusLabel(gallery) }}</span>
               </span>
-              <div class="more-wrap">
+              <div class="more-wrap" @keydown.esc.stop="closeMenuFromKeyboard">
                 <button
                   class="more-btn"
                   type="button"
                   aria-label="更多操作"
+                  :aria-expanded="menuId === gallery.id"
+                  @keydown.esc="menuId = null"
                   @click="toggleCardMenu(gallery.id, $event)"
                 >
                   <Icon name="more" :size="16" />
@@ -711,21 +762,9 @@ async function handleDeleteGallery() {
           </div>
         </article>
 
-        <button
-          v-if="canCreateGallery"
-          class="create-card"
-          type="button"
-          @click="openCreateModal"
-        >
-          <span class="create-plus">
-            <Icon name="plus" :size="22" />
-          </span>
-          <strong>新建空间</strong>
-          <span>创建一个新的 3D 画廊空间</span>
-        </button>
       </div>
 
-      <div v-else-if="filteredGalleries.length" class="space-list">
+      <div v-else-if="!loading && !loadError && filteredGalleries.length" class="space-list">
         <button
           v-for="gallery in filteredGalleries"
           :key="gallery.id"
@@ -756,14 +795,15 @@ async function handleDeleteGallery() {
         </button>
       </div>
 
-      <div v-else-if="galleries.length && !filteredGalleries.length" class="space-empty">
+      <div v-else-if="!loading && !loadError && galleries.length && !filteredGalleries.length" class="space-empty">
         <h3>未找到匹配的空间</h3>
         <p>没有找到与当前筛选或 “{{ searchQuery }}” 相关的空间。</p>
         <button class="btn btn-secondary" type="button" @click="searchQuery = ''; statusFilter = 'ALL'">重置筛选</button>
       </div>
 
-      <div v-else-if="loading" class="space-empty">
-        <h2>正在加载空间…</h2>
+      <div v-else-if="loading" class="space-loading" role="status" aria-live="polite">
+        <p>正在加载空间…</p>
+        <div class="space-grid" aria-hidden="true"><div v-for="n in 3" :key="n" class="space-skeleton"><div></div><span></span><span></span></div></div>
       </div>
 
       <div v-else-if="!galleries.length && !loadError" class="space-empty">
@@ -811,9 +851,11 @@ async function handleDeleteGallery() {
               <label class="form-label" for="input-gallery-name">空间名称</label>
               <input
                 id="input-gallery-name"
+                :disabled="creating"
                 v-model="createForm.name"
                 placeholder="例如：晨雾森林"
                 class="form-input"
+                maxlength="160"
                 required
                 @input="handleNameInput"
               />
@@ -822,21 +864,31 @@ async function handleDeleteGallery() {
               <label class="form-label" for="input-gallery-slug">访问地址</label>
               <input
                 id="input-gallery-slug"
+                :disabled="creating"
                 v-model="createForm.slug"
                 placeholder="例如：morning-forest"
                 class="form-input"
+                maxlength="80"
+                pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                title="使用小写字母、数字，多个单词之间使用单个连字符"
+                aria-describedby="gallery-slug-hint"
                 required
               />
-              <p class="form-hint">用于访客链接，可用字母、数字和连字符。中文名称会自动生成可用地址。</p>
+              <p id="gallery-slug-hint" class="form-hint">用于访客链接，可用小写字母、数字和连字符。中文名称会自动生成可用地址。</p>
             </div>
             <div class="form-group">
               <label class="form-label" for="select-gallery-visibility">访问权限</label>
-              <select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input">
+              <select id="select-gallery-visibility" v-model="createForm.visibility" class="select-input" :disabled="creating">
                 <option value="PUBLIC">公开</option>
                 <option value="PRIVATE">私密</option>
                 <option value="PASSWORD">密码保护</option>
               </select>
             </div>
+            <div v-if="createForm.visibility === 'PASSWORD'" class="form-group">
+              <label class="form-label" for="create-password">展厅访问密码</label>
+              <input id="create-password" v-model="createPassword" class="form-input" type="password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="至少 6 个字符，与登录密码无关" :disabled="creating" required />
+            </div>
+            <p class="form-hint">创建后先保存为草稿，完成发布后访客才能访问。</p>
             <div class="modal-actions">
               <button type="button" class="btn btn-secondary" :disabled="creating" @click="showCreateModal = false">取消</button>
               <button id="btn-create-submit" type="submit" class="btn btn-primary" :disabled="creating">
@@ -969,1156 +1021,4 @@ async function handleDeleteGallery() {
   </div>
 </template>
 
-<style scoped>
-/* ==========================================================================
-   1. Guest Auth Immersive Layout (Preserved from polished Login spec)
-   ========================================================================== */
-.auth-immersive {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: stretch;
-  justify-content: flex-end;
-  min-height: 100dvh;
-  overflow: hidden;
-  background-color: #c8e6d8;
-  background-image: url('/login-bg-c.jpg');
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
-}
-
-.auth-scene {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.auth-brand-mark {
-  position: absolute;
-  left: 8%;
-  bottom: 9%;
-  font-size: clamp(26px, 4.2vw, 48px);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.42);
-  text-transform: uppercase;
-  user-select: none;
-  text-shadow: 0 8px 28px rgba(6, 40, 28, 0.35);
-}
-
-.auth-card {
-  position: relative;
-  z-index: 1;
-  align-self: center;
-  margin: 24px 56px 24px 16px;
-  width: min(440px, calc(100vw - 48px));
-  padding: 38px 36px 34px;
-  border-radius: 22px;
-  color: #e8f5ef;
-  background: linear-gradient(155deg, rgba(14, 28, 24, 0.88), rgba(8, 20, 16, 0.92) 48%, rgba(6, 24, 18, 0.9));
-  backdrop-filter: blur(32px) saturate(160%);
-  -webkit-backdrop-filter: blur(32px) saturate(160%);
-  border: 1px solid rgba(167, 243, 208, 0.2);
-  box-shadow:
-    0 28px 64px rgba(4, 20, 14, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-    0 1px 0 rgba(255, 255, 255, 0.1) inset;
-}
-
-.auth-header {
-  text-align: center;
-  margin-bottom: 22px;
-}
-
-.auth-card .brand-badge {
-  display: inline-grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  margin-bottom: 14px;
-  border-radius: 14px;
-  color: #042f1e;
-  background: linear-gradient(135deg, #a7f3d0, #34d399 55%, #10b981);
-  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.35);
-}
-
-.auth-header h2 {
-  margin-bottom: 6px;
-  font-size: 22px;
-  font-weight: 750;
-  letter-spacing: 0.06em;
-  color: #f0fdf4;
-}
-
-.auth-header p {
-  font-size: 13px;
-  line-height: 1.5;
-  color: rgba(209, 250, 229, 0.72);
-}
-
-.auth-tabs {
-  display: flex;
-  gap: 28px;
-  margin-bottom: 22px;
-  padding: 0 2px;
-  background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.auth-tabs button {
-  position: relative;
-  flex: 0 0 auto;
-  padding: 10px 2px 12px;
-  border-radius: 0;
-  font-size: 14px;
-  font-weight: 650;
-  color: rgba(226, 245, 234, 0.48);
-  background: transparent;
-  transition: color 0.18s ease;
-}
-
-.auth-tabs button::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 2px;
-  background: transparent;
-  transition: background 0.18s ease;
-}
-
-.auth-tabs button.active {
-  color: #6ee7b7;
-  background: transparent;
-  box-shadow: none;
-}
-
-.auth-tabs button.active::after {
-  background: linear-gradient(90deg, #a7f3d0, #34d399);
-}
-
-.auth-card .form-error {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  color: #fecaca;
-  background: rgba(127, 29, 29, 0.35);
-  border: 1px solid rgba(248, 113, 113, 0.35);
-}
-
-.auth-card .form-label {
-  color: rgba(220, 252, 231, 0.82);
-}
-
-.field-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.forgot-link-btn {
-  background: none;
-  border: none;
-  color: #6ee7b7;
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0;
-}
-
-.forgot-link-btn:hover {
-  text-decoration: underline;
-}
-
-.forgot-success-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: rgba(16, 185, 129, 0.18);
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  color: #d1fae5;
-  margin-bottom: 16px;
-}
-
-.forgot-success-banner strong {
-  display: block;
-  font-size: 14px;
-  color: #6ee7b7;
-  margin-bottom: 4px;
-}
-
-.forgot-success-banner p {
-  font-size: 12.5px;
-  color: #a7f3d0;
-  margin: 0;
-  line-height: 1.4;
-}
-
-.forgot-footer {
-  text-align: center;
-  margin-top: 16px;
-}
-
-.link-btn {
-  background: none;
-  border: none;
-  color: #6ee7b7;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.link-btn:hover {
-  text-decoration: underline;
-}
-
-.auth-input-wrap {
-  position: relative;
-}
-
-.auth-input-icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: rgba(167, 243, 208, 0.7);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.auth-card .form-input {
-  padding-left: 38px;
-  color: #f0fdf4;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(167, 243, 208, 0.18);
-  box-shadow: none;
-}
-
-.auth-card .form-input::placeholder {
-  color: rgba(167, 243, 208, 0.35);
-}
-
-.auth-card .form-input:focus {
-  border-color: rgba(52, 211, 153, 0.65);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
-  background: rgba(255, 255, 255, 0.09);
-}
-
-.auth-submit {
-  width: 100%;
-  margin-top: 8px;
-  padding: 13px 16px;
-  font-size: 15px;
-  font-weight: 700;
-  border: none;
-  border-radius: 12px;
-  color: #042f1e !important;
-  background: linear-gradient(135deg, #d9f99d, #6ee7b7 42%, #34d399) !important;
-  box-shadow: 0 10px 28px rgba(52, 211, 153, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.25) inset !important;
-}
-
-.auth-submit:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: linear-gradient(135deg, #ecfccb, #86efac 45%, #10b981) !important;
-  box-shadow: 0 14px 32px rgba(52, 211, 153, 0.48), 0 0 0 1px rgba(255, 255, 255, 0.3) inset !important;
-}
-
-/* ==========================================================================
-   2. 我的空间 Layout
-   ========================================================================== */
-.space-page {
-  position: relative;
-  min-height: 100dvh;
-  color: #111827;
-  overflow-x: hidden;
-}
-
-.space-scene {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background-color: #dce8e2;
-  background-image: url('/overview-bg.png');
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
-}
-
-.space-scene::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.space-nav,
-.space-body {
-  position: relative;
-}
-
-/* 导航必须高于正文，否则用户下拉菜单会被 space-body 盖住无法点击。 */
-.space-nav {
-  z-index: 50;
-}
-
-.space-body {
-  z-index: 1;
-}
-
-.space-nav {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  width: min(1240px, calc(100% - 48px));
-  margin: 18px auto 0;
-  padding: 10px 22px;
-  height: 64px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  box-shadow: 0 10px 32px rgba(15, 40, 28, 0.08);
-}
-
-.space-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  justify-self: start;
-}
-
-.fold-mark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-}
-
-.fold-mark svg {
-  width: 30px;
-  height: 30px;
-}
-
-.space-brand-name {
-  font-size: 16px;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: #111827;
-}
-
-.space-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  height: 100%;
-}
-
-.space-tab {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px;
-  color: #9ca3af;
-  font-size: 14px;
-  font-weight: 650;
-  height: 100%;
-}
-
-.space-tab.is-active,
-.space-tab.router-link-active {
-  color: #00b88f;
-}
-
-.space-tab.is-active::after,
-.space-tab.router-link-exact-active::after {
-  content: "";
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 8px;
-  height: 3px;
-  border-radius: 999px;
-  background: #00b88f;
-}
-
-.space-user {
-  position: relative;
-  z-index: 20;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  justify-self: end;
-  padding: 4px;
-  cursor: pointer;
-  color: #374151;
-}
-
-.space-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #12b981;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.space-user-name {
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.space-user-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 30;
-  min-width: 140px;
-  padding: 6px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-}
-
-.space-user-menu button {
-  width: 100%;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: #374151;
-}
-
-.space-user-menu button:hover {
-  background: #f3f4f6;
-}
-
-.space-body {
-  width: min(1240px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 28px 0 72px;
-}
-
-.space-heading h1 {
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: #111827;
-  line-height: 1.2;
-}
-
-.space-heading p {
-  margin-top: 8px;
-  font-size: 14px;
-  color: #6b7280;
-}
-
-.space-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 22px 0;
-  flex-wrap: wrap;
-}
-
-.space-create-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 12px;
-  background: #00b88f;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  box-shadow: 0 8px 20px rgba(0, 184, 143, 0.28);
-  border: none;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.space-create-btn:hover {
-  background: #00a67f;
-}
-
-.status-filter-group {
-  display: flex;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 4px;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
-}
-
-.status-tab-btn {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 650;
-  color: #6b7280;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.status-tab-btn:hover {
-  color: #00b88f;
-}
-
-.status-tab-btn.active {
-  background: #00b88f;
-  color: #fff;
-}
-
-.space-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-  flex-wrap: wrap;
-}
-
-.sort-select {
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: none;
-  background: rgba(255, 255, 255, 0.92);
-  color: #374151;
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
-  cursor: pointer;
-}
-
-.sort-select:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px #00b88f;
-}
-
-.view-toggle {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.88);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
-}
-
-.view-btn {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  border: none;
-  color: #9ca3af;
-  background: transparent;
-  cursor: pointer;
-}
-
-.view-btn.active {
-  background: #00b88f;
-  color: #fff;
-}
-
-.search-box {
-  position: relative;
-  width: 240px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #9ca3af;
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  height: 38px;
-  padding: 0 16px 0 38px;
-  border: none;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #111827;
-  font-size: 13px;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
-}
-
-.search-input:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(0, 184, 143, 0.18);
-}
-
-.space-error {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.space-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 22px;
-}
-
-.space-card {
-  background: #fff;
-  border-radius: 16px;
-  overflow: hidden;
-  cursor: pointer;
-  box-shadow: 0 8px 24px rgba(15, 40, 28, 0.07);
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
-}
-
-.space-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 16px 32px rgba(15, 40, 28, 0.12);
-}
-
-.card-cover {
-  position: relative;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  background: #e8f5ef;
-}
-
-.cover-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.vis-tag {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-}
-
-.vis-tag.is-public {
-  background: rgba(255, 255, 255, 0.92);
-  color: #00b88f;
-}
-
-.vis-tag.is-private {
-  background: rgba(255, 255, 255, 0.92);
-  color: #4b5563;
-}
-
-.vis-tag.is-password {
-  background: rgba(255, 255, 255, 0.92);
-  color: #b45309;
-}
-
-.badge-draft-config {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 750;
-  background: #fef3c7;
-  color: #b45309;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.badge-draft-config-inline {
-  display: inline-block;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 750;
-  background: #fef3c7;
-  color: #b45309;
-}
-
-.card-body {
-  padding: 14px 16px 12px;
-}
-
-.card-title-row h2 {
-  font-size: 16px;
-  font-weight: 750;
-  color: #111827;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.card-metrics-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.metric-item {
-  font-weight: 600;
-}
-
-.metric-badge {
-  padding: 1px 6px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.metric-badge.processing,
-.metric-badge.processing-sm {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.metric-badge.failed,
-.metric-badge.failed-sm {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.card-date {
-  margin-top: 6px;
-  font-size: 11px;
-  color: #9ca3af;
-}
-
-.card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid #f3f4f6;
-}
-
-.status-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #6b7280;
-  font-weight: 650;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #d1d5db;
-}
-
-.status-dot.is-live {
-  background: #00b88f;
-}
-
-.status-dot.is-draft {
-  background: #f59e0b;
-}
-
-.more-wrap {
-  position: relative;
-}
-
-.more-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #9ca3af;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.more-btn:hover {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-.card-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
-  min-width: 132px;
-  padding: 6px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-  z-index: 30;
-}
-
-.card-menu button {
-  width: 100%;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: #374151;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.card-menu button:hover {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.card-menu button.card-menu-danger {
-  color: #dc2626;
-  border-top: 1px solid #f1f5f9;
-  margin-top: 4px;
-  padding-top: 10px;
-  border-radius: 8px 8px 0 0;
-}
-
-.card-menu button.card-menu-danger:hover {
-  background: #fef2f2;
-  color: #b91c1c;
-}
-
-.modal-icon-bubble.is-danger {
-  color: #dc2626;
-  background: #fef2f2;
-}
-
-.delete-warning {
-  margin: 0 0 14px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #7f1d1d;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-}
-
-.btn-danger-solid {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 20px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 650;
-  background: #dc2626;
-  color: #ffffff;
-  border: none;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.btn-danger-solid:hover:not(:disabled) {
-  background: #b91c1c;
-}
-
-.btn-danger-solid:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.create-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 268px;
-  border-radius: 16px;
-  border: 1.5px dashed #7dd3b5;
-  background: rgba(236, 253, 245, 0.62);
-  color: #00b88f;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.create-card strong {
-  font-size: 16px;
-  font-weight: 750;
-}
-
-.create-card span:last-child {
-  font-size: 12px;
-  font-weight: 500;
-  color: #9ca3af;
-}
-
-.create-plus {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 184, 143, 0.14);
-  color: #047857;
-  margin-bottom: 4px;
-}
-
-.create-card:hover {
-  background: rgba(220, 252, 231, 0.78);
-}
-
-.space-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.list-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 14px;
-  border: none;
-  text-align: left;
-  box-shadow: 0 4px 16px rgba(15, 40, 28, 0.06);
-  cursor: pointer;
-  transition: transform 0.15s ease;
-}
-
-.list-row:hover {
-  transform: translateX(2px);
-}
-
-.list-thumb {
-  width: 72px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 8px;
-}
-
-.list-copy {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  gap: 4px;
-}
-
-.list-head-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.list-head-row strong {
-  font-size: 14px;
-  color: #111827;
-}
-
-.list-meta-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.list-row .vis-tag {
-  position: static;
-}
-
-.space-empty {
-  text-align: center;
-  padding: 64px 20px;
-  background: rgba(255, 255, 255, 0.72);
-  border-radius: 16px;
-}
-
-.space-empty h2,
-.space-empty h3 {
-  font-size: 20px;
-  color: #111827;
-}
-
-.space-empty p {
-  margin: 8px 0 16px;
-  color: #6b7280;
-}
-
-.form-hint {
-  margin: 6px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #6b7280;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: grid;
-  place-items: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.modal-card {
-  position: relative;
-  z-index: 1;
-  pointer-events: auto;
-  background: #fff;
-  border-radius: 22px;
-  padding: 32px;
-  width: min(480px, 100%);
-  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.22);
-}
-
-.modal-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 22px;
-}
-
-.modal-title-box {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.modal-icon-bubble {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: #ecfdf5;
-  color: #059669;
-  display: grid;
-  place-items: center;
-}
-
-.modal-title-box h2 {
-  font-size: 18px;
-  font-weight: 750;
-  color: #111827;
-  margin: 0;
-}
-
-.modal-title-box p {
-  font-size: 13px;
-  color: #6b7280;
-  margin: 0;
-}
-
-.modal-close {
-  color: #9ca3af;
-  padding: 6px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.space-page .form-error {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  color: #dc2626;
-  background: #fef2f2;
-}
-
-.spin {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-  transition: all 0.2s ease;
-}
-
-.modal-backdrop.modal-fade-leave-active {
-  pointer-events: none;
-}
-
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-  opacity: 0;
-}
-
-@media (max-width: 1180px) {
-  .space-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 900px) {
-  .space-nav {
-    grid-template-columns: auto 1fr auto;
-    width: calc(100% - 24px);
-    padding: 8px 12px;
-  }
-
-  .space-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .space-body {
-    width: calc(100% - 24px);
-  }
-}
-
-@media (max-width: 640px) {
-  .space-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .space-tabs span {
-    display: none;
-  }
-
-  .search-box {
-    width: 160px;
-  }
-}
-</style>
+<style scoped src="../styles/overview.css"></style>

@@ -1,37 +1,40 @@
 :root {
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-serif: 'Playfair Display', Georgia, serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-
-  --bg-deep: #070a0d;
-  --bg-surface: #10171d;
-  --text-main: #f8fafc;
-  --text-sub: #94a3b8;
-  --brand-emerald: var(--accent, #10b981);
-  --brand-emerald-glow: color-mix(in srgb, var(--accent, #10b981) 40%, transparent);
-
-  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-html, body {
-  width: 100%;
-  height: 100%;
-  background-color: var(--bg-deep);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-synthesis: none;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-serif: Georgia, 'Songti SC', 'SimSun', serif;
+  --font-mono: ui-monospace, 'Cascadia Code', monospace;
+  --bg-deep: #f4f3ef;
+  --bg-surface: #fffefa;
+  --text-main: #202824;
+  --text-sub: #626c65;
+  --text-muted: #626c65;
+  --accent: #26735d;
+  --accent-strong: #1b5746;
+  --border: #dcded5;
+  --brand-emerald: var(--accent);
+  --ease-smooth: cubic-bezier(.16, 1, .3, 1);
+  color-scheme: light;
   color: var(--text-main);
-  font-family: var(--font-sans);
-  overflow-x: hidden;
+  background: var(--bg-deep);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-
-button {
-  font: inherit;
-  cursor: pointer;
-  border: none;
-  background: none;
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+html, body, #app { width: 100%; min-height: 100%; }
+html { scroll-padding-top: 110px; }
+body { min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: default; }
+a { color: inherit; text-underline-offset: .2em; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 4px;
 }
+::selection { color: #fffefa; background: #26735d; }
+input { caret-color: var(--accent); }
+input::placeholder { color: var(--text-sub); opacity: 1; }
+* { scrollbar-width: thin; scrollbar-color: #a7b2a8 transparent; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

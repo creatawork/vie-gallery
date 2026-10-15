@@ -32,7 +32,9 @@ export class BackgroundPlugin implements ViewerPlugin {
   private updateBackground = (): void => {
     if (!this.context) return
     const config = this.context.config.background
-    const signature = JSON.stringify(config)
+    const imageUrl = config?.mode === 'image' && config.image?.url
+      ? backgroundTextureUrl(config.image.url, this.context.getQuality()) : null
+    const signature = JSON.stringify([config, imageUrl])
     if (signature === this.signature) return
     this.signature = signature
     // Every applied state change invalidates any in-flight image load.
@@ -52,7 +54,7 @@ export class BackgroundPlugin implements ViewerPlugin {
       this.context.scene.background = new THREE.Color(config?.color ?? '#0f172a'); return
     }
     if (config.mode === 'image' && config.image?.url) {
-      const url = backgroundTextureUrl(config.image.url, this.context.getQuality())
+      const url = imageUrl!
       const loader = new THREE.TextureLoader()
       let finished = false
       const applyTexture = (texture: THREE.Texture, sourceUrl = url): void => {

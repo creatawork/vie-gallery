@@ -7,7 +7,7 @@ export class AmbientField {
   constructor() {
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
       depthTest: false, depthWrite: false,
-      uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uBase: { value: new THREE.Color('#080c15') }, uTone: { value: new THREE.Color('#263951') } },
+      uniforms: { uTime: { value: 0 }, uEnergy: { value: 0 }, uBase: { value: new THREE.Color('#111a17') }, uTone: { value: new THREE.Color('#263b32') } },
       vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=vec4(position.xy,0.999,1.0);}',
       fragmentShader: `varying vec2 vUv; uniform float uTime,uEnergy; uniform vec3 uBase,uTone;
       void main(){

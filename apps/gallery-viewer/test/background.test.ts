@@ -84,6 +84,22 @@ test('low quality devices load the lower resolution panorama variant', () => {
   assert.equal(info.width, 2048)
   plugin.uninstall(); loader.restore()
 })
+
+test('adaptive quality replaces a resident full panorama with its smaller variant', () => {
+  const context = createViewerContext(normalizeViewerConfig({ quality: 'high', background: { mode: 'image', color: '#0f172a', image: { url: '/g/backgrounds/minimal.webp' } } }).config)
+  const loader = controlTextureLoader()
+  const plugin = new BackgroundPlugin()
+  try {
+    plugin.install(context)
+    const full = loader.succeed(0)
+    context.config.quality = 'low'
+    context.emit('config:update', context.config)
+    assert.equal(loader.calls[2]?.url, `/g/backgrounds/minimal-low.webp?v=${SCENE_BACKGROUND_VERSION}`)
+    loader.succeed(2)
+    assert.equal(full.disposals(), 1)
+    assert.equal(plugin.getInfo().url, `/g/backgrounds/minimal-low.webp?v=${SCENE_BACKGROUND_VERSION}`)
+  } finally { plugin.uninstall(); loader.restore() }
+})
 test('builtin background textures use equirectangular mapping', () => {
   const context = createViewerContext(normalizeViewerConfig({ background: { mode: 'image', color: '#0f172a', image: { url: '/g/backgrounds/minimal.webp' } } }).config)
   const loader = controlTextureLoader()

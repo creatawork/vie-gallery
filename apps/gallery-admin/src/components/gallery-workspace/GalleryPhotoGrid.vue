@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import Sortable from 'sortablejs'
 import type { WorkspacePhoto } from '../../composables/useGalleryWorkspace'
-import { useCardTiltBatch } from '../../composables/useCardTilt'
 import { usePhotoCuration } from '../../composables/usePhotoCuration'
 import GalleryPhotoCard from './GalleryPhotoCard.vue'
 import Icon from '../Icon.vue'
@@ -43,19 +42,6 @@ const {
 } = usePhotoCuration({
   photos: () => props.photos
 })
-
-// Enable 3D tilt effect for photo cards
-const { refresh: refreshTilt } = useCardTiltBatch(gridRef, '.photo-card', {
-  maxTilt: 8,
-  speed: 300,
-  glare: true
-})
-
-// Refresh 3D tilt effect when photos change
-watch(() => props.photos, async () => {
-  await nextTick()
-  refreshTilt()
-}, { flush: 'post' })
 
 // 拖拽排序：仅在"全部"视图且可写时启用。
 let sortableInstance: Sortable | null = null
@@ -221,7 +207,7 @@ defineExpose({ clearSelection })
     <!-- Empty Photos State -->
     <div v-else class="empty-photos-panel">
       <slot name="dropzone"></slot>
-      <div class="empty-box-content">
+      <div v-if="photos.length || !canWrite" class="empty-box-content">
         <div class="empty-photo-icon">
           <Icon name="photo" :size="32" />
         </div>
@@ -298,23 +284,23 @@ defineExpose({ clearSelection })
   border-radius: 9999px;
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--text-secondary);
   background: rgba(241, 245, 249, 0.8);
   border: 1px solid rgba(226, 232, 240, 0.8);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .category-pill:hover {
-  color: #0f172a;
-  background: #ffffff;
+  color: var(--text-primary);
+  background: var(--bg-surface);
 }
 
 .category-pill.active {
-  color: #047857;
-  background: #ffffff;
-  border-color: rgba(16, 185, 129, 0.35);
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.12);
+  color: var(--brand-deep);
+  background: var(--bg-surface);
+  border-color: var(--mint-soft);
+  box-shadow: 0 2px 8px var(--mint-soft);
 }
 
 .count-tag {
@@ -326,8 +312,8 @@ defineExpose({ clearSelection })
 }
 
 .count-tag.is-ready {
-  background: rgba(16, 185, 129, 0.15);
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
 }
 
 .count-tag.is-processing {
@@ -365,7 +351,7 @@ defineExpose({ clearSelection })
   background: #fef3c7;
   border: 1px solid #fde68a;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .btn-retry-tool:hover {
@@ -380,15 +366,15 @@ defineExpose({ clearSelection })
   border-radius: 8px;
   font-size: 12.5px;
   font-weight: 600;
-  color: #475569;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  color: var(--text-secondary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
   cursor: pointer;
 }
 
 .select-all-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .photo-search-input {
@@ -396,28 +382,28 @@ defineExpose({ clearSelection })
   height: 32px;
   padding: 0 12px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #0f172a;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-size: 12.5px;
 }
 
 .photo-search-input:focus {
   outline: none;
-  border-color: rgba(16, 185, 129, 0.55);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  border-color: var(--mint-soft);
+  box-shadow: 0 0 0 3px var(--mint-soft);
 }
 
 .sort-disabled-hint {
   margin: 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-tertiary);
 }
 
 .clear-filter-btn {
-  color: #047857;
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  background: #ffffff;
+  color: var(--brand-deep);
+  border: 1px solid var(--mint-soft);
+  background: var(--bg-surface);
 }
 
 .photos-masonry-grid {
@@ -465,29 +451,29 @@ defineExpose({ clearSelection })
   text-align: center;
   border-radius: 16px;
   border: 1px dashed rgba(203, 213, 225, 0.8);
-  background: #ffffff;
+  background: var(--bg-surface);
 }
 
 .empty-photo-icon {
   width: 50px;
   height: 50px;
-  border-radius: 14px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
-  color: #059669;
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  color: var(--brand-accent);
+  background: linear-gradient(135deg, var(--mint-soft), var(--mint-soft));
 }
 
 .empty-box-content h3 {
   font-size: 15px;
   font-weight: 750;
-  color: #0f172a;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .empty-box-content p {
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-secondary);
   max-width: 400px;
   margin: 0;
 }
@@ -503,8 +489,8 @@ defineExpose({ clearSelection })
   align-items: center;
   gap: 18px;
   padding: 10px 20px;
-  background: #0f172a;
-  color: #ffffff;
+  background: var(--text-primary);
+  color: var(--bg-surface);
   border-radius: 9999px;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.35);
 }
@@ -518,8 +504,8 @@ defineExpose({ clearSelection })
 }
 
 .batch-selected-badge {
-  background: var(--brand-accent, #10b981);
-  color: #ffffff;
+  background: var(--brand-accent);
+  color: var(--bg-surface);
   font-size: 12px;
   font-weight: 750;
   padding: 2px 8px;
@@ -563,7 +549,7 @@ defineExpose({ clearSelection })
 
 .btn-batch-cancel:hover {
   background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  color: var(--bg-surface);
 }
 
 .btn-danger {
@@ -575,7 +561,7 @@ defineExpose({ clearSelection })
   font-size: 12.5px;
   font-weight: 600;
   background: #ef4444;
-  color: #ffffff;
+  color: var(--bg-surface);
   border: none;
   cursor: pointer;
 }
@@ -586,7 +572,7 @@ defineExpose({ clearSelection })
 
 .slide-up-enter-active,
 .slide-up-leave-active {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color .18s, border-color .18s, color .18s;
 }
 
 .slide-up-enter-from,

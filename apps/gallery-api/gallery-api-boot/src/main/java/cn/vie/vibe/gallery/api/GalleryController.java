@@ -125,8 +125,13 @@ public class GalleryController {
         if (gallery.status() == GalleryStatus.ARCHIVED) {
             blockers.add(new PublishBlocker("GALLERY_ARCHIVED", "已归档的展厅无法重新发布。"));
         }
+        if (gallery.visibility() == GalleryVisibility.PASSWORD &&
+                (gallery.passwordHash() == null || gallery.passwordHash().isBlank())) {
+            blockers.add(new PublishBlocker("PASSWORD_REQUIRED", "请先设置展厅访问密码，再发布展厅。"));
+        }
 
-        boolean configDraftChanged = false;
+        // A first publication must pin the recommended scene as a version snapshot.
+        boolean configDraftChanged = true;
         String publishedVersionId = null;
         String draftVersionId = null;
         Instant lastConfigPublishedAt = null;

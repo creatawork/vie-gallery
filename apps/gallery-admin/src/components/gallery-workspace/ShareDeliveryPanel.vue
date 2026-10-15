@@ -105,7 +105,12 @@ async function handleVisibilityChange(event: Event) {
   switchingVisibility.value = true
   try {
     await updateGalleryVisibility(newVis)
-    toast.success(`访问模式已更新为「${newVis === 'PUBLIC' ? '公开' : newVis === 'PASSWORD' ? '密码保护' : '私密'}」`)
+    if (newVis === 'PASSWORD') {
+      editingPassword.value = true
+      toast.info(props.gallery.status === 'PUBLISHED' ? '展厅已撤回，请设置访问密码后重新发布。' : '已切换为密码保护，请设置访问密码后再发布。')
+    } else {
+      toast.success(`访问模式已更新为「${newVis === 'PUBLIC' ? '公开' : '私密'}」`)
+    }
     emit('gallery-updated')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '更新访问模式失败。')
@@ -121,7 +126,7 @@ const newPasswordInput = ref('')
 
 watch(() => props.show, (isShown) => {
   if (isShown && props.gallery) {
-    editingPassword.value = false
+    editingPassword.value = props.gallery.visibility === 'PASSWORD' && props.gallery.status !== 'PUBLISHED'
     newPasswordInput.value = ''
     copied.value = false
     generatedPosterUrl.value = null
@@ -210,11 +215,12 @@ async function handleSavePassword() {
 }
 
 async function handleClearPassword() {
+  const wasPublished = props.gallery?.status === 'PUBLISHED'
   try {
     await clearGalleryPassword()
-    editingPassword.value = false
+    editingPassword.value = true
     newPasswordInput.value = ''
-    toast.success('相册访问密码已清除。')
+    toast.info(wasPublished ? '展厅已撤回，请设置新密码后重新发布。' : '访问密码已清除，请设置新密码后再发布。')
     emit('gallery-updated')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '清除密码失败。')
@@ -232,7 +238,7 @@ function shareStatusLabel(status: string) {
 <template>
   <Transition name="modal-fade">
     <div v-if="show" class="modal-backdrop" @click.self="$emit('close')">
-      <div ref="modalRoot" class="share-modal-card" role="dialog" aria-modal="true" tabindex="-1">
+      <div ref="modalRoot" class="share-modal-card" role="dialog" aria-modal="true" aria-labelledby="share-delivery-title" tabindex="-1">
         <!-- Header -->
         <header class="modal-header">
           <div class="header-title">
@@ -240,7 +246,7 @@ function shareStatusLabel(status: string) {
               <Icon name="share" :size="20" />
             </div>
             <div>
-              <h3>{{ publicUrl ? '展览已就绪' : '分享展厅' }}</h3>
+              <h3 id="share-delivery-title">{{ publicUrl ? '展览已就绪' : '分享展厅' }}</h3>
               <p v-if="gallery">{{ publicUrl ? `把「${gallery.name}」分享给朋友，打开就能看。` : `设置「${gallery.name}」的访问方式` }}</p>
             </div>
           </div>
@@ -271,6 +277,7 @@ function shareStatusLabel(status: string) {
                 <select
                   id="delivery-visibility-select"
                   :value="gallery?.visibility"
+                  aria-label="展厅访问方式"
                   :disabled="switchingVisibility"
                   class="visibility-select"
                   @change="handleVisibilityChange"
@@ -312,9 +319,12 @@ function shareStatusLabel(status: string) {
                 </button>
               </div>
               <div v-if="editingPassword" class="password-form">
+                <p class="password-hint">保存至少 6 位访问密码，访客收到链接后凭密码进入。</p>
                 <input
+                  aria-label="相册访问密码"
                   v-model="newPasswordInput"
                   type="password"
+                  autocomplete="new-password"
                   class="pwd-input"
                   placeholder="输入至少 6 位访问密码"
                   maxlength="64"
@@ -586,11 +596,11 @@ function shareStatusLabel(status: string) {
 
 <style scoped>
 .direct-share { display:grid; gap:14px; padding-bottom:24px; }
-.direct-share label { color:#475569; font-size:13px; }
-.direct-share input { width:100%; box-sizing:border-box; border:1px solid #d8e1ec; border-radius:10px; padding:14px; background:#f6f8fb; color:#233a55; font:14px system-ui; }
+.direct-share label { color:var(--text-secondary); font-size:13px; }
+.direct-share input { width:100%; box-sizing:border-box; border:1px solid var(--border-strong); border-radius:10px; padding:14px; background:var(--bg-app); color:var(--text-primary); font-size:14px; font-family:var(--font-sans); }
 .direct-share-actions { display:flex; gap:10px; flex-wrap:wrap; }
 .direct-share-actions a { text-decoration:none; }
-.share-options > summary { cursor:pointer; color:#64748b; font-size:13px; padding:14px 0; }
+.share-options > summary { cursor:pointer; color:var(--text-secondary); font-size:13px; padding:14px 0; }
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -606,10 +616,10 @@ function shareStatusLabel(status: string) {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
-  border-radius: 20px;
+  background: var(--bg-surface);
+  border-radius: 12px;
   box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
-  font-family: var(--font-family, 'Plus Jakarta Sans', system-ui, sans-serif);
+  font-family: var(--font-sans);
   overflow: hidden;
 }
 
@@ -618,7 +628,7 @@ function shareStatusLabel(status: string) {
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--bg-app);
 }
 
 .header-title {
@@ -633,28 +643,30 @@ function shareStatusLabel(status: string) {
   border-radius: 12px;
   display: grid;
   place-items: center;
-  background: rgba(16, 185, 129, 0.12);
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
 }
 
 .header-title h3 {
   font-size: 17px;
   font-weight: 750;
-  color: #0f172a;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .header-title p {
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--text-secondary);
   margin: 2px 0 0;
 }
 
 .close-icon-btn {
+  min-width: 40px;
+  min-height: 40px;
   padding: 6px;
   border-radius: 50%;
-  background: #f8fafc;
-  color: #64748b;
+  background: var(--bg-app);
+  color: var(--text-secondary);
   cursor: pointer;
   border: none;
   display: grid;
@@ -662,8 +674,8 @@ function shareStatusLabel(status: string) {
 }
 
 .close-icon-btn:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--bg-app);
+  color: var(--text-primary);
 }
 
 .modal-body {
@@ -692,15 +704,15 @@ function shareStatusLabel(status: string) {
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid #cbd5e1;
-  background-color: #ffffff;
+  background-color: var(--bg-surface);
   color: #334155;
   cursor: pointer;
   outline: none;
 }
 
 .visibility-select:focus {
-  border-color: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 2px var(--mint-soft);
 }
 
 .section-title {
@@ -716,16 +728,16 @@ function shareStatusLabel(status: string) {
 .mode-banner {
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
 .mode-banner.is-public {
-  background: #ecfdf5;
-  border-color: rgba(16, 185, 129, 0.3);
+  background: var(--mint-soft);
+  border-color: var(--mint-soft);
 }
 
 .mode-banner.is-password {
@@ -737,19 +749,19 @@ function shareStatusLabel(status: string) {
   display: inline-block;
   font-size: 12px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .mode-desc {
   font-size: 12.5px;
-  color: #475569;
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
 .password-box {
   margin-top: 6px;
   padding: 12px 14px;
-  background: #f8fafc;
+  background: var(--bg-app);
   border-radius: 10px;
   border: 1px dashed #cbd5e1;
 }
@@ -784,7 +796,7 @@ function shareStatusLabel(status: string) {
 .password-hint {
   margin: 6px 0 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .download-info-row {
@@ -793,8 +805,8 @@ function shareStatusLabel(status: string) {
   gap: 6px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
 }
 
 .download-status-badge {
@@ -809,19 +821,19 @@ function shareStatusLabel(status: string) {
 }
 
 .download-status-badge.is-allowed {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
 }
 
 .download-status-badge.is-disabled {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--bg-app);
+  color: var(--text-secondary);
 }
 
 .download-tip {
   margin: 0;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .config-link {
@@ -830,7 +842,7 @@ function shareStatusLabel(status: string) {
   gap: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: #00b88f;
+  color: var(--brand-accent);
   background: none;
   border: none;
   cursor: pointer;
@@ -851,7 +863,7 @@ function shareStatusLabel(status: string) {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #475569;
+  color: var(--text-secondary);
 }
 
 .expiry-select {
@@ -859,7 +871,7 @@ function shareStatusLabel(status: string) {
   border-radius: 8px;
   border: 1px solid #cbd5e1;
   font-size: 13px;
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .generate-btn {
@@ -881,9 +893,9 @@ function shareStatusLabel(status: string) {
 /* Confirmation box */
 .confirmation-box {
   padding: 14px 16px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
-  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--mint-soft), var(--mint-soft));
+  border: 1px solid var(--mint-soft);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -901,14 +913,14 @@ function shareStatusLabel(status: string) {
   gap: 4px;
   font-size: 12.5px;
   font-weight: 750;
-  color: #047857;
+  color: var(--brand-deep);
 }
 
 .remaining-tag {
   font-size: 11.5px;
   font-weight: 600;
-  color: #059669;
-  background: rgba(16, 185, 129, 0.15);
+  color: var(--brand-accent);
+  background: var(--mint-soft);
   padding: 2px 8px;
   border-radius: 9999px;
 }
@@ -924,9 +936,9 @@ function shareStatusLabel(status: string) {
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid #a7f3d0;
-  background: #ffffff;
+  background: var(--bg-surface);
   font-size: 12.5px;
-  color: #065f46;
+  color: var(--brand-deep);
 }
 
 .btn-copy {
@@ -937,31 +949,31 @@ function shareStatusLabel(status: string) {
   border-radius: 8px;
   font-size: 12.5px;
   font-weight: 700;
-  background: #00b88f;
-  color: #fff;
+  background: var(--brand-accent);
+  color: var(--bg-surface);
   border: none;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .btn-copy:hover {
-  background: #047857;
+  background: var(--brand-deep);
 }
 
 .delivery-note {
   margin: 0;
   font-size: 11.5px;
-  color: #047857;
+  color: var(--brand-deep);
 }
 
 .full-url-note {
-  color: #64748b;
+  color: var(--text-secondary);
   word-break: break-all;
 }
 
 .full-url-text {
   font-size: 11px;
-  color: #475569;
+  color: var(--text-secondary);
 }
 
 .poster-preview {
@@ -984,10 +996,10 @@ function shareStatusLabel(status: string) {
   padding: 20px;
   text-align: center;
   font-size: 12.5px;
-  color: #94a3b8;
-  background: #f8fafc;
+  color: var(--text-tertiary);
+  background: var(--bg-app);
   border-radius: 12px;
-  border: 1px dashed #e2e8f0;
+  border: 1px dashed var(--border-strong);
 }
 
 .links-list {
@@ -1005,7 +1017,7 @@ function shareStatusLabel(status: string) {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
-  background: #f8fafc;
+  background: var(--bg-app);
   border-radius: 10px;
   border: 1px solid #eef2f6;
   flex-wrap: wrap;
@@ -1014,7 +1026,7 @@ function shareStatusLabel(status: string) {
 .link-share-row {
   width: 100%;
   padding-top: 8px;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--border-strong);
 }
 
 .link-item.status-revoked,
@@ -1042,13 +1054,13 @@ function shareStatusLabel(status: string) {
 }
 
 .status-pill.is-active {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--mint-soft);
+  color: var(--brand-deep);
 }
 
 .status-pill.is-expired {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--bg-app);
+  color: var(--text-secondary);
 }
 
 .status-pill.is-revoked {
@@ -1058,12 +1070,12 @@ function shareStatusLabel(status: string) {
 
 .time-pill {
   font-size: 11px;
-  color: #475569;
+  color: var(--text-secondary);
 }
 
 .link-meta-row {
   font-size: 11.5px;
-  color: #94a3b8;
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1078,7 +1090,7 @@ function shareStatusLabel(status: string) {
   align-items: center;
   gap: 6px;
   font-size: 11.5px;
-  color: #047857;
+  color: var(--brand-deep);
 }
 
 .link-short-url {
@@ -1098,14 +1110,14 @@ function shareStatusLabel(status: string) {
   align-items: center;
   justify-content: flex-end;
   padding: 14px 24px;
-  border-top: 1px solid #f1f5f9;
-  background: #f8fafc;
+  border-top: 1px solid var(--bg-app);
+  background: var(--bg-app);
 }
 
 .btn-link {
   background: none;
   border: none;
-  color: #00b88f;
+  color: var(--brand-accent);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;

@@ -8,18 +8,33 @@ test('quality changes all budgets together while requested scene remains unchang
   await page.goto('/g/effects-fixture')
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().effectiveQuality)).toBe('high')
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.drainFrames().length)).toBeGreaterThan(0)
+  // Base frames render before optional effects load. Sample the real output chain,
+  // rather than the diagnostic 1 × 1 placeholder used during that startup phase.
+  await expect.poll(() => page.evaluate(() => {
+    const post = window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().postProcessing
+    return performance.getEntriesByName('viewer:effects-ready').length > 0 && post.bloom && post.width > 1 && post.height > 1
+  })).toBe(true)
   const before = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot())
   const start = await page.evaluate(() => performance.now() + 10000)
   const samples = (from: number, count: number, fps: number) => page.evaluate(({ start, from, count, fps }) => Array.from({ length: count }, (_, i) => window.__VIE_VIEWER_DIAGNOSTICS__!.sampleQuality({ nowMs: start + (from + i) * 1000, fps, idle: false, hidden: false, loading: false, transitioning: false, contextLost: false })), { start, from, count, fps })
   const decisions = await page.evaluate(start => Array.from({ length: 3 }, (_, second) => window.__VIE_VIEWER_DIAGNOSTICS__!.sampleQuality({ nowMs: start + second * 1000, fps: 25, idle: false, hidden: false, loading: false, transitioning: false, contextLost: false })), start)
   expect(decisions.map(value => value.quality)).toEqual(['high', 'high', 'mid'])
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().textures.budget.maxEdge)).toBe(1024)
+  // Texture admission changes synchronously; compositor resize commits later.
+  await expect.poll(() => page.evaluate(previousWidth => {
+    const post = window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().postProcessing
+    return post.bloom && post.width > 1 && post.width < previousWidth
+  }, before.postProcessing.width)).toBe(true)
   let mid = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot())
   expect(mid.effectiveQuality).toBe('mid')
   expect(mid.postProcessing.width).toBeLessThan(before.postProcessing.width)
   expect(Object.values(mid.particleCounts).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(700)
   await samples(12, 3, 25)
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().textures.budget.maxEdge)).toBe(512)
+  await expect.poll(() => page.evaluate(previousWidth => {
+    const post = window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().postProcessing
+    return post.bloom && post.width > 1 && post.width < previousWidth
+  }, mid.postProcessing.width)).toBe(true)
   const low = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot())
   expect(low.effectiveQuality).toBe('low')
   expect(low.postProcessing.width).toBeLessThan(mid.postProcessing.width)
@@ -29,6 +44,7 @@ test('quality changes all budgets together while requested scene remains unchang
   expect(low.requested).toEqual(before.requested)
   await samples(25, 8, 60)
   await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().effectiveQuality)).toBe('mid')
+  await expect.poll(() => page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot().postProcessing.width)).toBe(mid.postProcessing.width)
   mid = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.snapshot())
   expect(mid.requested).toEqual(before.requested)
   const frames = await page.evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__!.drainFrames())
