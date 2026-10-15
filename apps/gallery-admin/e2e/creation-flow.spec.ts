@@ -251,6 +251,67 @@ test.describe('创作链路', () => {
     await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('lightbox-portrait.png') })
   })
 
+
+  test('卡片内键盘选择和菜单操作不会误开大图', async ({ page }) => {
+    const card = page.locator('.photo-card').first()
+    const select = card.getByRole('button', { name: '选中照片', exact: true })
+    await select.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: '照片大图' })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: '取消选中', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    const more = card.getByRole('button', { name: '更多操作' })
+    await more.focus()
+    await page.keyboard.press('Enter')
+    await expect(more).toHaveAttribute('aria-expanded', 'true')
+    await page.keyboard.press('Tab')
+    await expect(card.getByRole('button', { name: '查看大图', exact: true })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(more).toBeFocused()
+    await expect(more).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByRole('dialog', { name: '照片大图' })).toHaveCount(0)
+    await card.focus()
+    await page.keyboard.press('Space')
+    await expect(page.getByRole('dialog', { name: '照片大图' })).toBeVisible()
+  })
+
+  test('可排序网格的照片按钮支持鼠标选择和菜单展开', async ({ page }, testInfo) => {
+    const card = page.locator('.photo-card').first()
+    await card.getByRole('button', { name: '选中照片', exact: true }).click()
+    await expect(page.locator('.batch-selected-badge')).toHaveText('1')
+    await card.getByRole('button', { name: '更多操作' }).click()
+    await expect(card.getByRole('button', { name: '查看大图', exact: true })).toBeVisible()
+    await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('card-controls-desktop.png') })
+    await page.setViewportSize({ width: 320, height: 740 })
+    for (const button of [card.locator('.select-btn'), card.locator('.ghost-btn')]) {
+      await expect.poll(async () => (await button.boundingBox())!.width).toBeGreaterThanOrEqual(44)
+      await expect.poll(async () => (await button.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+    await card.scrollIntoViewIfNeeded()
+    await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('card-controls-mobile.png') })
+  })
+
+  test('网格拖动排序忽略上传入口的位置', async ({ page }) => {
+    let order: string[] = []
+    await page.route(new RegExp('/api/galleries/' + GALLERY_ID + '/photos/order$'), async route => {
+      order = route.request().postDataJSON().orderedPhotoIds
+      await route.fulfill({ status: 204 })
+    })
+    const source = page.locator('.photo-card').nth(1)
+    const target = page.locator('.photo-card').first()
+    await source.scrollIntoViewIfNeeded()
+    const from = (await source.boundingBox())!
+    const to = (await target.boundingBox())!
+    await page.mouse.move(from.x + 130, from.y + 110)
+    await page.mouse.down()
+    await page.mouse.move(from.x + 120, from.y + 110, { steps: 5 })
+    await expect(source).toHaveClass(/sortable-chosen/)
+    await page.mouse.move(to.x + 20, to.y + 110, { steps: 20 })
+    await page.mouse.move(to.x + 30, to.y + 110)
+    await page.mouse.up()
+    await expect.poll(() => order).toEqual(['photo-2', 'photo-1'])
+    await expect(page.locator('.photo-card').first()).toContainText('海浪')
+  })
+
   test('photos start loading before gallery metadata finishes', async ({ page }) => {
     let release!: () => void
     const pending = new Promise<void>(resolve => { release = resolve })
@@ -304,7 +365,165 @@ test.describe('创作链路', () => {
     await page.keyboard.press('Enter')
   })
 
+  test('列表编辑不在输入法确认时提交，保存和取消后返回原行标题', async ({ page }) => {
+    const updates: string[] = []
+    await page.route('**/api/photos/photo-2', async route => {
+      const title = route.request().postDataJSON().title as string
+      updates.push(title)
+      photos[1].title = title
+      await route.fulfill({ status: 204 })
+    })
+    await page.getByRole('button', { name: '列表视图' }).click()
+    const row = page.locator('.photo-list-row').nth(1)
+    const title = row.locator('.row-title')
+    await title.focus()
+    await page.keyboard.press('Enter')
+    const input = row.getByRole('textbox', { name: '照片标题' })
+    await expect(input).toBeFocused()
+    await input.fill('海浪与风')
+    await input.dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+    await expect(input).toBeVisible()
+    expect(updates).toEqual([])
+    await input.dispatchEvent('keydown', { key: 'Escape', isComposing: true })
+    await expect(input).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(title).toBeFocused()
+    await expect(title).toHaveText('海浪')
+    expect(updates).toEqual([])
+    await page.keyboard.press('Space')
+    await input.fill('  海浪与风  ')
+    await page.keyboard.press('Enter')
+    await expect(title).toHaveText('海浪与风')
+    await expect(title).toBeFocused()
+    expect(updates).toEqual(['海浪与风'])
+  })
+
+  test('列表标题失焦保存不会抢走下一个操作的焦点', async ({ page }) => {
+    await page.route('**/api/photos/photo-1', async route => {
+      photos[0].title = route.request().postDataJSON().title
+      await route.fulfill({ status: 204 })
+    })
+    await page.getByRole('button', { name: '列表视图' }).click()
+    const row = page.locator('.photo-list-row').first()
+    await row.locator('.row-title').click()
+    await row.getByRole('textbox', { name: '照片标题' }).fill('新的日出')
+    const search = page.getByRole('searchbox', { name: '搜索照片标题' })
+    await search.click()
+    await expect(row.locator('.row-title')).toHaveText('新的日出')
+    await expect(search).toBeFocused()
+  })
+
+  test('手机列表长标题编辑保持在行内并提供可触达的输入框', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 320, height: 740 })
+    photos[0].title = '长标题用于验证手机照片整理界面'.repeat(10)
+    await page.reload()
+    await page.getByRole('button', { name: '列表视图' }).click()
+    const row = page.locator('.photo-list-row').first()
+    await row.locator('.row-title').click()
+    const input = row.getByRole('textbox', { name: '照片标题' })
+    await expect(input).toBeFocused()
+    const bounds = await input.boundingBox()
+    // 浏览器布局坐标有浮点误差（44px 可返回 43.999969），按百分之一像素比较。
+    expect(Math.round(bounds!.height * 100) / 100).toBeGreaterThanOrEqual(44)
+    expect(await row.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    expect(await input.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16)
+    await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('list-title-edit-mobile.png') })
+  })
+
+  test('列表标题保存保留筛选和选择，失败后原标题可再次编辑', async ({ page }) => {
+    let shouldFail = true
+    await page.route('**/api/photos/photo-2', async route => {
+      if (shouldFail) {
+        await route.fulfill({ status: 500, json: { message: '更新标题失败，请重试。' } })
+        return
+      }
+      photos[1].title = route.request().postDataJSON().title
+      await route.fulfill({ status: 204 })
+    })
+    await page.getByRole('button', { name: '列表视图' }).click()
+    const container = page.locator('.photo-list-container')
+    const search = container.getByRole('searchbox')
+    await search.fill('海浪')
+    await container.getByRole('button', { name: '全选当前' }).click()
+    const title = container.locator('.row-title')
+    await title.click()
+    await container.getByRole('textbox', { name: '照片标题' }).fill('海浪与风')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.toast-error').first()).toContainText('重试')
+    await expect(title).toHaveText('海浪')
+    await expect(title).toBeFocused()
+    shouldFail = false
+    await page.keyboard.press('Enter')
+    await container.getByRole('textbox', { name: '照片标题' }).fill('海浪与风')
+    await page.keyboard.press('Enter')
+    await expect(title).toHaveText('海浪与风')
+    await expect(search).toHaveValue('海浪')
+    await expect(container.locator('.batch-selected-badge')).toHaveText('1')
+    await expect(title).toBeFocused()
+  })
+
   for (const view of ['网格', '列表']) {
+    test(`${view}只读用户可以筛选和预览，无法执行策展操作`, async ({ page }) => {
+      await page.route('**/api/me', route => route.fulfill({ json: {
+        role: 'VIEWER', capabilities: ['GALLERY_READ', 'PHOTO_READ', 'CONFIG_READ'],
+        user: { displayName: '只读用户', email: 'viewer@example.com' }, tenant: { name: '回归测试工作区' }
+      } }))
+      await page.reload()
+      if (view === '列表') await page.getByRole('button', { name: '列表视图' }).click()
+      const container = page.locator(view === '列表' ? '.photo-list-container' : '.photo-grid-container')
+      await container.getByRole('searchbox').fill('海浪')
+      await expect(container.getByRole('button', { name: '全选当前' })).toHaveCount(0)
+      await expect(container.locator('.floating-batch-bar, .row-actions, .row-select, .row-drag-handle')).toHaveCount(0)
+      await container.getByRole('button', { name: '清除筛选', exact: true }).click()
+      if (view === '列表') await container.getByRole('button', { name: '预览照片：日出' }).click()
+      else await container.locator('.photo-card').first().click()
+      const dialog = page.getByRole('dialog', { name: '照片大图' })
+      await expect(dialog).toBeVisible()
+      await expect(dialog.getByRole('button', { name: '修改照片标题' })).toHaveCount(0)
+      await expect(dialog.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+    })
+
+    test(`${view}筛选可直接清除且选中状态可被识别`, async ({ page }, testInfo) => {
+      if (view === '列表') await page.getByRole('button', { name: '列表视图' }).click()
+      const container = page.locator(view === '列表' ? '.photo-list-container' : '.photo-grid-container')
+      const ready = container.getByRole('button', { name: '已就绪' })
+      await ready.click()
+      await expect(ready).toHaveAttribute('aria-pressed', 'true')
+      await container.getByRole('searchbox').fill('海浪')
+      await expect(container.getByRole('status')).toContainText('显示 1 / 2 张照片')
+      await container.getByRole('button', { name: '清除筛选', exact: true }).click()
+      await expect(container.getByRole('searchbox')).toHaveValue('')
+      await expect(ready).toHaveAttribute('aria-pressed', 'false')
+      await page.screenshot({ animations: 'disabled', path: testInfo.outputPath(`curation-${view}-desktop.png`) })
+    })
+
+    test(`${view}手机批量操作完整显示`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: 320, height: 740 })
+      if (view === '列表') await page.getByRole('button', { name: '列表视图' }).click()
+      const container = page.locator(view === '列表' ? '.photo-list-container' : '.photo-grid-container')
+      await container.getByRole('button', { name: '全选当前' }).click()
+      const bar = container.locator('.floating-batch-bar')
+      await expect(bar).toHaveCSS('opacity', '1')
+      const bounds = await bar.boundingBox()
+      expect(bounds!.x).toBeGreaterThanOrEqual(0)
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
+      for (const button of await bar.getByRole('button').all()) {
+        await expect(button).toBeInViewport()
+        expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+      }
+      if (view === '列表') {
+        const row = container.locator('.photo-list-row').first()
+        expect(await row.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+        await expect(row.getByRole('button', { name: '预览照片：日出' })).toBeVisible()
+      }
+      await expect.poll(() => page.locator('.hall-body').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+      expect(await page.locator('.hero-actions').evaluate(el => {
+        const rect = el.getBoundingClientRect()
+        return rect.left >= 0 && rect.right <= window.innerWidth
+      })).toBe(true)
+      await page.screenshot({ animations: 'disabled', fullPage: true, path: testInfo.outputPath(`curation-${view}-mobile.png`) })
+    })
+
     test(`${view}标题搜索清理隐藏选择并禁用排序`, async ({ page }) => {
       if (view === '列表') await page.getByRole('button', { name: '列表视图' }).click()
       const container = page.locator(view === '列表' ? '.photo-list-container' : '.photo-grid-container')

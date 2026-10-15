@@ -297,13 +297,18 @@ export function useGalleryWorkspace(
   }
 
   async function updatePhotoTitle(photoId: string, title: string) {
+    const version = requestVersion
+    const galleryIdValue = id.value
     const response = await apiFetch(`/api/photos/${photoId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title })
     })
     if (!response.ok) throw await responseError(response, '更新标题失败，请重试。')
-    await reload()
+    // 更新已确认的字段，保留整理时的筛选、选择和键盘焦点。
+    if (isCurrent(version) && id.value === galleryIdValue && isEnabled.value) {
+      photos.value = photos.value.map(photo => photo.id === photoId ? { ...photo, title } : photo)
+    }
   }
 
   async function reorderPhotos(orderedPhotoIds: string[]) {

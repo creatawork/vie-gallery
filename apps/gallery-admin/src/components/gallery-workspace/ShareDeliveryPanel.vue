@@ -13,6 +13,7 @@ import {
 } from '../../composables/useShareDelivery'
 import { useToast } from '../../composables/useToast'
 import { useModalFocus } from '../../composables/useModalFocus'
+import { viewerOrigin } from '../../lib/preview'
 
 const props = defineProps<{
   show: boolean
@@ -49,6 +50,8 @@ const {
 } = useShareDelivery(galleryId, computed(() => props.gallery))
 
 const showModal = computed(() => props.show)
+const publicUrl = computed(() => props.gallery?.visibility === 'PUBLIC' && props.gallery.status === 'PUBLISHED'
+  ? `${viewerOrigin()}/g/${encodeURIComponent(props.gallery.slug)}` : '')
 const { root: modalRoot } = useModalFocus(showModal, { onEscape: () => emit('close') })
 
 const shareExpiryDays = ref(30)
@@ -237,8 +240,8 @@ function shareStatusLabel(status: string) {
               <Icon name="share" :size="20" />
             </div>
             <div>
-              <h3>展厅分享与交付</h3>
-              <p v-if="gallery">为「{{ gallery.name }}」配置分享链接与访客访问权限</p>
+              <h3>{{ publicUrl ? '展览已就绪' : '分享展厅' }}</h3>
+              <p v-if="gallery">{{ publicUrl ? `把「${gallery.name}」分享给朋友，打开就能看。` : `设置「${gallery.name}」的访问方式` }}</p>
             </div>
           </div>
           <button class="close-icon-btn" type="button" aria-label="关闭" @click="$emit('close')">
@@ -247,6 +250,16 @@ function shareStatusLabel(status: string) {
         </header>
 
         <div class="modal-body">
+          <section v-if="publicUrl" class="direct-share">
+            <label for="public-gallery-link">展厅链接</label>
+            <input id="public-gallery-link" :value="publicUrl" readonly @focus="($event.target as HTMLInputElement).select()" />
+            <div class="direct-share-actions">
+              <button class="btn btn-primary" type="button" @click="copyUrl(publicUrl)">{{ copied ? '已复制' : '复制链接' }}</button>
+              <a class="btn btn-secondary" :href="publicUrl" target="_blank" rel="noopener">打开展览</a>
+            </div>
+          </section>
+          <details :open="!publicUrl" class="share-options">
+          <summary>更多分享设置</summary>
           <!-- Access Mode Section -->
           <section class="delivery-section">
             <div class="section-title-row">
@@ -280,7 +293,7 @@ function shareStatusLabel(status: string) {
                   密码展厅：访客进入时需要输入相册专属访问密码，解锁后获得 30 分钟临时浏览会话。
                 </template>
                 <template v-else>
-                  私密展厅：必须使用携带专属安全 Token 的分享链接才能访问，未授权访客无法进入。
+                  私密展厅：只有收到专属分享链接的人才能访问。
                 </template>
               </div>
             </div>
@@ -546,6 +559,7 @@ function shareStatusLabel(status: string) {
               </li>
             </ul>
           </section>
+          </details>
         </div>
 
         <footer class="modal-footer">
@@ -571,6 +585,12 @@ function shareStatusLabel(status: string) {
 </template>
 
 <style scoped>
+.direct-share { display:grid; gap:14px; padding-bottom:24px; }
+.direct-share label { color:#475569; font-size:13px; }
+.direct-share input { width:100%; box-sizing:border-box; border:1px solid #d8e1ec; border-radius:10px; padding:14px; background:#f6f8fb; color:#233a55; font:14px system-ui; }
+.direct-share-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.direct-share-actions a { text-decoration:none; }
+.share-options > summary { cursor:pointer; color:#64748b; font-size:13px; padding:14px 0; }
 .modal-backdrop {
   position: fixed;
   inset: 0;

@@ -29,11 +29,17 @@ export class PhotoScene {
       let mesh = this.meshes.get(photo)
       if (!mesh) {
         const ratio = photo.width > 0 && photo.height > 0 ? photo.width / photo.height : 4 / 3
+        const width = Math.min(80, 120 * ratio), height = width / ratio
         const material = new THREE.MeshStandardMaterial({ color: '#b8bcc4', side: THREE.DoubleSide, metalness: 0, roughness: .7 })
-        mesh = Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(80, 80 / ratio), material), {
+        mesh = Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(width, height), material), {
           userData: { index, url: '', thumbnailUrl: '', textureState: 'placeholder' as const }
         })
         mesh.geometry.computeBoundingSphere()
+        // A shallow aluminium mount makes grazing angles read as an object.
+        const mount = new THREE.Mesh(new THREE.BoxGeometry(width + 2, height + 2, 1.7),
+          new THREE.MeshStandardMaterial({ color: '#76859b', metalness: .65, roughness: .28 }))
+        mount.position.z = -1.05
+        mesh.add(mount)
         mesh.userData = { index, url: '', thumbnailUrl: '', textureState: 'placeholder' }
         this.meshes.set(photo, mesh); this.scene.add(mesh); added.push(mesh)
         this.load(photo, mesh)
@@ -137,6 +143,12 @@ export class PhotoScene {
   }
   retryFailed(): void { for (const [photo, mesh] of this.meshes) if (mesh.userData.textureState === 'failed') this.retry(photo) }
   private remove(mesh: PhotoMesh): void {
+    for (const child of mesh.children) {
+      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+        child.geometry.dispose()
+        for (const material of Array.isArray(child.material) ? child.material : [child.material]) material.dispose()
+      }
+    }
     this.scene.remove(mesh); mesh.geometry.dispose()
     for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) material.dispose()
   }

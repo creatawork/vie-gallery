@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import type * as Three from 'three'
+import { CURATED_STYLES, applyCuratedStyle, type CuratedStyle } from '@vie/gallery-contracts'
 import { isTrustedPreviewMessage, normalizeViewerConfig, serializeViewerConfig, ViewerConfigValidationError } from '@vie/gallery-contracts'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
@@ -13,7 +14,10 @@ import Icon from './components/Icon.vue'
 import type { TheatreCommand, TheatreState } from './lib/photoTheatre'
 const PhotoTheatreControls = defineAsyncComponent(() => import('./components/PhotoTheatreControls.vue'))
 const theatreMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-const theatreMotionChanged = () => { theatre.value = { ...theatre.value, reducedMotion: theatreMotion.matches } }
+const theatreMotionChanged = () => {
+  theatre.value = { ...theatre.value, reducedMotion: theatreMotion.matches }
+  if (theatreMotion.matches) applyAutoTour(false)
+}
 const theatre = ref<TheatreState>({ active: false, mode: 'cloud', status: 'idle', elapsed: 0, offset: 0, indices: [], reducedMotion: theatreMotion.matches })
 const theatreBusy = ref(false)
 async function sendTheatreCommand(command: TheatreCommand) {
@@ -120,8 +124,31 @@ let webglLostHandler: (() => void) | null = null
 // Lightbox
 const showLightbox = ref(false)
 const lightboxIndex = ref(0)
+const stageIndex = ref(0)
+const stageActive = ref(false)
+const stagePhoto = computed(() => viewer.photos.value[stageIndex.value])
+const stageCaption = computed(() => CURATED_STYLES.find(style => style.id === selectedStyle.value)?.caption || '让照片，在空间里相遇')
+watch(showLightbox, open => engine?.getEventBus().emit('stage:suspend', open))
+function stepStage(direction: number) {
+  engine?.getEventBus().emit('stage:step', direction)
+  engine?.wakeUp()
+}
 
 // HUD Controls
+const selectedStyle = ref<string>('')
+const styleBusy = ref(false)
+async function selectStyle(mode: CuratedStyle) {
+  if (!engine || styleBusy.value) return
+  styleBusy.value = true
+  try {
+    await engine.replaceConfig(applyCuratedStyle(engine.getRequestedConfig(), mode))
+    selectedStyle.value = mode
+    stageActive.value = true
+    applyAutoTour(isAutoTour.value)
+    engine.wakeUp(2500)
+  } catch { webglFallbackMessage.value = '风格暂未切换成功，请再试一次。' }
+  finally { styleBusy.value = false }
+}
 const showPresetMenu = ref(false)
 const currentPreset = ref('starry-night')
 const showShareSheet = ref(false)
@@ -339,7 +366,6 @@ async function init3DEngine() {
     activeEngine.getEventBus().on('effects:fallback', (data: { message: string }) => {
       webglFallbackMessage.value = data.message
     })
-    activeEngine.getEventBus().on('quality:changed', () => { webglFallbackMessage.value = '已优化显示效果' })
     activeEngine.getEventBus().on('quality:fallback', (data: { message: string }) => fallbackTo2D(data.message))
 
     // 创建 3D Photo Mesh 列表（严格只使用真实空间中上传的照片）
@@ -363,6 +389,16 @@ async function init3DEngine() {
 
     // 初始相机行为跟随已发布配置
     const initialConfig = activeEngine.getConfigManager().getConfig() as Record<string, any>
+    selectedStyle.value = initialConfig?.layout?.mode ?? ''
+    stageActive.value = initialConfig?.layout?.params?.composition === 'curated'
+    stageIndex.value = 0
+    activeEngine.getEventBus().on('stage:change', (state: { index: number }) => { stageIndex.value = state.index })
+    activeEngine.getEventBus().on('stage:open', (index: number) => openLightbox(index))
+    activeEngine.getEventBus().on('stage:interaction', () => activeEngine.wakeUp())
+    activeEngine.getEventBus().on('config:update', (config: { layout: { mode: string; params?: Record<string, unknown> } }) => {
+      selectedStyle.value = config.layout.mode
+      stageActive.value = config.layout.params?.composition === 'curated'
+    })
     applyAutoTour(initialConfig?.camera?.autoRotate === true)
 
     // 监听 APM 探针
@@ -392,7 +428,7 @@ async function init3DEngine() {
       if (engine === initializingEngine) engine = null
       return
     }
-    console.error('Failed to init 3D engine:', err)
+    if (!(viewerEngineModule !== null && err instanceof viewerEngineModule.WebGLUnavailableError)) console.error('Failed to init 3D engine:', err)
     fallbackTo2D(
       viewerEngineModule !== null && err instanceof viewerEngineModule.WebGLUnavailableError
         ? '当前设备无法使用 3D，已切换到经典画廊，照片仍可正常浏览。'
@@ -428,7 +464,7 @@ function bindCanvasInteractions() {
     activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
     activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
-    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible))
+    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible), false)
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh
@@ -472,11 +508,12 @@ function bindCanvasInteractions() {
     activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
     activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
-    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible))
+    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible), false)
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh
       const idx = hit.userData.index
+      if (stageActive.value) { openLightbox(idx); return }
       
       if (theatre.value.active) {
         void sendTheatreCommand({ type: 'focus', index: idx })
@@ -516,8 +553,8 @@ function flyToPhotoAndFocus(mesh: Three.Mesh, onComplete?: () => void) {
  * 应用配置中心下发的相机行为（自动漫游），配置未开启时保持访客手动控制
  */
 function applyAutoTour(enabled: boolean) {
-  isAutoTour.value = enabled
-  engine?.setAutoTour(enabled)
+  isAutoTour.value = enabled && !theatreMotion.matches
+  engine?.setAutoTour(isAutoTour.value)
 }
 
 function selectLightboxPhoto(index: number) {
@@ -606,6 +643,7 @@ function destroy3DEngine() {
     engine = null
   }
   engineReady.value = false
+  stageActive.value = false
   theatre.value = { ...theatre.value, active: false, status: 'idle', elapsed: 0, indices: [] }
   theatreBusy.value = false
   raycaster = null
@@ -659,7 +697,7 @@ async function selectPreset(presetName: string) {
       <div class="glow-orb"></div>
       <div class="loader-box">
         <div class="loader-spinner"></div>
-        <p class="loader-text">Loading immersive spatial gallery...</p>
+        <p class="loader-text">光影，正在展开…</p>
       </div>
     </div>
 
@@ -714,8 +752,8 @@ async function selectPreset(presetName: string) {
 
     <ErrorState
       v-else-if="viewer.state.value === 'share_required'"
-      title="需要专用分享凭证"
-      :message="viewer.error.value || '此画廊属于私密空间，请使用带有访问 Token 的有效分享链接进入。'"
+      title="请使用分享链接进入"
+      :message="viewer.error.value || '这是一个私密展厅，请向创作者索取新的分享链接。'"
       @retry="viewer.retry"
     />
 
@@ -738,130 +776,36 @@ async function selectPreset(presetName: string) {
         <button type="button" @click="webglFallbackMessage = ''">知道了</button>
       </div>
 
-      <!-- 浮动毛玻璃 HUD 控制台 -->
-      <header class="floating-hud">
-        <!-- Brand & Gallery Info -->
-        <div class="hud-left">
-          <div class="brand-pill">
-            <span class="brand-dot"></span>
-            <span class="brand-title">VIE GALLERY</span>
+      <header class="exhibition-header">
+        <a class="exhibition-brand" href="#" @click.prevent="resetView" aria-label="回到展厅全景">vie<span>光影之间</span></a>
+        <div class="exhibition-tools">
+          <div class="exhibition-view" aria-label="观看方式">
+            <button :aria-pressed="viewMode === '3d'" @click="viewMode = '3d'">空间漫游</button>
+            <button :aria-pressed="viewMode === '2d'" @click="viewMode = '2d'">平面展览</button>
           </div>
-          <div class="gallery-title-chip">
-            <span class="chip-title">{{ viewer.gallery.value?.title || 'Moments in Light' }}</span>
-            <span class="chip-count">{{ viewer.total.value }} 张照片</span>
-          </div>
-        </div>
-
-        <!-- Mode Toggle & Controls -->
-        <div class="hud-right">
-          <!-- 3D / 2D Switcher -->
-          <div class="mode-switch-pill">
-            <button
-              class="mode-btn"
-              :class="{ active: viewMode === '3d' }"
-              title="3D 空间漫游"
-              @click="viewMode = '3d'"
-            >
-              <Icon name="3d" :size="16" />
-              <span>3D 空间</span>
-            </button>
-            <button
-              class="mode-btn"
-              :class="{ active: viewMode === '2d' }"
-              title="2D 经典画廊"
-              @click="viewMode = '2d'"
-            >
-              <Icon name="grid" :size="16" />
-              <span>经典网格</span>
-            </button>
-          </div>
-
-          <!-- 3D Extra Tools (Preset, Tour, Gyro, APM)：仅在 3D 就绪时挂载，切换 2D 即释放 -->
-          <template v-if="show3dHud">
-            <!-- Reset View -->
-            <button
-              class="hud-icon-btn"
-              title="视角复位"
-              @click="resetView"
-            >
-              <Icon name="compass" :size="17" />
-            </button>
-
-            <!-- Autopilot Tour -->
-            <button
-              class="hud-icon-btn"
-              :class="{ active: isAutoTour }"
-              :title="isAutoTour ? '暂停自动巡航' : '开启电影级自动漫游'"
-              @click="toggleAutoTour"
-            >
-              <Icon name="eye" :size="17" />
-              <span class="btn-label-desktop">{{ isAutoTour ? '巡航中' : '自动巡航' }}</span>
-            </button>
-
-            <!-- Gyroscope Parallax -->
-            <button
-              class="hud-icon-btn gyro-btn"
-              :class="{ active: gyroEnabled }"
-              :disabled="theatre.active"
-              title="陀螺仪重力感应视差"
-              @click="toggleGyro"
-            >
-              <Icon name="globe" :size="17" />
-            </button>
-
-            <!-- APM Performance Probe -->
-            <button
-              v-if="diagnosticsEnabled"
-              class="hud-icon-btn"
-              :class="{ active: showApm }"
-              title="3D 性能指标探针"
-              @click="showApm = !showApm"
-            >
-              <Icon name="cube" :size="16" />
-            </button>
-
-            <!-- Preset Switcher -->
-            <div class="preset-dropdown-wrap">
-              <button
-                class="hud-icon-btn preset-btn"
-                title="切换视觉特效预设"
-                @click="showPresetMenu = !showPresetMenu"
-              >
-                <Icon name="sparkles" :size="17" />
-                <span>氛围特效</span>
-              </button>
-
-              <!-- Preset Menu -->
-              <div v-if="showPresetMenu" class="preset-popup-menu">
-                <div class="menu-header">视觉预设</div>
-                <button
-                  v-for="p in presets"
-                  :key="p.name"
-                  class="menu-item"
-                  :class="{ active: currentPreset === p.name }"
-                  @click="selectPreset(p.name)"
-                >
-                  <Icon :name="p.icon" :size="14" />
-                  <span>{{ p.label }}</span>
-                  <Icon v-if="currentPreset === p.name" name="check" :size="14" class="check-icon" />
-                </button>
-              </div>
-            </div>
-          </template>
-
-          <!-- Fullscreen Toggle -->
-          <button class="hud-icon-btn" :title="isFullscreen ? '退出全屏' : '全屏浏览'" @click="toggleFullscreen">
-            <Icon name="maximize" :size="17" />
-          </button>
-
-          <!-- Share Button -->
-          <button class="hud-icon-btn share-btn" title="分享给朋友" @click="showShareSheet = true">
-            <Icon name="share" :size="17" />
-            <span>分享</span>
-          </button>
+          <button v-if="show3dHud" class="quiet-button" :aria-label="isAutoTour ? '暂停漫游' : '继续漫游'" @click="toggleAutoTour">{{ isAutoTour ? '暂停' : '继续' }}</button>
+          <button class="exhibition-share" @click="showShareSheet = true"><Icon name="share" :size="15" /> 分享</button>
         </div>
       </header>
-
+      <div v-if="viewMode === '3d'" class="exhibition-heading">
+        <h1>{{ viewer.gallery.value?.title || '光影之间' }}</h1>
+        <p>{{ viewer.total.value }} 帧光影，一场私人影展</p>
+      </div>
+      <div v-if="show3dHud && stageActive" class="stage-info">
+        <div class="stage-counter"><span>{{ String(stageIndex + 1).padStart(2, '0') }}</span><i></i><span>{{ String(viewer.photos.value.length).padStart(2, '0') }}</span></div>
+        <button class="stage-current" aria-label="查看当前作品" @click="openLightbox(stageIndex)">{{ stagePhoto?.title || `作品 ${stageIndex + 1}` }}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button>
+        <p>{{ stageCaption }}</p>
+      </div>
+      <div v-if="show3dHud && stageActive" class="stage-navigation" aria-label="逐张浏览">
+        <button aria-label="上一张作品" :disabled="viewer.photos.value.length < 2" @click="stepStage(-1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h13"/></svg></button>
+        <button aria-label="下一张作品" :disabled="viewer.photos.value.length < 2" @click="stepStage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6M3 12h13"/></svg></button>
+      </div>
+      <nav v-if="show3dHud" class="composition-dock" aria-label="展示风格">
+        <button v-for="style in CURATED_STYLES" :key="style.id" :aria-pressed="selectedStyle === style.id" :disabled="styleBusy" @click="selectStyle(style.id)">
+          <svg viewBox="0 0 44 24" aria-hidden="true"><path v-if="style.id === 'helix'" d="M4 19C3 1 39 1 39 8S4 24 4 16S38 9 40 4"/><ellipse v-else-if="style.id === 'carousel'" cx="22" cy="12" rx="18" ry="8"/><path v-else d="M2 12Q12 -2 22 12T42 12M2 20Q12 6 22 20T42 20"/></svg>
+          {{ style.label }}
+        </button>
+      </nav>
       <!-- APM Real-time Dashboard Capsule -->
       <aside v-if="diagnosticsEnabled && showApm && viewMode === '3d' && apmMetrics" class="apm-dashboard">
         <div class="apm-title">
@@ -908,10 +852,9 @@ async function selectPreset(presetName: string) {
 
       <!-- Mode 1: 3D Spatial WebGL Canvas -->
       <div v-show="viewMode === '3d'" class="canvas-container">
-        <canvas ref="canvasRef" class="webgl-canvas" tabindex="0" aria-label="照片空间，编排模式下方向键换组、回车查看主图、空格播放或暂停"></canvas>
-        <PhotoTheatreControls v-if="show3dHud" :state="theatre" :total="viewer.photos.value.length" :busy="theatreBusy" @command="sendTheatreCommand" />
+        <canvas ref="canvasRef" class="webgl-canvas" tabindex="0" :aria-label="stageActive ? '照片空间，拖动、滚轮或左右方向键切换作品，Enter 查看大图。' : '照片空间，可拖动探索、滚动缩放。也可切换平面展览，用键盘逐张浏览照片。'"></canvas>
         <div v-if="!theatre.active" class="spatial-tips">
-          <p>单击照片聚焦飞入 · 拖动旋转视角 · 滚轮缩放 · 罗盘按钮复位视角</p>
+          <p>{{ stageActive ? '拖动或滚动，走进下一帧 · 点击照片看大图' : '拖动探索 · 滚动靠近 · 点照片放大' }}</p>
         </div>
         <button
           v-if="viewer.hasMore.value"
@@ -927,9 +870,9 @@ async function selectPreset(presetName: string) {
       <!-- Mode 2: 2D Editorial Curated Wall -->
       <main v-show="viewMode === '2d'" class="editorial-main">
         <div class="editorial-hero">
-          <p class="hero-kicker">CURATED EXHIBITION</p>
+          <p class="hero-kicker">THE ART OF REMEMBERING</p>
           <h1 class="hero-title">{{ viewer.gallery.value?.title || 'Moments in Light' }}</h1>
-          <p class="hero-meta">{{ viewer.total.value }} PHOTOGRAPHS · HIGH FIDELITY GALLERY</p>
+          <p class="hero-meta">{{ viewer.total.value }} 张照片 · 慢慢看，细细收藏</p>
         </div>
 
         <PhotoWall :photos="viewer.photos.value" fit="cover" :prioritize-first-photos="viewMode === '2d'" @select="openLightbox" @first-photo-rendered="markPhotoWallReady" />
@@ -1573,3 +1516,5 @@ async function selectPreset(presetName: string) {
 .canvas-container:has(.theatre-dock) .load-more-floating { bottom: 170px; }
 .webgl-canvas:focus-visible { outline: 2px solid var(--brand-emerald); outline-offset: -4px; }
 </style>
+
+<style scoped src="./curated.css"></style>

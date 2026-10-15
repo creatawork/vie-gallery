@@ -1,0 +1,219 @@
+import * as THREE from 'three'
+import type { ViewerContext, ViewerPlugin } from '../core/types'
+
+/** A single progress value drives the photographs, framing, and visitor navigation. */
+export class SpatialStagePlugin implements ViewerPlugin {
+  name = 'SpatialStage'
+  version = '1.0.0'
+  private context!: ViewerContext
+  private installed = false
+  private canvas!: HTMLCanvasElement
+  private cursor = 0
+  private target = 0
+  private autoplay = true
+  private suspended = false
+  private hovered = false
+  private dwell = 0
+  private lastIndex = -1
+  private pointer = new THREE.Vector2()
+  private drag: { id: number; x: number; y: number; target: number } | null = null
+  private wheelAt = -Infinity
+  private cameraPosition = new THREE.Vector3()
+  private photoPosition = new THREE.Vector3()
+  private rotation = new THREE.Euler()
+  private quaternion = new THREE.Quaternion()
+  private known = new WeakSet<THREE.Mesh>()
+  private paths = new THREE.Group()
+
+  install(context: ViewerContext) {
+    this.installed = true
+    this.context = context
+    this.known = new WeakSet()
+    this.lastIndex = -1
+    this.canvas = context.renderer.domElement
+    this.autoplay = !!context.config.camera?.autoRotate
+    context.on('stage:step', this.step)
+    context.on('stage:reset', this.reset)
+    context.on('stage:autoplay', this.setAutoplay)
+    context.on('stage:suspend', this.setSuspended)
+    context.on('theatre:hover', this.hover)
+    context.on('photos:loaded', this.photosChanged)
+    this.canvas.addEventListener('pointerdown', this.down)
+    this.canvas.addEventListener('pointermove', this.move)
+    this.canvas.addEventListener('pointerup', this.up)
+    this.canvas.addEventListener('pointercancel', this.cancel)
+    this.canvas.addEventListener('pointerleave', this.leave)
+    this.canvas.addEventListener('wheel', this.wheel, { passive: false })
+    this.canvas.addEventListener('keydown', this.key)
+    // Fine orbital traces give the eye a continuous depth reference between works.
+    for (let ring = 0; ring < 2; ring++) {
+      const points = Array.from({ length: 193 }, (_, i) => {
+        const a = i / 192 * Math.PI * 2
+        return new THREE.Vector3(Math.sin(a) * (680 + ring * 55), Math.sin(a) * 175 - 70 - ring * 20, Math.cos(a) * 420 - 420)
+      })
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({color:ring ? '#e6b789' : '#829abb',transparent:true,opacity:ring ? .09 : .15,depthWrite:false}))
+      this.paths.add(line)
+    }
+    context.addToScene(this.paths)
+    this.update(1, 0)
+  }
+
+  private step = (direction: number) => {
+    if (this.context.photos.length < 2) return
+    this.target = Math.round(this.target) + Math.sign(direction)
+    this.dwell = 0
+    this.context.emit('stage:interaction')
+  }
+  private reset = () => { this.target = 0; this.pointer.set(0, 0); this.dwell = 0 }
+  private setAutoplay = (enabled: boolean) => { this.autoplay = enabled; this.dwell = 0 }
+  private setSuspended = (suspended: boolean) => { this.suspended = suspended; this.dwell = 0 }
+  private hover = (index: number | null) => { this.hovered = index !== null }
+  private photosChanged = () => { this.lastIndex = -1; this.dwell = 0 }
+  private down = (event: PointerEvent) => {
+    if (event.button !== 0) return
+    this.drag = { id:event.pointerId, x:event.clientX, y:event.clientY, target:this.target }
+    this.canvas.setPointerCapture(event.pointerId)
+    this.dwell = 0
+  }
+  private move = (event: PointerEvent) => {
+    const box = this.canvas.getBoundingClientRect()
+    this.pointer.set((event.clientX - box.left) / box.width - .5, (event.clientY - box.top) / box.height - .5)
+    if (!this.drag || event.pointerId !== this.drag.id) return
+    const dx = this.drag.x - event.clientX, dy = this.drag.y - event.clientY
+    this.target = this.drag.target + (Math.abs(dx) > Math.abs(dy) ? dx : dy) / Math.max(130, box.width * .25)
+  }
+  private up = (event: PointerEvent) => {
+    if (event.pointerId !== this.drag?.id) return
+    this.target = Math.round(this.target)
+    this.cancel()
+  }
+  private cancel = () => {
+    if (this.drag && this.canvas.hasPointerCapture(this.drag.id)) this.canvas.releasePointerCapture(this.drag.id)
+    this.drag = null
+  }
+  private leave = () => { this.pointer.set(0, 0); this.hovered = false }
+  private wheel = (event: WheelEvent) => {
+    event.preventDefault()
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    if (Math.abs(delta) < 3 || performance.now() - this.wheelAt < 420) return
+    this.wheelAt = performance.now()
+    this.step(delta)
+  }
+  private key = (event: KeyboardEvent) => {
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      event.preventDefault(); this.step(event.key === 'ArrowRight' ? 1 : -1)
+    } else if (event.key === 'Enter') {
+      event.preventDefault(); this.context.emit('stage:open', this.lastIndex)
+    }
+  }
+
+  update(delta: number, elapsed: number) {
+    const context = this.context, count = context.photos.length
+    const camera = context.camera as THREE.PerspectiveCamera
+    const mobile = camera.aspect < .85
+    const reduced = context.reducedMotion()
+    const dt = Math.min(delta, .05)
+    const blend = reduced ? 1 : 1 - Math.exp(-dt * 5)
+    if (!this.suspended && this.autoplay && !reduced && !this.drag && count > 1) {
+      this.dwell += dt * (this.hovered ? .15 : 1)
+      if (this.dwell > 5.5) { this.target = Math.round(this.target) + 1; this.dwell = 0 }
+    }
+    this.cursor += (this.target - this.cursor) * (reduced ? 1 : 1 - Math.exp(-dt * 4.5))
+    // Normalize both values together so a long exhibition never accumulates huge coordinates.
+    if (count && Math.abs(this.cursor) > count * 10) {
+      const cycles = Math.trunc(this.cursor / count) * count
+      this.cursor -= cycles; this.target -= cycles
+    }
+    const mode = context.config.layout.mode
+    const parallax = reduced || this.suspended ? 0 : 1
+    this.cameraPosition.set(this.pointer.x * 32 * parallax, -this.pointer.y * 22 * parallax, mobile ? 1040 : 930)
+    camera.position.lerp(this.cameraPosition, blend)
+    camera.lookAt(0, mobile ? 12 : 0, -100)
+    this.paths.visible = count > 2 && !mobile
+    this.paths.rotation.z += ((mode === 'helix' ? -.12 : mode === 'grid' ? .14 : 0) - this.paths.rotation.z) * blend
+
+    for (let i = 0; i < count; i++) {
+      const mesh = context.photos[i]
+      const d = ((i - this.cursor + count / 2) % count + count) % count - count / 2
+      const a = Math.abs(d)
+      // The wrap happens outside the visible ribbon. Opacity hides even a three-photo seam.
+      const edge = count > 2 ? Math.min(1, Math.max(0, (count / 2 - a) * 2)) : 1
+      const presence = Math.min(1, Math.max(0, 5 - a)) * edge
+      let x: number, y: number, z: number, ry: number, rz = 0
+      if (mode === 'carousel') {
+        x = Math.sin(d * .57) * (mobile ? 420 : 790)
+        y = Math.cos(d * .57) * 95 - 90
+        z = 150 - (1 - Math.cos(d * .57)) * 730
+        ry = Math.sin(d * .57) * .72
+      } else if (mode === 'grid') {
+        x = d * (mobile ? 290 : 400)
+        y = Math.sin(d * .85) * (mobile ? 160 : 155)
+        z = 150 - a * 115
+        ry = Math.sin(d * .65) * .3
+        rz = Math.sin(d * .85) * -.045
+      } else {
+        x = Math.sin(d * .78) * (mobile ? 355 : 710)
+        y = Math.sin(d * .85) * (mobile ? 275 : 280)
+        z = 180 - a * 260
+        ry = Math.sin(d * .78) * .48
+        rz = Math.sin(d * .6) * -.07
+      }
+      if (count === 1) { x = 0; y = 0; z = 180; ry = 0; rz = 0 }
+      if (!reduced && !this.suspended && this.autoplay) y += Math.sin(elapsed * .45 + i) * 3
+      this.photoPosition.set(x, y, z)
+      this.rotation.set(0, ry, rz)
+      this.quaternion.setFromEuler(this.rotation)
+      const fresh = !this.known.has(mesh)
+      if (fresh) { mesh.position.copy(this.photoPosition); mesh.quaternion.copy(this.quaternion); this.known.add(mesh) }
+      else { mesh.position.lerp(this.photoPosition, blend); mesh.quaternion.slerp(this.quaternion, blend) }
+      const geometry = mesh.geometry as THREE.PlaneGeometry
+      const width = geometry.parameters.width || 80, height = geometry.parameters.height || 60
+      const fit = Math.min((mobile ? 240 : 360) / width, (mobile ? 285 : 315) / height)
+      const scale = fit * (1 - Math.min(a, 4) * .12)
+      mesh.scale.setScalar(fresh ? scale : THREE.MathUtils.lerp(mesh.scale.x, scale, blend))
+      mesh.userData.layoutScale = mesh.scale.x
+      mesh.visible = presence > .005
+      const material = mesh.material as THREE.MeshStandardMaterial
+      material.opacity = presence
+      if (!material.transparent) { material.transparent = true; material.needsUpdate = true }
+      // Light the aluminium, not the photograph: keep the image's own color and contrast.
+      material.color.setScalar(.28)
+      material.emissiveIntensity = .85
+      if (material.toneMapped) { material.toneMapped = false; material.needsUpdate = true }
+      for (const child of mesh.children) {
+        if (!(child instanceof THREE.Mesh)) continue
+        const mat = child.material as THREE.MeshStandardMaterial
+        mat.transparent = true; mat.opacity = presence
+        child.scale.set((width + .65) / (width + 2), (height + .65) / (height + 2), 1)
+      }
+    }
+    const index = count ? ((Math.round(this.cursor) % count) + count) % count : 0
+    if (index !== this.lastIndex) {
+      this.lastIndex = index
+      context.emit('stage:change', { index, count })
+    }
+  }
+
+  uninstall() {
+    if (!this.installed) return
+    this.installed = false
+    const context = this.context
+    context.off('stage:step', this.step); context.off('stage:reset', this.reset)
+    context.off('stage:autoplay', this.setAutoplay); context.off('stage:suspend', this.setSuspended)
+    context.off('theatre:hover', this.hover); context.off('photos:loaded', this.photosChanged)
+    this.canvas.removeEventListener('pointerdown', this.down); this.canvas.removeEventListener('pointermove', this.move)
+    this.canvas.removeEventListener('pointerup', this.up); this.canvas.removeEventListener('pointercancel', this.cancel)
+    this.canvas.removeEventListener('pointerleave', this.leave); this.canvas.removeEventListener('wheel', this.wheel)
+    this.canvas.removeEventListener('keydown', this.key)
+    this.cancel()
+    for (const mesh of context.photos) {
+      mesh.visible = true
+      const material = mesh.material as THREE.MeshStandardMaterial
+      material.opacity = 1; material.color.set('#ffffff'); material.emissiveIntensity = .25; material.toneMapped = true; material.needsUpdate = true
+      for (const child of mesh.children) if (child instanceof THREE.Mesh) { (child.material as THREE.Material).opacity = 1; child.scale.setScalar(1) }
+    }
+    this.paths.removeFromParent()
+    for (const line of this.paths.children as THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>[]) { line.geometry.dispose(); line.material.dispose() }
+    this.paths.clear()
+  }
+}

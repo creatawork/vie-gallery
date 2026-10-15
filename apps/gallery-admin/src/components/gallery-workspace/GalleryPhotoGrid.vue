@@ -60,19 +60,19 @@ watch(() => props.photos, async () => {
 // 拖拽排序：仅在"全部"视图且可写时启用。
 let sortableInstance: Sortable | null = null
 
-watch([gridRef, () => props.canWrite, sortingEnabled], async ([element, canWriteValue, sortable]) => {
-  await nextTick()
+watch([gridRef, () => props.canWrite, sortingEnabled], ([element, canWriteValue, sortable]) => {
   sortableInstance?.destroy()
   sortableInstance = null
   if (!element || !canWriteValue || !sortable) return
   sortableInstance = new Sortable(element, {
     draggable: '.photo-card',
     filter: 'button, input, a',
+    preventOnFilter: false,
     animation: 150,
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
     onEnd: event => {
-      const { oldIndex, newIndex } = event
+      const { oldDraggableIndex: oldIndex, newDraggableIndex: newIndex } = event
       if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
       emit('reorder', { fromIndex: oldIndex, toIndex: newIndex })
     }
@@ -114,10 +114,11 @@ defineExpose({ clearSelection })
   <div class="photo-grid-container">
     <!-- Filter Pills & Multi-Select Bar -->
     <div class="photo-filter-toolbar">
-      <div class="filter-pills-group" role="tablist">
+      <div class="filter-pills-group" role="group" aria-label="照片状态筛选">
         <button
           class="category-pill"
           :class="{ active: activeFilter === 'ALL' }"
+          :aria-pressed="activeFilter === 'ALL'"
           type="button"
           @click="activeFilter = 'ALL'"
         >
@@ -127,6 +128,7 @@ defineExpose({ clearSelection })
         <button
           class="category-pill"
           :class="{ active: activeFilter === 'READY' }"
+          :aria-pressed="activeFilter === 'READY'"
           type="button"
           @click="activeFilter = 'READY'"
         >
@@ -134,9 +136,10 @@ defineExpose({ clearSelection })
           <span class="count-tag is-ready">{{ readyCount }}</span>
         </button>
         <button
-          v-if="processingCount"
+          v-if="processingCount || activeFilter === 'PROCESSING'"
           class="category-pill"
           :class="{ active: activeFilter === 'PROCESSING' }"
+          :aria-pressed="activeFilter === 'PROCESSING'"
           type="button"
           @click="activeFilter = 'PROCESSING'"
         >
@@ -145,9 +148,10 @@ defineExpose({ clearSelection })
           <span class="count-tag is-processing">{{ processingCount }}</span>
         </button>
         <button
-          v-if="failedCount"
+          v-if="failedCount || activeFilter === 'FAILED'"
           class="category-pill"
           :class="{ active: activeFilter === 'FAILED' }"
+          :aria-pressed="activeFilter === 'FAILED'"
           type="button"
           @click="activeFilter = 'FAILED'"
         >
@@ -182,6 +186,11 @@ defineExpose({ clearSelection })
           <span>{{ allFilteredSelected ? '取消全选' : '全选当前' }}</span>
         </button>
       </div>
+    </div>
+
+    <div v-if="hasActiveFilter" class="filter-summary">
+      <p role="status">显示 {{ filteredPhotos.length }} / {{ photos.length }} 张照片</p>
+      <button class="btn btn-ghost btn-sm clear-filter-btn" type="button" @click="clearFilters">清除筛选</button>
     </div>
 
     <!-- 筛选/搜索期间禁用拖拽排序的提示 -->
@@ -219,9 +228,6 @@ defineExpose({ clearSelection })
         <template v-if="photos.length">
           <h3>没有符合筛选条件的照片</h3>
           <p>换个状态标签或搜索词试试。</p>
-          <button v-if="hasActiveFilter" class="btn btn-ghost btn-sm clear-filter-btn" type="button" @click="clearFilters">
-            清除筛选
-          </button>
         </template>
         <template v-else>
           <h3>相册内暂无照片</h3>
@@ -232,8 +238,8 @@ defineExpose({ clearSelection })
 
     <!-- Bottom Floating Batch Action Bar -->
     <Transition name="slide-up">
-      <div v-if="selectedPhotoIds.size > 0" class="floating-batch-bar">
-        <div class="batch-count-info">
+      <div v-if="canWrite && selectedPhotoIds.size > 0" class="floating-batch-bar" role="group" aria-label="照片批量操作">
+        <div class="batch-count-info" role="status">
           <span class="batch-selected-badge">{{ selectedPhotoIds.size }}</span>
           <span>张照片已选择</span>
         </div>
@@ -589,3 +595,5 @@ defineExpose({ clearSelection })
   transform: translate(-50%, 20px);
 }
 </style>
+
+<style scoped src="../../styles/photo-curation.css"></style>

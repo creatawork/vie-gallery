@@ -15,7 +15,8 @@ test('a gallery without server config presents the recommended scene, not a blan
   try {
     const adopted = new ConfigManager().adoptServerSnapshot(null)
     assert.equal(adopted.presetName, 'starry-night')
-    assert.equal(adopted.background?.mode, 'image')
+    assert.equal(adopted.background?.mode, 'gradient')
+    assert.equal(adopted.layout.params?.composition, 'curated')
     assert.equal(adopted.camera?.autoRotate, true)
 
     // 旧相册（已有服务端配置）完全不受兜底影响

@@ -1,7 +1,15 @@
+import { AmbientField } from '../core/AmbientField'
 import * as THREE from 'three'
 import type { ViewerPlugin, ViewerContext } from '../core/types'
 import { backgroundTextureUrl, sceneBackgroundThumbUrl, type BackgroundProjection } from '@vie/gallery-contracts'
 export class BackgroundPlugin implements ViewerPlugin {
+  private field: AmbientField | null = null
+  private time = 0
+  update(delta: number): void {
+    if (!this.context) return
+    if (!this.context.reducedMotion()) this.time += delta
+    this.field?.update(delta, this.time, this.context.scene.userData.motionEnergy ?? 0)
+  }
   name = 'Background'
   version = '1.0.0'
   private context: ViewerContext | null = null
@@ -13,6 +21,7 @@ export class BackgroundPlugin implements ViewerPlugin {
   install(context: ViewerContext): void { this.context = context; this.updateBackground(); context.on('config:update', this.updateBackground) }
   uninstall(): void {
     this.context?.off('config:update', this.updateBackground)
+    this.field?.dispose(); this.field = null
     this.request++
     if (this.context) this.context.scene.background = null
     this.texture?.dispose(); this.texture = null; this.context = null; this.signature = ''
@@ -28,6 +37,15 @@ export class BackgroundPlugin implements ViewerPlugin {
     this.signature = signature
     // Every applied state change invalidates any in-flight image load.
     const request = ++this.request
+    if (config?.mode === 'gradient' && config.motion === true) {
+      this.texture?.dispose(); this.texture = null
+      this.context.scene.background = new THREE.Color(config.color)
+      if (!this.field) { this.field = new AmbientField(); this.context.scene.add(this.field.mesh) }
+      this.field.setColors(config.color, config.secondaryColor ?? config.color)
+      this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }
+      return
+    }
+    this.field?.dispose(); this.field = null
     if (!config || config.mode === 'solid' || config.mode === 'none') {
       this.texture?.dispose(); this.texture = null
       this.info = { url: null, width: 0, height: 0, bytes: 0, projection: 'none' }

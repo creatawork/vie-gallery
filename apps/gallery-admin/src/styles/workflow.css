@@ -478,6 +478,7 @@
 
 @media (max-width: 640px) {
   /* 移动端简化动画 */
+  .workflow-steps li.done::before,
   .workflow-steps li.done span::after,
   .workflow-steps li.current::before {
     display: none;

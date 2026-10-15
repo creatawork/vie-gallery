@@ -1,4 +1,5 @@
 import type { LayoutPosition, ViewerConfig } from '../core/types'
+import { curatedLayout } from './curatedLayouts'
 
 const TWO_PI = Math.PI * 2
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)) // ~137.5 degrees
@@ -278,7 +279,11 @@ export function generateLayout(count: number, layout: ViewerConfig['layout']): L
   const params = layout.params ?? {}
   const options = { ...params, cols: params.columns ?? params.cols, maxRadius: params.radius ?? params.maxRadius }
   const spacing = params.spacing ?? 1
-  return LAYOUT_GENERATORS[layout.mode](count, options).map(position => ({
+  const positions = params.composition === 'curated' && ['helix', 'carousel', 'grid'].includes(layout.mode)
+    ? curatedLayout(count, layout.mode, { ...params, cols: typeof options.cols === 'number' ? options.cols : undefined,
+      cellW: typeof params.cellW === 'number' ? params.cellW : undefined, cellH: typeof params.cellH === 'number' ? params.cellH : undefined })
+    : LAYOUT_GENERATORS[layout.mode](count, options)
+  return positions.map(position => ({
     ...position, x: position.x * spacing, y: position.y * spacing, z: position.z * spacing
   }))
 }

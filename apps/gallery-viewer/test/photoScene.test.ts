@@ -4,6 +4,19 @@ import * as THREE from 'three'
 import { PhotoScene } from '../src/core/PhotoScene'
 import { TexturePool } from '../src/core/TexturePool'
 
+test('extreme photo ratios preserve the full image within bounded mounts', () => {
+  const pool = new TexturePool({ maxEdge: 512, bytes: 1000, concurrent: 1, resident: 2 }, async () => ({ texture: new THREE.Texture(), bytes: 4 }))
+  const scene = new PhotoScene(new THREE.Scene(), pool)
+  for (const ratio of [.1, 10]) {
+    const mesh = scene.sync([{ width: ratio * 100, height: 100, sortOrder: 0 }]).all[0]
+    mesh.geometry.computeBoundingBox()
+    const size = mesh.geometry.boundingBox!.getSize(new THREE.Vector3())
+    assert.ok(size.x <= 80 && size.y <= 120)
+    assert.ok(Math.abs(size.x / size.y - ratio) < .001)
+  }
+  scene.dispose(); pool.dispose()
+})
+
 test('visible thumbnails finish before nearby photos request high resolution upgrades', async () => {
   const started: string[] = [], complete: Array<() => void> = []
   const pool = new TexturePool({ maxEdge: 1, bytes: 1000, concurrent: 1, resident: 16 }, url => {

@@ -43,6 +43,24 @@ export class LayoutPlugin implements ViewerPlugin {
   private isAnimating = false
   private entranceOffsets = new WeakMap<THREE.Mesh, number>()
   private layoutSignature = ''
+  private fitPortrait(positions: ReturnType<typeof generateLayout>) {
+    const camera = this.context?.camera as THREE.PerspectiveCamera | undefined
+    if (this.context?.config.layout.params?.composition !== 'curated' || !camera || camera.aspect >= 1) return positions
+    if (this.currentLayout === 'grid') {
+      const layout = this.context.config.layout
+      const cellH = Math.max(180, ...this.context.photos.map(photo => {
+        photo.geometry.computeBoundingBox()
+        return (photo.geometry.boundingBox?.getSize(new THREE.Vector3()).y ?? 120) * (layout.params?.scale ?? 1) + 30
+      }))
+      return generateLayout(positions.length, { ...layout, mode: 'grid', params: { ...layout.params, columns: 2, cellW: 210, cellH } })
+    }
+    if (positions.length <= 2) return positions
+    return positions.map(p => ({ ...p, x: p.x * .48, y: p.y * 1.05, z: p.z * .55 }))
+  }
+  onResize(): void {
+    this.cancelInFlightMorphs()
+    this.applyLayout(this.currentLayout)
+  }
   private onLayoutChange = (mode: string) => this.switchLayout(mode)
   private onPhotosLoaded = () => { this.cancelInFlightMorphs(); if (!this.theatreActive) this.applyLayout(this.currentLayout) }
   private onConfigUpdate = () => {
@@ -202,7 +220,7 @@ export class LayoutPlugin implements ViewerPlugin {
     const photos = this.context.photos
     if (!photos || photos.length === 0) return
 
-    const rawPositions = generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode })
+    const rawPositions = this.fitPortrait(generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode }))
     const scale = this.context.config.layout.params?.scale ?? 1
     for (const photo of photos) { photo.scale.setScalar(scale); photo.userData.layoutScale = scale }
     this.entranceOffsets = new WeakMap()
@@ -262,7 +280,7 @@ export class LayoutPlugin implements ViewerPlugin {
     const photos = this.context.photos
     if (!photos || photos.length === 0) return
 
-    const rawPositions = generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode })
+    const rawPositions = this.fitPortrait(generateLayout(photos.length, { ...this.context.config.layout, mode: mode as typeof this.context.config.layout.mode }))
     const scale = this.context.config.layout.params?.scale ?? 1
     for (const photo of photos) { photo.scale.setScalar(scale); photo.userData.layoutScale = scale }
     this.entranceOffsets = new WeakMap()

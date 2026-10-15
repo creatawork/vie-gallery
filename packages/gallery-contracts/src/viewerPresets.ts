@@ -1,5 +1,6 @@
 import { createDefaultViewerConfig, mergeViewerConfig, VIEWER_CONFIG_RULES, type ViewerConfig } from './viewerConfig'
 import { sceneBackgroundUrl } from './galleryMedia'
+import { applyCuratedStyle } from './curatedStyles'
 
 export type PresetName = 'minimal' | 'forest-dream' | 'starry-night' | 'ocean-breeze' | 'sunset-glow' | 'romantic' | 'winter-snow' | 'film-gallery'
 function scene(name: PresetName, patch: unknown): ViewerConfig {
@@ -33,7 +34,7 @@ export const VIEWER_PRESETS: Record<PresetName, ViewerConfig> = {
 /** 新相册/未配置相册的默认推荐场景。改这一个常量即可全端（admin 草稿、访客端兜底、发布初始化）生效。 */
 export const RECOMMENDED_SCENE_PRESET: PresetName = 'starry-night'
 export function createRecommendedViewerConfig(): ViewerConfig {
-  return structuredClone(VIEWER_PRESETS[RECOMMENDED_SCENE_PRESET])
+  return applyCuratedStyle(structuredClone(VIEWER_PRESETS[RECOMMENDED_SCENE_PRESET]), 'helix')
 }
 
 export function isViewerPreset(name: string): name is PresetName { return Object.hasOwn(VIEWER_PRESETS, name) }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue'
+import { nextTick, onUnmounted, ref, watch } from 'vue'
 import type { WorkspacePhoto } from '../../composables/useGalleryWorkspace'
 import { formatBytes } from '../../lib/format'
 import Icon from '../Icon.vue'
@@ -23,6 +23,7 @@ const emit = defineEmits<{
 
 const menuOpen = ref(false)
 const menuRoot = ref<HTMLElement | null>(null)
+const menuTrigger = ref<HTMLButtonElement | null>(null)
 
 function toggleMenu(event: Event) {
   event.stopPropagation()
@@ -39,7 +40,9 @@ function handleDocumentClick(event: MouseEvent) {
 function handleDocumentKeydown(event: KeyboardEvent) {
   if (menuOpen.value && event.key === 'Escape') {
     menuOpen.value = false
+    event.preventDefault()
     event.stopPropagation()
+    nextTick(() => menuTrigger.value?.focus())
   }
 }
 
@@ -67,10 +70,11 @@ function handleSelectClick(event: Event) {
 <template>
   <article
     class="photo-card"
-    :class="{ 'is-selected': selected }"
+    :class="{ 'is-selected': selected, 'is-menu-open': menuOpen }"
     tabindex="0"
     @click="$emit('open')"
-    @keydown.enter="$emit('open')"
+    @keydown.enter.self.prevent="$emit('open')"
+    @keydown.space.self.prevent="$emit('open')"
   >
     <div class="photo-img-box">
       <img
@@ -90,6 +94,7 @@ function handleSelectClick(event: Event) {
         type="button"
         class="select-btn"
         :class="{ 'is-checked': selected }"
+        :aria-pressed="!!selected"
         :aria-label="selected ? '取消选中' : '选中照片'"
         @click="handleSelectClick"
       >
@@ -119,7 +124,7 @@ function handleSelectClick(event: Event) {
         <span v-else-if="photo.width && photo.height">{{ photo.width }}×{{ photo.height }}</span>
         <span v-else>—</span>
         <div ref="menuRoot" class="meta-actions" @click.stop>
-          <button class="ghost-btn" type="button" aria-label="更多操作" @click="toggleMenu">
+          <button ref="menuTrigger" class="ghost-btn" type="button" aria-label="更多操作" :aria-expanded="menuOpen" @click="toggleMenu">
             <Icon name="more" :size="16" />
           </button>
           <div v-if="menuOpen" class="card-menu">
@@ -183,8 +188,8 @@ function handleSelectClick(event: Event) {
   position: absolute;
   top: 8px;
   left: 8px;
-  width: 22px;
-  height: 22px;
+  width: 44px;
+  height: 44px;
   border-radius: 6px;
   background: rgba(15, 23, 42, 0.45);
   border: 1.5px solid rgba(255, 255, 255, 0.85);
@@ -281,7 +286,7 @@ function handleSelectClick(event: Event) {
   justify-content: space-between;
   margin-top: 6px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .meta-actions {
@@ -291,8 +296,8 @@ function handleSelectClick(event: Event) {
 }
 
 .ghost-btn {
-  width: 24px;
-  height: 24px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   color: #9ca3af;
@@ -320,6 +325,7 @@ function handleSelectClick(event: Event) {
 .card-menu button {
   width: 100%;
   text-align: left;
+  min-height: 44px;
   padding: 7px 8px;
   border-radius: 7px;
   font-size: 12px;
@@ -337,5 +343,38 @@ function handleSelectClick(event: Event) {
 
 .card-menu .danger:hover {
   background: #fef2f2;
+}
+.photo-card.is-menu-open {
+  overflow: visible;
+  z-index: 3;
+}
+
+.photo-card:focus-within .select-btn {
+  opacity: 1;
+  transform: none;
+}
+
+.photo-card:focus-visible,
+.select-btn:focus-visible,
+.ghost-btn:focus-visible,
+.card-menu button:focus-visible {
+  outline: 2px solid var(--brand-deep, #047857);
+  outline-offset: -3px;
+}
+
+@media (max-width: 768px), (hover: none) {
+  .photo-card, .photo-card:hover, .photo-card.tilt-active,
+  .photo-card .photo-img-box, .photo-card .photo-info,
+  .photo-card .select-btn, .photo-card .ghost-btn {
+    transform: none;
+    animation: none;
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-card, .select-btn { transition: none; }
+  .photo-card:hover, .photo-card.tilt-active { transform: none; }
+  .dot-pulse { animation: none; }
 }
 </style>

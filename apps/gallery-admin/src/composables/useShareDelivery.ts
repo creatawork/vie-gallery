@@ -1,6 +1,7 @@
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 import type { Gallery, ShareLink } from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
+import { viewerOrigin } from '../lib/preview'
 
 export function formatRemaining(expiresAt?: string | null): string {
   if (!expiresAt) return '永久有效'
@@ -69,10 +70,7 @@ export function useShareDelivery(
   const error = ref<string | null>(null)
 
   function viewerBaseUrl(slug: string) {
-    const isLocal = ['5173', '5174', '5175'].includes(window.location.port) &&
-      ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
-    const port = isLocal ? ':5174' : (window.location.port ? `:${window.location.port}` : '')
-    return `${window.location.protocol}//${window.location.hostname}${port}/g/${slug}`
+    return `${viewerOrigin()}/g/${encodeURIComponent(slug)}`
   }
 
   function shareUrlWithToken(base: string, rawToken?: string) {

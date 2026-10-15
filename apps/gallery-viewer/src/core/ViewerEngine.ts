@@ -1,3 +1,4 @@
+import { MotionAtmosphere } from './MotionAtmosphere'
 import * as THREE from 'three'
 import { mergeViewerConfig, normalizeViewerConfig, ViewerConfigValidationError, type PublicPhoto } from '@vie/gallery-contracts'
 import { PhotoScene } from './PhotoScene'
@@ -104,6 +105,7 @@ export class ViewerEngine {
 
   // DOM
   private canvas: HTMLCanvasElement
+  private atmosphere: MotionAtmosphere
 
   // 插件共享上下文（对象身份保持稳定，插件长期持有也不会读到过期照片/配置）
   private pluginContext: ViewerContext | null = null
@@ -126,6 +128,7 @@ export class ViewerEngine {
     this.scene = new THREE.Scene()
     this.camera = this.createCamera()
     this.renderer = this.createRenderer()
+    this.atmosphere = new MotionAtmosphere(canvas, this.scene)
     this.clock = new FrameClock()
     this.texturePool = new TexturePool(QUALITY_BUDGETS[this.effectiveQuality], loadPhotoTexture)
     this.photoScene = new PhotoScene(this.scene, this.texturePool, mesh => this.eventBus.emit('photo:texture-ready', mesh))
@@ -198,6 +201,7 @@ export class ViewerEngine {
     await this.reconcilePlugins(this.configManager.getConfig(), true)
 
     if (this.disposed) return
+    if (this.configManager.getConfig().layout.params?.composition === 'curated') this.resetView()
     this.photoScene.updateVisibility(this.camera)
     if (import.meta.env.DEV || import.meta.env.VITE_VIEWER_DIAGNOSTICS === 'true') {
       this.diagnostics = {
@@ -309,7 +313,9 @@ export class ViewerEngine {
     context.config = effective
     this.pluginManager.setContext(context)
     const wanted = new Map<string, boolean>([
-      ['Layout', true], ['Lighting', true], ['PhotoFade', true], ['Background', true],
+      ['Layout', effective.layout.params?.composition !== 'curated'],
+      ['PhotoFade', effective.layout.params?.composition !== 'curated'],
+      ['SpatialStage', effective.layout.params?.composition === 'curated'], ['Lighting', true], ['Background', true],
       ['Particles', effective.particles.enabled && effective.particles.types.length > 0 && (effective.particles.density ?? 1) > 0],
       ['Fog', !!effective.effects.fog?.enabled],
       ['ClickRipple', !!effective.interaction.clickRipple], ['CursorTrail', !!effective.interaction.cursorTrail]
@@ -330,17 +336,19 @@ export class ViewerEngine {
       try {
         this.postProcessing.apply(effective.effects)
         this.resizePostProcessing()
-      } catch {
+      } catch (error) {
+        if (import.meta.env.DEV) console.warn('[viewer] Effects setup failed', error)
         this.postProcessing?.dispose()
         this.postProcessing = null
         this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
       }
     }
     if (this.controls && !this.theatreView) {
+      this.controls.enabled = effective.layout.params?.composition !== 'curated'
       this.controls.autoRotate = !!effective.camera?.autoRotate
       this.controls.autoRotateSpeed = effective.camera?.rotateSpeed ?? .5
     }
-    if (!effective.camera?.introFlight && this.introFlight?.arc) this.cancelIntroFlight()
+    if (effective.layout.params?.composition === 'curated' || (!effective.camera?.introFlight && this.introFlight?.arc)) this.cancelIntroFlight()
   }
 
   /**
@@ -502,7 +510,7 @@ export class ViewerEngine {
     // 开场电影运镜只随引擎首次启动播放一次
     if (!this.introFlightPlayed) {
       this.introFlightPlayed = true
-      if (this.pluginContext?.config.camera?.introFlight && !this.motionQuery.matches) {
+      if (this.pluginContext?.config.camera?.introFlight && this.pluginContext.config.layout.params?.composition !== 'curated' && !this.motionQuery.matches) {
         this.playIntroFlight()
       }
     }
@@ -517,6 +525,7 @@ export class ViewerEngine {
    */
   private playIntroFlight(): void {
     if (!this.controls || this.motionQuery.matches) return
+    this.cancelIntroFlight()
     const to = this.camera.position.clone()
     const from = to.clone().add(new THREE.Vector3(900, 620, 1500))
     this.introFlight = { start: this.clock.elapsed, duration: this.pluginContext?.config.camera?.introDuration ?? 2, from, to, arc: true }
@@ -541,6 +550,7 @@ export class ViewerEngine {
     this.notifyTransitionStart()
   }
   setAutoTour(enabled: boolean): void {
+    this.eventBus.emit('stage:autoplay', enabled && !this.motionQuery.matches)
     if (this.theatreView) this.eventBus.emit('theatre:command', { type: 'exit' })
     if (this.controls) {
       this.controls.autoRotate = enabled && !this.motionQuery.matches
@@ -629,11 +639,14 @@ export class ViewerEngine {
     if (this.disposed) return
     this.eventBus.emit('theatre:command', { type: 'exit' })
     this.cancelIntroFlight()
-    this.camera.position.set(0, 80, 1100)
-    if (this.controls) {
-      this.controls.target.set(0, 0, 0)
-      this.controls.update()
+    const config = this.configManager.getConfig()
+    if (config.layout.params?.composition === 'curated') {
+      this.eventBus.emit('stage:reset')
+      this.wakeUp(2000)
+      return
     }
+    const distance = this.camera.aspect < 1 ? 1450 : 1050
+    this.flyTo(new THREE.Vector3(0, 35, distance), new THREE.Vector3(), 1.1)
     this.wakeUp(2000)
   }
 
@@ -719,6 +732,7 @@ export class ViewerEngine {
       this.controls.dispose()
       this.controls = null
     }
+    this.atmosphere.dispose()
 
     // 卸载所有插件
     this.pluginManager.dispose()
@@ -752,7 +766,7 @@ export class ViewerEngine {
     const width = this.canvas.clientWidth || window.innerWidth
     const height = this.canvas.clientHeight || window.innerHeight
     const camera = new THREE.PerspectiveCamera(50, width / height, 1, 6000)
-    camera.position.set(0, 80, 1100)
+    camera.position.set(0, 35, width < height ? 1450 : 1050)
     return camera
   }
 
@@ -883,13 +897,14 @@ export class ViewerEngine {
     const cpuStart = performance.now()
     this.renderer.info.reset()
 
-    // 更新 OrbitControls 阻尼
-    if (this.controls && !this.theatreView) {
+    // Only one controller owns the camera at a time.
+    if (this.controls?.enabled && !this.theatreView) {
       this.updateIntroFlight(elapsed)
       this.controls.update(delta)
     }
 
     // 更新所有插件 (粒子动画、天空盒跟随、布局缓动)
+    this.atmosphere.update(delta, this.motionQuery.matches)
     this.pluginManager.update(delta, elapsed)
     this.photoScene.updateVisibility(this.camera)
 
@@ -897,7 +912,8 @@ export class ViewerEngine {
       if (this.postProcessing) this.postProcessing.render(delta)
       else this.renderer.render(this.scene, this.camera)
     }
-    catch {
+    catch (error) {
+      if (import.meta.env.DEV) console.warn('[viewer] Effects render failed', error)
       this.postProcessing?.dispose()
       this.postProcessing = null
       this.renderer.render(this.scene, this.camera)
@@ -946,7 +962,8 @@ export class ViewerEngine {
       ])
       if (this.disposed) return
       await this.applyConfig({})
-    } catch {
+    } catch (error) {
+      if (import.meta.env.DEV) console.warn('[viewer] Effects loading failed', error)
       if (!this.disposed) this.eventBus.emit('effects:fallback', { message: '已使用基础显示效果' })
     }
   }

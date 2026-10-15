@@ -1,0 +1,65 @@
+.viewer-app-root { --bg-deep:#080c15; --text-main:#edf1f6; --text-muted:#9daabd; --accent:#c3d0e5; background:#080c15; }
+.gallery-viewport { min-height:100svh; }
+.canvas-container { position:fixed; inset:0; }
+.webgl-canvas { display:block; width:100% !important; height:100% !important; touch-action:none; }
+.exhibition-header { position:fixed; z-index:40; inset:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:28px 44px; pointer-events:none; background:linear-gradient(#080c15b8,transparent); }
+.exhibition-header > * { pointer-events:auto; }
+.exhibition-brand { display:flex; align-items:center; gap:18px; font:italic 42px Georgia,serif; color:#edf1f6; text-decoration:none; }
+.exhibition-brand span { font:11px system-ui,sans-serif; letter-spacing:.25em; color:#b7c2d3; border-left:1px solid #ffffff35; padding-left:18px; }
+.exhibition-tools { display:flex; align-items:center; gap:18px; }
+.exhibition-tools button { font:12px system-ui,sans-serif; cursor:pointer; min-height:42px; color:#bdc7d6; }
+.exhibition-view { display:flex; padding:3px; background:#101725bb; border:1px solid #ffffff20; border-radius:30px; backdrop-filter:blur(18px); }
+.exhibition-view button { border:0; border-radius:24px; background:transparent; padding:0 18px; }
+.exhibition-view button[aria-pressed=true] { color:#131d2d; background:#e5eaf1; }
+.quiet-button { background:transparent; border:0; }
+.exhibition-share { display:flex; align-items:center; gap:9px; border:1px solid #ffffff35; padding:0 18px; border-radius:24px; background:#ffffff0a; }
+.exhibition-heading { position:absolute; left:44px; top:134px; z-index:20; pointer-events:none; max-width:36vw; }
+.exhibition-heading p { font-size:12px; letter-spacing:.13em; color:#a8b8ce; margin:18px 0 0; }
+.exhibition-heading h1 { font:400 clamp(28px,3.3vw,56px)/1.3 Georgia,'Songti SC','SimSun',serif; letter-spacing:.035em; text-wrap:balance; margin:0; text-shadow:0 4px 28px #080c15; }
+.composition-dock { position:fixed; bottom:54px; left:50%; transform:translateX(-50%); display:flex; gap:6px; z-index:30; padding:7px; border-radius:18px; background:#111a28cc; backdrop-filter:blur(22px); border:1px solid #ffffff25; box-shadow:0 16px 55px #0005; }
+.composition-dock button { display:flex; align-items:center; gap:9px; padding:10px 20px; min-height:48px; border:0; border-radius:12px; color:#a7b5ca; background:transparent; font:13px system-ui; cursor:pointer; transition:background .3s,color .3s; }
+.composition-dock button[aria-pressed=true] { color:#f2f5fa; background:#d3e2ff1c; }
+.composition-dock button:hover { background:#ffffff15; }
+.composition-dock button:disabled { opacity:.6; cursor:wait; }
+.composition-dock svg { width:34px; height:24px; fill:none; stroke:currentColor; stroke-width:1; }
+button:focus-visible,a:focus-visible { outline:2px solid #d0def1; outline-offset:5px; }
+.spatial-tips { bottom:19px; color:#9eafc6; font-size:11px; }
+.editorial-main { padding:140px 6vw 100px; max-width:1600px; margin:auto; }
+.editorial-hero { padding:20px 0 60px; text-align:left; border-bottom:1px solid #ffffff22; margin-bottom:48px; }
+.hero-kicker { color:#9eafc6; font-size:10px; letter-spacing:.3em; }
+.hero-title { font:400 clamp(38px,6vw,84px)/1.2 Georgia,'Songti SC','SimSun',serif; color:#edf1f6; }
+.hero-meta { color:#a3b1c5; letter-spacing:.1em; font-size:12px; }
+.webgl-fallback-banner { top:100px; }
+.load-more-floating { bottom:130px; }
+.stage-info { position:fixed; left:44px; bottom:66px; z-index:25; max-width:26vw; }
+.stage-info::before { content:''; position:absolute; inset:-25px -40px; z-index:-1; background:radial-gradient(ellipse,#080c15cc,transparent 72%); pointer-events:none; }
+.stage-counter { display:flex; align-items:center; gap:13px; color:#96a7bf; font:12px/1 system-ui,sans-serif; font-variant-numeric:tabular-nums; }
+.stage-counter span:first-child { color:#edf1f6; }
+.stage-counter i { width:48px; height:1px; background:#b7c8df55; }
+.stage-current { display:flex; align-items:center; gap:20px; min-height:44px; border:0; padding:10px 0 0; background:none; color:#edf1f6; font:20px/1.5 Georgia,'Songti SC',serif; cursor:pointer; text-align:left; }
+.stage-current svg { width:14px; height:14px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.4; }
+.stage-info p { margin:7px 0 0; color:#a8b8ce; font-size:11px; letter-spacing:.08em; }
+.stage-navigation { position:fixed; right:44px; bottom:70px; z-index:30; display:flex; gap:12px; }
+.stage-navigation button { display:grid; place-items:center; width:52px; height:52px; border:1px solid #9bb0cc55; border-radius:50%; color:#e2eaf7; background:#14203180; cursor:pointer; transition:background .2s,border-color .2s; }
+.stage-navigation button:hover { background:#263951; border-color:#c4d1e5; }
+.stage-navigation button:disabled { opacity:.3; cursor:default; }
+.stage-navigation svg { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.2; }
+.viewer-app-root ::selection { color:#080c15; background:#c3d0e5; }
+.webgl-canvas { cursor:grab; }
+@media(max-width:700px) {
+ .exhibition-header { padding:16px 18px; gap:10px; }
+ .exhibition-brand { font-size:33px; }.exhibition-brand span { display:none; }
+ .exhibition-tools { gap:8px; }.exhibition-view button { padding:0 10px; font-size:11px; }.exhibition-share { padding:0 11px; }
+ .quiet-button { padding:0 4px; }
+ .exhibition-heading { left:24px; top:103px; max-width:78vw; }.exhibition-heading h1 { font-size:32px; }
+ .exhibition-heading p { margin-top:10px; font-size:11px; }
+ .stage-info { left:24px; bottom:calc(160px + env(safe-area-inset-bottom)); max-width:64vw; }
+ .stage-info p { display:none; }.stage-current { font-size:17px; }
+ .stage-navigation { right:20px; bottom:calc(161px + env(safe-area-inset-bottom)); gap:8px; }
+ .stage-navigation button { width:44px; height:44px; }
+ .composition-dock { bottom:calc(45px + env(safe-area-inset-bottom)); width:max-content; max-width:94vw; }
+ .composition-dock button { padding:9px 13px; gap:6px; }.composition-dock svg { width:27px; }
+ .spatial-tips { bottom:calc(14px + env(safe-area-inset-bottom)); }.spatial-tips p { font-size:10px; }
+ .editorial-main { padding:110px 20px 70px; }.editorial-hero { padding-bottom:30px; }
+}
+@media(max-width:380px) { .exhibition-header { padding:14px 12px; gap:5px; }.exhibition-tools { gap:4px; }.exhibition-tools button { font-size:10px; }.exhibition-view button { padding:0 8px; }.exhibition-share { padding:0 8px; } }

@@ -70,10 +70,15 @@ export class ParticlesPlugin implements ViewerPlugin {
   getParticleCounts(): Readonly<Record<ParticleType, number>> { return { ...this.counts } }
   update(delta: number, _elapsed: number): void {
     const speed = this.context?.reducedMotion() ? 0 : this.context?.config.particles.speed ?? 1
-    const dt = Math.min(.1, Math.max(0, delta)) * speed
+    const energy = this.context?.scene.userData.motionEnergy ?? 0
+    const dt = Math.min(.1, Math.max(0, delta)) * speed * (1 + energy * 3)
     if (dt === 0) return
     this.activeTime += dt
-    for (const system of this.systems.values()) system.update(this.activeTime, dt)
+    for (const system of this.systems.values()) {
+      system.update(this.activeTime, dt)
+      const material = system.mesh.material as THREE.ShaderMaterial
+      if (material.uniforms?.uPointer) material.uniforms.uPointer.value.copy(this.context?.scene.userData.motionPointer ?? new THREE.Vector2(2,2))
+    }
   }
   private handleConfigChange = (_config: ViewerConfig) => this.refresh()
   private refresh(): void {
@@ -168,6 +173,7 @@ class StarDustSystem implements ParticleSystem {
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uSize: { value: 1 }, uColor: { value: new THREE.Color() }, uUseColor: { value: 0 },
+        uPointer: { value: new THREE.Vector2(2, 2) },
         uColor1: { value: new THREE.Color('#38bdf8') }, // 蔚蓝
         uColor2: { value: new THREE.Color('#c084fc') }  // 紫罗兰
       },
@@ -180,6 +186,7 @@ class StarDustSystem implements ParticleSystem {
         attribute float aScale;
         varying float vAlpha;
         varying vec3 vColor;
+        uniform vec2 uPointer;
         uniform vec3 uColor1;
         uniform vec3 uColor2;
 
@@ -197,6 +204,9 @@ class StarDustSystem implements ParticleSystem {
 
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           gl_Position = projectionMatrix * mvPosition;
+          vec2 away=gl_Position.xy/gl_Position.w-uPointer;
+          float distanceToPointer=length(away);
+          gl_Position.xy += normalize(away+vec2(.0001)) * (1.0-smoothstep(.0,.22,distanceToPointer))*.055*gl_Position.w;
 
           // 距离自适应大小
           gl_PointSize = aScale * uSize * (240.0 / -mvPosition.z);

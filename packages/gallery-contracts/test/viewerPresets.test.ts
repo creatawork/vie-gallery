@@ -79,12 +79,13 @@ test('saved builtin background URLs load the current asset version at every qual
   }
 })
 
-test('recommended scene is a canonical, valid, clone-isolated preset', () => {
+test('recommended scene is a valid, clone-isolated curated helix without a background download', () => {
   assert.equal(RECOMMENDED_SCENE_PRESET, 'starry-night')
   const recommended = createRecommendedViewerConfig() as typeof VIEWER_PRESETS['starry-night']
-  assert.deepEqual(recommended, VIEWER_PRESETS['starry-night'])
+  assert.equal(recommended.layout.mode, 'helix')
+  assert.equal(recommended.layout.params?.composition, 'curated')
   assert.equal(normalizeViewerConfig(recommended).issues.length, 0)
-  assert.equal(recommended.background?.image?.projection, 'equirectangular')
+  assert.equal(recommended.background?.mode, 'gradient')
   recommended.effects.bloom!.strength = 9
   recommended.presetName = 'mutated'
   assert.equal(VIEWER_PRESETS['starry-night'].effects.bloom!.strength, .5, 'preset registry must not be mutated')

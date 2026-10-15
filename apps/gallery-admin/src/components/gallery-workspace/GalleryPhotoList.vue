@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onUnmounted, nextTick } from 'vue'
 import Sortable from 'sortablejs'
 import type { WorkspacePhoto } from '../../composables/useGalleryWorkspace'
 import { usePhotoCuration } from '../../composables/usePhotoCuration'
@@ -51,20 +51,20 @@ watch(() => props.photos, () => {
 
 let sortableInstance: Sortable | null = null
 
-watch([listRef, () => props.canWrite, sortingEnabled], async ([element, canWriteValue, sortable]) => {
-  await nextTick()
+watch([listRef, () => props.canWrite, sortingEnabled], ([element, canWriteValue, sortable]) => {
   sortableInstance?.destroy()
   sortableInstance = null
   if (!element || !canWriteValue || !sortable) return
   sortableInstance = new Sortable(element, {
     draggable: '.photo-list-row',
     filter: 'button, input, a',
+    preventOnFilter: false,
     handle: '.row-drag-handle',
     animation: 150,
     ghostClass: 'sortable-ghost',
     chosenClass: 'sortable-chosen',
     onEnd: event => {
-      const { oldIndex, newIndex } = event
+      const { oldDraggableIndex: oldIndex, newDraggableIndex: newIndex } = event
       if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
       emit('reorder', { fromIndex: oldIndex, toIndex: newIndex })
     }
@@ -81,31 +81,42 @@ function startEditTitle(photo: WorkspacePhoto) {
   editingTitleId.value = photo.id
   editingTitleValue.value = photo.title || ''
   nextTick(() => {
-    const input = document.querySelector<HTMLInputElement>('.photo-list-row .row-title-input')
+    const input = listRef.value?.querySelector<HTMLInputElement>('.row-title-input')
     input?.focus()
     input?.select()
   })
 }
 
-function saveTitle(photo: WorkspacePhoto) {
+function focusTitle(photo: WorkspacePhoto) {
+  nextTick(() => {
+    const row = Array.from(listRef.value?.querySelectorAll<HTMLElement>('.photo-list-row') || [])
+      .find(element => element.dataset.photoId === photo.id)
+    row?.querySelector<HTMLButtonElement>('.row-title')?.focus()
+  })
+}
+
+function saveTitle(photo: WorkspacePhoto, restoreFocus = false) {
   if (editingTitleId.value !== photo.id) return
   const trimmed = editingTitleValue.value.trim()
   editingTitleId.value = null
   if (trimmed !== (photo.title || '')) {
     emit('update-title', { photo, title: trimmed })
   }
+  if (restoreFocus) focusTitle(photo)
 }
 
 function cancelEditTitle(photo: WorkspacePhoto) {
   if (editingTitleId.value !== photo.id) return
   editingTitleId.value = null
   editingTitleValue.value = photo.title || ''
+  focusTitle(photo)
 }
 
 function onTitleKeydown(event: KeyboardEvent, photo: WorkspacePhoto) {
+  if (event.isComposing) return
   if (event.key === 'Enter') {
     event.preventDefault()
-    saveTitle(photo)
+    saveTitle(photo, true)
   } else if (event.key === 'Escape') {
     event.preventDefault()
     cancelEditTitle(photo)
@@ -141,10 +152,11 @@ defineExpose({ clearSelection })
 <template>
   <div class="photo-list-container">
     <div class="photo-filter-toolbar">
-      <div class="filter-pills-group" role="tablist">
+      <div class="filter-pills-group" role="group" aria-label="照片状态筛选">
         <button
           class="category-pill"
           :class="{ active: activeFilter === 'ALL' }"
+          :aria-pressed="activeFilter === 'ALL'"
           type="button"
           @click="activeFilter = 'ALL'"
         >
@@ -154,6 +166,7 @@ defineExpose({ clearSelection })
         <button
           class="category-pill"
           :class="{ active: activeFilter === 'READY' }"
+          :aria-pressed="activeFilter === 'READY'"
           type="button"
           @click="activeFilter = 'READY'"
         >
@@ -161,9 +174,10 @@ defineExpose({ clearSelection })
           <span class="count-tag is-ready">{{ readyCount }}</span>
         </button>
         <button
-          v-if="processingCount"
+          v-if="processingCount || activeFilter === 'PROCESSING'"
           class="category-pill"
           :class="{ active: activeFilter === 'PROCESSING' }"
+          :aria-pressed="activeFilter === 'PROCESSING'"
           type="button"
           @click="activeFilter = 'PROCESSING'"
         >
@@ -171,9 +185,10 @@ defineExpose({ clearSelection })
           <span class="count-tag is-processing">{{ processingCount }}</span>
         </button>
         <button
-          v-if="failedCount"
+          v-if="failedCount || activeFilter === 'FAILED'"
           class="category-pill"
           :class="{ active: activeFilter === 'FAILED' }"
+          :aria-pressed="activeFilter === 'FAILED'"
           type="button"
           @click="activeFilter = 'FAILED'"
         >
@@ -207,6 +222,11 @@ defineExpose({ clearSelection })
       </div>
     </div>
 
+    <div v-if="hasActiveFilter" class="filter-summary">
+      <p role="status">显示 {{ filteredPhotos.length }} / {{ photos.length }} 张照片</p>
+      <button class="btn btn-ghost btn-sm clear-filter-btn" type="button" @click="clearFilters">清除筛选</button>
+    </div>
+
     <p v-if="canWrite && sortingEnabled && photos.length > 1" class="drag-hint">
       拖动左侧手柄即可调整顺序
     </p>
@@ -218,6 +238,7 @@ defineExpose({ clearSelection })
       <div
         v-for="photo in filteredPhotos"
         :key="photo.id"
+        :data-photo-id="photo.id"
         class="photo-list-row"
         :class="{ 'is-selected': selectedPhotoIds.has(photo.id) }"
         @click="emit('open', photo)"
@@ -227,6 +248,7 @@ defineExpose({ clearSelection })
           class="row-select"
           type="button"
           :aria-label="selectedPhotoIds.has(photo.id) ? '取消选择' : '选择照片'"
+          :aria-pressed="selectedPhotoIds.has(photo.id)"
           @click.stop="toggleSelect(photo.id)"
         >
           <span class="select-box" :class="{ checked: selectedPhotoIds.has(photo.id) }">
@@ -236,10 +258,10 @@ defineExpose({ clearSelection })
         <span v-if="canWrite && sortingEnabled" class="row-drag-handle" aria-hidden="true" @click.stop>
           <Icon name="grip" :size="14" />
         </span>
-        <img v-if="photo.thumbnailUrl" :src="photo.thumbnailUrl" class="row-thumb" loading="lazy" alt="" />
-        <div v-else class="row-thumb row-thumb-empty">
-          <Icon name="photo" :size="16" />
-        </div>
+        <button class="row-preview" type="button" :aria-label="`预览照片：${photo.title || '未命名照片'}`" @click.stop="emit('open', photo)">
+          <img v-if="photo.thumbnailUrl" :src="photo.thumbnailUrl" class="row-thumb" loading="lazy" alt="" />
+          <span v-else class="row-thumb row-thumb-empty"><Icon name="photo" :size="16" /></span>
+        </button>
 
         <div class="row-main" @click.stop>
           <template v-if="editingTitleId === photo.id">
@@ -249,6 +271,7 @@ defineExpose({ clearSelection })
               type="text"
               maxlength="160"
               placeholder="输入照片标题"
+              aria-label="照片标题"
               @blur="saveTitle(photo)"
               @keydown="onTitleKeydown($event, photo)"
             />
@@ -260,7 +283,7 @@ defineExpose({ clearSelection })
             :title="canWrite ? '点击修改标题' : ''"
             @click="canWrite ? startEditTitle(photo) : emit('open', photo)"
           >
-            {{ photo.title || '未命名照片' }}
+            <span class="row-title-text">{{ photo.title || '未命名照片' }}</span>
             <Icon v-if="canWrite" name="edit" :size="12" class="row-edit-hint" />
           </button>
           <div class="row-meta">
@@ -313,16 +336,13 @@ defineExpose({ clearSelection })
       <template v-if="photos.length">
         <p class="list-filtered-empty">没有符合筛选条件的照片</p>
         <p class="list-filtered-empty-sub">换个状态标签或搜索词试试。</p>
-        <button v-if="hasActiveFilter" class="btn btn-ghost btn-sm clear-filter-btn" type="button" @click="clearFilters">
-          清除筛选
-        </button>
       </template>
       <p v-else class="list-filtered-empty">相册内暂无照片。</p>
     </div>
 
     <Transition name="slide-up">
-      <div v-if="selectedPhotoIds.size > 0" class="floating-batch-bar">
-        <div class="batch-count-info">
+      <div v-if="canWrite && selectedPhotoIds.size > 0" class="floating-batch-bar" role="group" aria-label="照片批量操作">
+        <div class="batch-count-info" role="status">
           <span class="batch-selected-badge">{{ selectedPhotoIds.size }}</span>
           <span>张照片已选择</span>
         </div>
@@ -539,6 +559,26 @@ defineExpose({ clearSelection })
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.row-preview {
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.row-preview .row-thumb {
+  display: block;
+}
+
+.row-preview .row-thumb-empty {
+  display: grid;
 }
 
 .select-box {
@@ -597,6 +637,8 @@ defineExpose({ clearSelection })
   background: none;
   border: none;
   padding: 0;
+  min-height: 44px;
+  font-family: inherit;
   text-align: left;
   font-size: 13.5px;
   font-weight: 600;
@@ -615,12 +657,21 @@ defineExpose({ clearSelection })
   color: #047857;
 }
 
+.row-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .row-edit-hint {
   opacity: 0.45;
   flex-shrink: 0;
 }
 
 .row-title-input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 44px;
+  font-family: inherit;
   padding: 4px 10px;
   border-radius: 6px;
   border: 1px solid #10b981;
@@ -635,6 +686,7 @@ defineExpose({ clearSelection })
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .row-meta-tag {
@@ -677,8 +729,8 @@ defineExpose({ clearSelection })
 }
 
 .row-action-btn {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border-radius: 8px;
@@ -809,4 +861,33 @@ defineExpose({ clearSelection })
     transition: none !important;
   }
 }
+
+@media (max-width: 600px) {
+  .row-title-input {
+    font-size: 16px;
+  }
+
+  .row-main:has(.row-title-input) {
+    flex-basis: 100%;
+  }
+
+  .photo-list-row {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .row-main {
+    flex-basis: calc(100% - 160px);
+  }
+
+  .row-actions {
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-subtle, #e2e8f0);
+  }
+}
 </style>
+
+<style scoped src="../../styles/photo-curation.css"></style>

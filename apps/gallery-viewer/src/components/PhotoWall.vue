@@ -27,6 +27,7 @@ function markFailed(url: string) {
       :key="`${photo.sortOrder}-${photo.thumbnailUrl}-${index}`"
       type="button"
       class="photo-card"
+      :style="{ '--delay': `${Math.min(index, 8) * 65}ms` }"
       :aria-label="`查看照片 ${index + 1}：${photo.title || '未命名照片'}`"
       @click="emit('select', index)"
     >
@@ -51,10 +52,15 @@ function markFailed(url: string) {
 </template>
 
 <style scoped>
-.photo-wall { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px 20px; }
+.photo-wall { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 54px 30px; align-items: start; }
+.photo-card { animation: exhibit-in .7s both; animation-delay: var(--delay); }
+.photo-card:nth-child(7n + 1) { grid-column: span 2; }
+.photo-card:nth-child(7n + 2) { padding-top: 20%; }
+.photo-card:nth-child(7n + 5) { padding-top: 12%; }
+@keyframes exhibit-in { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:translateY(0); } }
 .photo-card { min-width: 0; padding: 0; text-align: left; color: var(--text-main); cursor: pointer; background: transparent; border: 0; border-radius: 8px; }
-.photo-frame { display: flex; width: 100%; aspect-ratio: 4 / 3; align-items: center; justify-content: center; overflow: hidden; background: var(--bg-panel, #101a15); border-radius: 8px; }
-.photo-frame img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 180ms ease; }
+.photo-frame { display: flex; width: 100%; min-height:120px; align-items: center; justify-content: center; overflow: hidden; background: #141d2b; border-radius: 2px; }
+.photo-frame img { display: block; width: 100%; height: auto; max-height:680px; object-fit: contain; transition: transform 600ms ease; }
 .is-fit .photo-frame img { object-fit: contain; }
 .photo-card:hover .photo-frame img { transform: scale(1.025); }
 .is-fit .photo-card:hover .photo-frame img { transform: none; }
@@ -63,8 +69,7 @@ function markFailed(url: string) {
 .photo-caption > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .photo-caption small { flex-shrink: 0; color: var(--text-muted, #94a3b8); font-variant-numeric: tabular-nums; }
 .photo-placeholder { padding: 16px; color: var(--text-muted, #94a3b8); font-size: 12px; text-align: center; }
-@media (max-width: 1023px) { .photo-wall { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 767px) { .photo-wall { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; } }
-@media (max-width: 380px) { .photo-wall { grid-template-columns: minmax(0, 1fr); } }
-@media (prefers-reduced-motion: reduce) { .photo-frame img { transition: none; } .photo-card:hover .photo-frame img { transform: none; } }
+@media (max-width: 767px) { .photo-wall { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 14px; } .photo-card:nth-child(7n + 2),.photo-card:nth-child(7n + 5) { padding-top:0; } }
+@media (max-width: 380px) { .photo-wall { grid-template-columns: minmax(0, 1fr); } .photo-card:nth-child(7n + 1) { grid-column:auto; } }
+@media (prefers-reduced-motion: reduce) { .photo-card { animation:none; } .photo-frame img { transition: none; } .photo-card:hover .photo-frame img { transform: none; } }
 </style>

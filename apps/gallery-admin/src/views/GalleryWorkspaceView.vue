@@ -13,6 +13,7 @@ import { apiFetch } from '../api'
 import { openCreatorPreview } from '../lib/preview'
 import Icon from '../components/Icon.vue'
 import BrandMark from '../components/BrandMark.vue'
+import QuickStylePicker from '../components/gallery-workspace/QuickStylePicker.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import LightboxModal from '../components/LightboxModal.vue'
 import GalleryUploadDropzone from '../components/gallery-workspace/GalleryUploadDropzone.vue'
@@ -47,6 +48,8 @@ const publishCenter = usePublishCenter(
 )
 const versionMetadata = useConfigVersionMetadata()
 const showPublishMetadata = ref(false)
+const styleSaving = ref(true)
+const publishingFlow = ref(false)
 
 const photoViewMode = ref<'grid' | 'list'>('grid')
 const photoGridRef = ref<{ clearSelection: () => void } | null>(null)
@@ -76,7 +79,7 @@ const hallDescription = computed(() => {
   if (!gallery) return ''
   return gallery.status === 'PUBLISHED'
     ? '展厅已上线。上传照片、调整配置后，可通过分享链接邀请访客。'
-    : '展厅尚未上线。按下方步骤上传照片、配置氛围，再发布展厅。'
+    : '展厅尚未上线。按下方步骤上传照片、选择风格，再发布展厅。'
 })
 
 const workflowStep = computed(() => {
@@ -218,18 +221,19 @@ async function handlePublish() {
 }
 
 async function handlePublishAll() {
-  if (!canPublish.value) return
-  await publishCenter.loadReadiness()
-  if (publishCenter.error.value) {
-    toast.error(publishCenter.error.value)
-    return
-  }
-  if (publishCenter.readiness.value?.configDraftChanged) {
+  if (!canPublish.value || styleSaving.value || publishingFlow.value || publishCenter.publishing.value) return
+  publishingFlow.value = true
+  try {
+    await publishCenter.loadReadiness()
+    if (publishCenter.error.value) {
+      toast.error(publishCenter.error.value)
+      return
+    }
     versionMetadata.reset()
-    showPublishMetadata.value = true
-    return
+    await confirmPublishAll()
+  } finally {
+    publishingFlow.value = false
   }
-  await confirmPublishAll()
 }
 
 async function confirmPublishAll() {
@@ -239,7 +243,8 @@ async function confirmPublishAll() {
     await workspace.reload()
     showPublishMetadata.value = false
     versionMetadata.reset()
-    toast.success('展厅及配置已成功发布至访客端！')
+    toast.success('展厅已发布，把这一刻分享出去。')
+    if (canShareManage.value) await openShareModal()
   } catch (error) {
     if (publishCenter.appliedConfigVersion.value) {
       showPublishMetadata.value = false
@@ -617,13 +622,10 @@ async function openShareModal() {
                   <span>1</span>上传照片
                 </li>
                 <li :class="{ done: workspace.photos.value.length > 0 }">
-                  <span>2</span>配置氛围
+                  <span>2</span>选择风格
                 </li>
                 <li :class="{ done: workspace.gallery.value.status === 'PUBLISHED', current: workflowStep === 3 }">
-                  <span>3</span>发布展厅
-                </li>
-                <li :class="{ done: workspace.gallery.value.status === 'PUBLISHED', current: workflowStep === 4 }">
-                  <span>4</span>分享链接
+                  <span>3</span>发布分享
                 </li>
               </ol>
               <div class="meta-row">
@@ -633,23 +635,27 @@ async function openShareModal() {
             </div>
           </div>
           <div class="hero-actions">
+            <button v-if="canPhotoWrite" class="btn outline" type="button" :disabled="workspace.uploading.value" @click="dropzoneRef?.chooseFiles()">
+              <Icon name="upload" :size="15" />
+              <span>{{ workspace.uploading.value ? '正在上传…' : '上传照片' }}</span>
+            </button>
             <button class="btn outline" type="button" :disabled="previewOpening" @click="openViewer">
               <Icon name="eye" :size="15" />
               <span>{{ previewOpening ? '正在打开…' : '预览展厅' }}</span>
             </button>
             <button v-if="canConfig" class="btn outline" type="button" @click="goToConfig">
               <Icon name="settings" :size="15" />
-              <span>展厅配置</span>
+              <span>更多设置</span>
             </button>
             <button
               v-if="canPublish && workspace.gallery.value.status !== 'PUBLISHED'"
               class="btn solid"
               type="button"
-              :disabled="workspace.publishing.value"
+              :disabled="publishingFlow || publishCenter.publishing.value || styleSaving || workspace.uploading.value"
               @click="handlePublish"
             >
               <Icon name="send" :size="15" />
-              <span>发布展厅</span>
+              <span>{{ publishCenter.publishing.value ? '正在发布…' : '发布并分享' }}</span>
             </button>
             <button
               v-else-if="canShareManage && workspace.gallery.value.status === 'PUBLISHED'"
@@ -672,11 +678,11 @@ async function openShareModal() {
           </template>
           <template v-else>
             <div class="nudge-copy">
-              <strong>照片已就绪，推荐场景「{{ recommendedSceneLabel }}」已就位</strong>
-              <span>可直接发布展厅，或先预览效果；想换场景、调参数，去展厅配置。</span>
+              <strong>照片已就绪</strong>
+              <span>在下方选择喜欢的风格，然后发布分享。</span>
             </div>
             <div class="nudge-actions">
-              <button class="btn solid" type="button" :disabled="workspace.publishing.value" @click="handlePublish">
+              <button class="btn solid" type="button" :disabled="publishCenter.publishing.value || styleSaving || workspace.uploading.value" @click="handlePublish">
                 <Icon name="send" :size="15" />
                 <span>{{ workspace.publishing.value ? '发布中…' : '发布展厅' }}</span>
               </button>
@@ -686,6 +692,8 @@ async function openShareModal() {
           </template>
           <button class="nudge-close" type="button" aria-label="暂不发布，关闭提示" @click="dismissPublishNudge">×</button>
         </section>
+
+        <QuickStylePicker :key="galleryId" :gallery-id="galleryId" :can-write="canConfig && !publishingFlow" :photos="workspace.photos.value" @busy="styleSaving = $event" @saved="publishCenter.loadReadiness" />
 
         <div class="hall-split">
           <section class="photo-panel">
@@ -711,6 +719,7 @@ async function openShareModal() {
                 ref="photoGridRef"
                 :photos="workspace.photos.value"
                 :can-write="canPhotoWrite"
+                @reorder="handleReorder"
                 @open="openLightbox"
                 @set-cover="handleSetCover"
                 @delete="promptDeletePhoto"
@@ -760,11 +769,12 @@ async function openShareModal() {
           </section>
 
           <div class="workspace-sidebar">
+            <details class="publishing-details"><summary>发布状态与管理</summary>
             <PublishCenterPanel
               :gallery="workspace.gallery.value"
               :readiness="publishCenter.readiness.value"
               :loading="publishCenter.loading.value"
-              :publishing="publishCenter.publishing.value"
+              :publishing="publishCenter.publishing.value || styleSaving"
               :unpublishing="publishCenter.unpublishing.value"
               :can-publish="canPublish"
               :can-config="canConfig"
@@ -775,7 +785,10 @@ async function openShareModal() {
               @open-config="goToConfig"
               @refresh="publishCenter.loadReadiness"
             />
+            </details>
 
+            <details class="publishing-details" :open="workspace.uploading.value || taskCenter.summary.value.queued > 0 || taskCenter.summary.value.processing > 0 || taskCenter.summary.value.failed > 0">
+            <summary>上传进度与记录</summary>
             <UploadTaskCenter
               :tasks="taskCenter.tasks.value"
               :summary="taskCenter.summary.value"
@@ -789,6 +802,7 @@ async function openShareModal() {
               @retry="handleRetryTask"
               @cancel="handleCancelTask"
             />
+            </details>
           </div>
         </div>
 
@@ -1534,8 +1548,83 @@ async function openShareModal() {
 
 @media (max-width: 1100px) {
   .hall-split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .hall-tabs span { display: none; }
 }
+
+@media (max-width: 768px) {
+  .hall-hero {
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .hero-left,
+  .hero-left > div,
+  .photo-panel,
+  .workspace-sidebar {
+    min-width: 0;
+  }
+
+  .back-btn {
+    flex-shrink: 0;
+  }
+
+  .title-row,
+  .meta-row,
+  .hero-actions,
+  .nudge-actions {
+    flex-wrap: wrap;
+  }
+
+  .title-row h1 {
+    overflow-wrap: anywhere;
+    font-size: 22px;
+  }
+
+  .hero-actions .btn {
+    min-height: 44px;
+  }
+
+  .publish-nudge {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .photo-panel {
+    padding: 16px 12px;
+  }
+
+  .photo-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .hall-nav {
+    grid-template-columns: minmax(0, 1fr) auto;
+    height: auto;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 20px;
+  }
+
+  .hall-tabs {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .hall-tab,
+  .user-chip {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .user-meta {
+    display: none;
+  }
+}
+</style>
+
+<style scoped>
+.publishing-details { padding:18px; background:#fff; border:1px solid #e1e7ee; border-radius:16px; }.publishing-details summary { cursor:pointer; color:#566b83; font-size:13px; padding:5px 0; }.hall-hero { box-shadow:none; }.workflow-steps li.current { animation:none; box-shadow:0 0 0 1px #5578a0 inset; }.workflow-steps li.current span,.workflow-steps li.done span { background:#5578a0; }.btn.solid { background:#345778; }.btn.outline { color:#345778; border-color:#c0cfde; }.hall-hero h1 { font-family:'Songti SC','SimSun',serif; }.hall-split { grid-template-columns:minmax(0,1fr) 300px; } @media(max-width:1100px){.hall-split{grid-template-columns:minmax(0,1fr)}}
 </style>
