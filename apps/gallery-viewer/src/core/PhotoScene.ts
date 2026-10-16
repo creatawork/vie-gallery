@@ -31,10 +31,12 @@ export class PhotoScene {
         const ratio = photo.width > 0 && photo.height > 0 ? photo.width / photo.height : 4 / 3
         const width = Math.min(80, 120 * ratio), height = width / ratio
         const material = new THREE.MeshStandardMaterial({ color: '#b8bcc4', side: THREE.DoubleSide, metalness: 0, roughness: .7 })
-        mesh = Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(width, height), material), {
+        mesh = Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(width, height, 24, 24), material), {
           userData: { index, url: '', thumbnailUrl: '', textureState: 'placeholder' as const }
         })
         mesh.geometry.computeBoundingSphere()
+        // Surface shaders may bend a photograph a few units beyond the flat plane.
+        mesh.geometry.boundingSphere!.radius += 5
         // A shallow aluminium mount makes grazing angles read as an object.
         const mount = new THREE.Mesh(new THREE.BoxGeometry(width + 2, height + 2, 1.7),
           new THREE.MeshStandardMaterial({ color: '#76859b', metalness: .65, roughness: .28 }))

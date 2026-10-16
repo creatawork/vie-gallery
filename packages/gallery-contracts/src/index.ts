@@ -3,6 +3,7 @@ export * from './viewerConfig'
 export * from './viewerPresets'
 export * from './viewerPreview'
 export * from './curatedStyles'
+export * from './photoEffects'
 
 export type GalleryVisibility = 'PUBLIC' | 'PRIVATE' | 'PASSWORD'
 export type GalleryStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'

@@ -1,6 +1,6 @@
 import { MotionAtmosphere } from './MotionAtmosphere'
 import * as THREE from 'three'
-import { mergeViewerConfig, normalizeViewerConfig, ViewerConfigValidationError, type PublicPhoto } from '@vie/gallery-contracts'
+import { mergeViewerConfig, normalizeViewerConfig, resolvePhotoEffect, ViewerConfigValidationError, type PublicPhoto } from '@vie/gallery-contracts'
 import { PhotoScene } from './PhotoScene'
 import { TexturePool, loadPhotoTexture } from './TexturePool'
 import { FrameClock } from './FrameClock'
@@ -297,6 +297,7 @@ export class ViewerEngine {
     }
     const context = this.pluginContext ?? this.createContext()
     const effective = structuredClone(candidate)
+    effective.effects.photo = resolvePhotoEffect(candidate)
     effective.quality = this.effectiveQuality
     const budget = QUALITY_BUDGETS[this.effectiveQuality]
     const pixelRatio = Math.min(window.devicePixelRatio || 1, budget.dpr)
@@ -317,6 +318,7 @@ export class ViewerEngine {
       ['Layout', effective.layout.params?.composition !== 'curated'],
       ['PhotoFade', effective.layout.params?.composition !== 'curated'],
       ['SpatialStage', effective.layout.params?.composition === 'curated'], ['Lighting', true], ['Background', true],
+      ['PhotoSurface', effective.effects.photo.style !== 'none' && effective.effects.photo.intensity! > 0],
       ['Particles', effective.particles.enabled && effective.particles.types.length > 0 && (effective.particles.density ?? 1) > 0],
       ['Fog', !!effective.effects.fog?.enabled],
       ['ClickRipple', !!effective.interaction.clickRipple], ['CursorTrail', !!effective.interaction.cursorTrail]

@@ -14,5 +14,10 @@
   {"name":"curated composition and moving gradient","json":"{\"layout\":{\"params\":{\"composition\":\"curated\"}},\"background\":{\"mode\":\"gradient\",\"motion\":true}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
   {"name":"explicit spatial composition","json":"{\"layout\":{\"params\":{\"composition\":\"spatial\"}}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
   {"name":"unknown composition","json":"{\"layout\":{\"params\":{\"composition\":\"mixed\"}}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["layout.params.composition"]},
-  {"name":"motion requires boolean","json":"{\"background\":{\"motion\":\"yes\"}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["background.motion"]}
+  {"name":"motion requires boolean","json":"{\"background\":{\"motion\":\"yes\"}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["background.motion"]},
+  {"name":"photo treatment and arrangement","json":"{\"effects\":{\"photo\":{\"style\":\"ripple\",\"intensity\":0.8,\"speed\":0}},\"layout\":{\"params\":{\"arrangement\":\"fan\"}}}","schemaVersion":1,"strictValid":true,"legacyValid":true,"issuePaths":[]},
+  {"name":"unknown photo style","json":"{\"effects\":{\"photo\":{\"style\":\"made-up\"}}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["effects.photo.style"]},
+  {"name":"photo intensity outside range","json":"{\"effects\":{\"photo\":{\"intensity\":1.1}}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["effects.photo.intensity"]},
+  {"name":"negative photo speed","json":"{\"effects\":{\"photo\":{\"speed\":-0.1}}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["effects.photo.speed"]},
+  {"name":"unknown photo arrangement","json":"{\"layout\":{\"params\":{\"arrangement\":\"made-up\"}}}","schemaVersion":1,"strictValid":false,"legacyValid":false,"issuePaths":["layout.params.arrangement"]}
 ]

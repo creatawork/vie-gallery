@@ -21,6 +21,35 @@ async function fixture(page: Page) {
   })
   return { draft: () => JSON.parse(draft), saves: () => saves, errors }
 }
+
+test('photo treatments and arrangement persist and reach the real preview without a reload', async ({ page }) => {
+  const data = await fixture(page)
+  await page.goto('/app/galleries/config-fixture/config')
+  await page.getByRole('tab', { name: '氛围', exact: true }).click()
+  await page.locator('.preset-card').filter({ hasText: '极光星河' }).click()
+  await expect(page.getByLabel('画面处理')).toHaveValue('hologram')
+  await expect(page.locator('.preset-detail')).toContainText('全息扫描')
+  await page.getByLabel('画面处理').selectOption('ripple')
+  await page.getByLabel('特效强度').press('End')
+  await page.getByLabel('特效强度').press('ArrowLeft')
+  await page.getByLabel('流动速度').press('Home')
+  const frame = page.frameLocator('iframe[title="展厅实时预览"]')
+  await expect.poll(() => frame.locator('canvas.webgl-canvas').evaluate(() => window.__VIE_VIEWER_DIAGNOSTICS__?.snapshot().effectiveConfig.effects.photo)).toEqual({ style: 'ripple', intensity: .99, speed: 0 })
+  await page.getByRole('tab', { name: '基础', exact: true }).click()
+  await page.getByLabel('照片编排').selectOption('fan')
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect.poll(() => data.draft().layout.params.arrangement).toBe('fan')
+  expect(data.draft().effects.photo).toEqual({ style: 'ripple', intensity: .99, speed: 0 })
+  expect(data.draft().extension).toEqual({ future: 42 })
+  await page.reload()
+  await expect(page.getByLabel('照片编排')).toHaveValue('fan')
+  await page.getByRole('tab', { name: '氛围', exact: true }).click()
+  await expect(page.getByLabel('画面处理')).toHaveValue('ripple')
+  await expect(page.getByLabel('特效强度')).toHaveValue('0.99')
+  const image = page.locator('.preset-card img').first()
+  await expect.poll(() => image.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(320)
+  expect(data.errors).toEqual([])
+})
 test('editor is usable while the preview token is still pending', async ({ page }) => {
   await fixture(page)
   let release!: () => void

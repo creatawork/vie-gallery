@@ -1,5 +1,6 @@
 import { createDefaultViewerConfig, mergeViewerConfig, VIEWER_CONFIG_RULES, type ViewerConfig } from './viewerConfig'
 import { SCENE_PRESETS, sceneBackgroundUrl } from './galleryMedia'
+import { PRESET_PHOTO_EFFECTS, PRESET_PHOTO_ARRANGEMENTS } from './photoEffects'
 
 export type PresetName = typeof SCENE_PRESETS[number]['name'] | 'jade-flow' | 'aurora' | 'amber-hour' | 'rose-dream' | 'deep-ocean' | 'moonlight' | 'lavender' | 'silver-mist'
 function scene(name: PresetName, patch: unknown): ViewerConfig {
@@ -14,7 +15,7 @@ function scene(name: PresetName, patch: unknown): ViewerConfig {
     camera: { autoRotate: false, introFlight: false, rotateSpeed: .5, introDuration: 2 },
     lighting: { timeOfDay: 'noon', autoColorAdapt: false }, interaction: { clickRipple: true, cursorTrail: false }
   })
-  return mergeViewerConfig(base, patch)
+  return mergeViewerConfig(mergeViewerConfig(base, patch), { effects: { photo: PRESET_PHOTO_EFFECTS[name] } })
 }
 function background(name: PresetName, color: string, secondaryColor = color) {
   return { mode: 'image' as const, color, secondaryColor, angle: 135, image: { url: sceneBackgroundUrl(name)!, projection: 'equirectangular' as const } }
@@ -23,7 +24,7 @@ function bloom(strength: number) { return { enabled: true, strength } }
 function particles(types: string[], density: number, speed: number) { return { enabled: true, types, density, speed } }
 function lightScene(name: PresetName, mode: 'helix' | 'carousel' | 'grid', color: string, secondaryColor: string, patch: unknown): ViewerConfig {
   return mergeViewerConfig(scene(name, {
-    layout: { mode, params: { composition: 'curated', scale: 1, spacing: 1, radius: 340, height: 430, turns: 1.15 }, transition: { style: 'smooth', duration: 1.2 } },
+    layout: { mode, params: { composition: 'curated', arrangement: PRESET_PHOTO_ARRANGEMENTS[name], scale: 1, spacing: 1, radius: 340, height: 430, turns: 1.15 }, transition: { style: 'smooth', duration: 1.2 } },
     background: { mode: 'gradient', motion: true, color, secondaryColor, angle: 135 },
     particles: { enabled: true, types: ['stars', 'fireflies'], density: .4, speed: .3, size: 1.2 },
     effects: { bloom: { threshold: .8 }, photoFloat: true, floatAmplitude: .6, floatSpeed: .45 },
@@ -56,15 +57,15 @@ export function createRecommendedViewerConfig(): ViewerConfig {
 }
 
 export const VIEWER_PRESET_CARDS = [
-  { name: 'jade-flow', label: '翡翠流光', hint: '螺旋 · 萤光 · 翡翠', category: 'light' },
-  { name: 'aurora', label: '极光星河', hint: '螺旋 · 流星 · 冷光', category: 'light' },
-  { name: 'amber-hour', label: '琥珀时刻', hint: '环幕 · 金尘 · 暖光', category: 'light' },
-  { name: 'rose-dream', label: '玫瑰梦境', hint: '环幕 · 花瓣 · 柔光', category: 'light' },
-  { name: 'deep-ocean', label: '深海潮汐', hint: '波浪 · 浮游 · 青蓝', category: 'light' },
-  { name: 'moonlight', label: '月下回廊', hint: '环幕 · 星尘 · 月光', category: 'light' },
-  { name: 'lavender', label: '紫雾花语', hint: '螺旋 · 花雨 · 紫光', category: 'light' },
-  { name: 'silver-mist', label: '银雾诗篇', hint: '波浪 · 飘雪 · 银蓝', category: 'light' },
-  ...SCENE_PRESETS.map(item => ({ ...item, category: 'panorama' as const }))
+  { name: 'jade-flow', label: '翡翠流光', hint: '丝绸起伏 · 扭转丝带', category: 'light' },
+  { name: 'aurora', label: '极光星河', hint: '全息扫描 · 星轨环绕', category: 'light' },
+  { name: 'amber-hour', label: '琥珀时刻', hint: '35mm 胶片 · 横向胶卷', category: 'light' },
+  { name: 'rose-dream', label: '玫瑰梦境', hint: '棱镜色散 · 折扇展开', category: 'light' },
+  { name: 'deep-ocean', label: '深海潮汐', hint: '水波折射 · 潮汐波列', category: 'light' },
+  { name: 'moonlight', label: '月下回廊', hint: '黑白银盐 · 月弧回廊', category: 'light' },
+  { name: 'lavender', label: '紫雾花语', hint: '双色网印 · 错落瀑布', category: 'light' },
+  { name: 'silver-mist', label: '银雾诗篇', hint: '雾面玻璃 · 层叠画册', category: 'light' },
+  ...SCENE_PRESETS.map(item => ({ ...item, hint: ({ minimal: '美术纸印 · 纯净展厅', 'forest-dream': '游移叶影 · 森林光斑', 'starry-night': '星尘显影 · 银河全景', 'ocean-breeze': '焦散波光 · 海岸全景', 'sunset-glow': '日落漏光 · 暮色全景', romantic: '柔焦散景 · 浪漫花园', 'winter-snow': '冰晶折面 · 雪境全景', 'film-gallery': '接触印相 · 暗房展厅' } as Record<string, string>)[item.name]!, category: 'panorama' as const }))
 ] satisfies { name: PresetName; label: string; hint: string; category: string }[]
 
 export function isViewerPreset(name: string): name is PresetName { return Object.hasOwn(VIEWER_PRESETS, name) }

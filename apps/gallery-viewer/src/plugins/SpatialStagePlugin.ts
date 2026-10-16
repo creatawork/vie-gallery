@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import type { ViewerContext, ViewerPlugin } from '../core/types'
+import { resolvePhotoArrangement } from '@vie/gallery-contracts'
+import { stageArrangement } from '../lib/stageArrangements'
 
 /** A single progress value drives the photographs, framing, and visitor navigation. */
 export class SpatialStagePlugin implements ViewerPlugin {
@@ -145,7 +147,9 @@ export class SpatialStagePlugin implements ViewerPlugin {
     const blend = instant ? 1 : 1 - Math.exp(-dt * 6 / (transition?.duration ?? 1.2))
     const speed = context.config.camera?.rotateSpeed ?? .5
     if (!this.suspended && this.autoplay && !reduced && !this.drag && count > 1) {
-      this.dwell += dt * speed * 2 * (this.hovered !== null ? .15 : 1)
+      // Dwell follows active time even when rendering is throttled to 20 fps.
+      // The smaller interpolation step below is only for transform stability.
+      this.dwell += Math.min(delta, .1) * speed * 2 * (this.hovered !== null ? .15 : 1)
       if (this.dwell > 5.5) { this.target = Math.round(this.target) + 1; this.dwell = 0 }
     }
     this.cursor += (this.target - this.cursor) * blend
@@ -161,10 +165,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     }
     const mode = context.config.layout.mode
     const params = context.config.layout.params
-    const spacing = params?.spacing ?? 1
-    const radius = (params?.radius ?? 340) / 340
-    const heightFactor = (params?.height ?? 430) / 430
-    const turns = (params?.turns ?? 1.15) / 1.15
+    const arrangement = resolvePhotoArrangement(context.config)
     const parallax = reduced || this.suspended ? 0 : 1
     this.cameraPosition.set(this.pointer.x * 32 * parallax, -this.pointer.y * 22 * parallax, mobile ? 1040 : 930)
     camera.position.lerp(this.cameraPosition, blend)
@@ -176,29 +177,10 @@ export class SpatialStagePlugin implements ViewerPlugin {
       const mesh = context.photos[i]
       const d = ((i - this.cursor + count / 2) % count + count) % count - count / 2
       const a = Math.abs(d)
-      const offset = d * spacing
       // The wrap happens outside the visible ribbon. Opacity hides even a three-photo seam.
       const edge = count > 2 ? Math.min(1, Math.max(0, (count / 2 - a) * 2)) : 1
       const presence = Math.min(1, Math.max(0, 5 - a)) * edge
-      let x: number, y: number, z: number, ry: number, rz = 0
-      if (mode === 'carousel') {
-        x = Math.sin(offset * .57) * (mobile ? 420 : 790) * radius
-        y = Math.cos(offset * .57) * 95 - 90
-        z = 150 - (1 - Math.cos(offset * .57)) * 730 * radius
-        ry = Math.sin(offset * .57) * .72
-      } else if (mode === 'grid') {
-        x = offset * (mobile ? 290 : 400)
-        y = Math.sin(offset * .85) * (mobile ? 160 : 155)
-        z = 150 - a * 115
-        ry = Math.sin(d * .65) * .3
-        rz = Math.sin(d * .85) * -.045
-      } else {
-        x = Math.sin(offset * .78 * turns) * (mobile ? 355 : 710) * radius
-        y = Math.sin(offset * .85 * turns) * (mobile ? 275 : 280) * heightFactor
-        z = 180 - a * spacing * 260 * radius
-        ry = Math.sin(offset * .78 * turns) * .48
-        rz = Math.sin(offset * .6) * -.07
-      }
+      let { x, y, z, ry, rz } = stageArrangement(d, arrangement, mobile, params)
       if (count === 1) { x = 0; y = 0; z = 180; ry = 0; rz = 0 }
       if (!reduced && !this.suspended && context.config.effects.photoFloat) {
         y += Math.sin(elapsed * (context.config.effects.floatSpeed ?? 1) + i) * 5 * (context.config.effects.floatAmplitude ?? 1)

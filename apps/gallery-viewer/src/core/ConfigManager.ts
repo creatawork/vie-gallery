@@ -102,7 +102,10 @@ export class ConfigManager {
     let changed = !!preset && isViewerPreset(preset)
     const layout = params.get('layout')
     if (layout) {
-      try { candidate = mergeViewerConfig(candidate, { layout: { mode: layout } }); changed = true } catch { /* Ignore unsupported URL values. */ }
+      try {
+        const arrangement = ({ helix: 'ribbon', carousel: 'arc', grid: 'wave' } as Record<string, string>)[layout]
+        candidate = mergeViewerConfig(candidate, { layout: { mode: layout, ...(arrangement ? { params: { arrangement } } : {}) } }); changed = true
+      } catch { /* Ignore unsupported URL values. */ }
     }
     const particles = params.get('particles')
     if (particles !== null) {

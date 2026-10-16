@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { VIEWER_CONFIG_RULES, type ViewerConfig, type ConfigIssue } from '@vie/gallery-contracts'
+import { VIEWER_CONFIG_RULES, PHOTO_EFFECTS, PHOTO_ARRANGEMENTS, type ViewerConfig, type ConfigIssue } from '@vie/gallery-contracts'
 const props = defineProps<{ config: ViewerConfig; path: string; label: string; disabled?: boolean; issues: ConfigIssue[]; fallback?: string | number; hint?: string; options?: readonly string[] }>()
 const emit = defineEmits<{ patch: [input: unknown] }>()
 const rule = computed(() => VIEWER_CONFIG_RULES[props.path]!)
@@ -13,6 +13,8 @@ watch([value, issue], ([next, nextIssue], [previous, previousIssue]) => {
 })
 const names: Record<string, string> = { auto: '自动', low: '低', mid: '中', high: '高', sphere: '环形展厅', carousel: '线性长廊', helix: '螺旋长廊', grid: '矩阵展墙', spiral: '旋臂漫游', random: '自由探索', solid: '纯色', gradient: '渐变', image: '全景图片', smooth: '平滑', burst: '展开', none: '无', fade: '渐显', rise: '上浮', sunrise: '清晨', noon: '正午', sunset: '黄昏', night: '夜晚', stars: '星尘', sakura: '樱花', hearts: '心形', snow: '雪花', fireflies: '萤火虫', meteors: '流星' }
 function optionLabel(option: string) {
+  if (props.path === 'effects.photo.style') return PHOTO_EFFECTS.find(item => item.id === option)?.label ?? option
+  if (props.path === 'layout.params.arrangement') return PHOTO_ARRANGEMENTS.find(item => item.id === option)?.label ?? option
   if (option === 'curated') return '逐张策展'
   if (option === 'spatial') return '自由漫游'
   if (option === 'flat') return '平面图片'

@@ -18,7 +18,7 @@ test('engine serializes updates, applies full candidates, and recovers failed pl
     const manager = new PluginManager(), context = createViewerContext(config), bus = new EventBus()
     const counts = new Map<string, number>()
     let finish!: () => void
-    for (const name of ['Layout', 'Lighting', 'PhotoFade', 'Background', 'Fog', 'ClickRipple', 'CursorTrail', 'Particles']) {
+    for (const name of ['Layout', 'Lighting', 'PhotoFade', 'PhotoSurface', 'Background', 'Fog', 'ClickRipple', 'CursorTrail', 'Particles']) {
       manager.register({ name, version: '1', install: () => {
         counts.set(name, (counts.get(name) ?? 0) + 1)
         if (name === 'Particles') return new Promise<void>(resolve => { finish = resolve })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, type CSSProperties } from 'vue'
 import type * as Three from 'three'
-import { CURATED_STYLES, applyCuratedStyle, type CuratedStyle } from '@vie/gallery-contracts'
+import { CURATED_STYLES, applyCuratedStyle, PHOTO_EFFECTS, PHOTO_ARRANGEMENTS, resolvePhotoEffect, resolvePhotoArrangement, type CuratedStyle } from '@vie/gallery-contracts'
 import { isTrustedPreviewMessage, normalizeViewerConfig, serializeViewerConfig, ViewerConfigValidationError } from '@vie/gallery-contracts'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
@@ -136,7 +136,14 @@ const sceneStyle = computed<CSSProperties>(() => ({
   '--scene-color': sceneConfig.value?.background?.color ?? '#111a17',
   '--scene-tone': sceneConfig.value?.background?.secondaryColor ?? '#263b32'
 }))
-const stageCaption = computed(() => CURATED_STYLES.find(style => style.id === selectedStyle.value)?.caption || '让照片，在空间里相遇')
+const stageCaption = computed(() => {
+  const config = sceneConfig.value
+  if (config) {
+    const effect = resolvePhotoEffect(config)
+    if (effect.style !== 'none' && effect.intensity > 0) return `${PHOTO_EFFECTS.find(item => item.id === effect.style)?.label} · ${PHOTO_ARRANGEMENTS.find(item => item.id === resolvePhotoArrangement(config))?.label}`
+  }
+  return CURATED_STYLES.find(style => style.id === selectedStyle.value)?.caption || '让照片，在空间里相遇'
+})
 function stepStage(direction: number) {
   engine?.getEventBus().emit('stage:step', direction)
   engine?.wakeUp()

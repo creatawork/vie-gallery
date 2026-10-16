@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { apiFetch } from '../api'
-import { applyViewerPreset, createRecommendedViewerConfig, mergeViewerConfig, parseViewerConfig, restoreViewerPreset, serializeViewerConfig, ViewerConfigValidationError, type ConfigIssue, type PresetName } from '@vie/gallery-contracts'
+import { applyViewerPreset, createRecommendedViewerConfig, mergeViewerConfig, parseViewerConfig, photoPresentationPatch, restoreViewerPreset, serializeViewerConfig, ViewerConfigValidationError, type ConfigIssue, type PresetName } from '@vie/gallery-contracts'
 export function useViewerConfigEditor(galleryId: string, options: { request?: typeof apiFetch; canWrite?: () => boolean } = {}) {
   const request = options.request ?? apiFetch
   const config = ref(createRecommendedViewerConfig()), issues = ref<ConfigIssue[]>([]), savedJson = ref(''), saving = ref(false), error = ref('')
@@ -23,7 +23,7 @@ export function useViewerConfigEditor(galleryId: string, options: { request?: ty
   function patch(input: unknown) {
     if (options.canWrite && !options.canWrite()) return
     try {
-      const next = mergeViewerConfig(config.value, input)
+      const next = mergeViewerConfig(mergeViewerConfig(config.value, photoPresentationPatch(config.value)), input)
       const paths: string[] = []
       function collect(value: unknown, path = '') { if (value && typeof value === 'object' && !Array.isArray(value)) for (const [key, child] of Object.entries(value)) collect(child, path ? `${path}.${key}` : key); else paths.push(path) }
       collect(input)

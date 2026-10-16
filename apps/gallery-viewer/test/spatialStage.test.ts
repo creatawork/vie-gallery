@@ -119,6 +119,16 @@ test('zero cruise speed pauses automatic advancement', () => {
   stage.uninstall()
 })
 
+test('coarse frames preserve the authored autoplay dwell instead of stretching it', () => {
+  const { context, stage } = fixture(12, false)
+  let index = -1
+  context.on('stage:change', (state: { index: number }) => { index = state.index })
+  stage.install(context)
+  for (let i = 0; i < 68; i++) stage.update(.1, i * .1)
+  assert.equal(index, 1, 'one photograph advances after the same active seconds at 10 fps')
+  stage.uninstall()
+})
+
 test('changing entrance settings replays the visible works immediately', () => {
   const { context, stage } = fixture(12, false)
   context.config.camera!.autoRotate = false

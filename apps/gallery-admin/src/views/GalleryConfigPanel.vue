@@ -11,6 +11,7 @@ import LayoutControls from '../components/gallery-config/LayoutControls.vue'
 import AtmosphereControls from '../components/gallery-config/AtmosphereControls.vue'
 import MotionQualityControls from '../components/gallery-config/MotionQualityControls.vue'
 import PresetCards from '../components/gallery-config/PresetCards.vue'
+import PhotoEffectControls from '../components/gallery-config/PhotoEffectControls.vue'
 import Icon from '../components/Icon.vue'
 import BrandMark from '../components/BrandMark.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -788,7 +789,8 @@ onUnmounted(() => {
         <div id="config-panel-basics" role="tabpanel" aria-labelledby="config-tab-basics" v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
         <div id="config-panel-atmosphere" role="tabpanel" aria-labelledby="config-tab-atmosphere" v-if="configTab === 'atmosphere'">
           <PresetCards :config="config" :disabled="!canConfigWrite || !configLoaded" @preset="applyPreset" @reset="resetPreset" />
-          <p class="atmosphere-hint">一键应用整套构图、背景与光效；所有预览实时同步，发布后访客可见。</p>
+          <PhotoEffectControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
+          <p class="atmosphere-hint">一键应用照片质感、运动编排与场景；调节后实时预览，发布后访客可见。</p>
         </div>
         <div id="config-panel-advanced" role="tabpanel" aria-labelledby="config-tab-advanced" v-if="configTab === 'advanced'">
           <MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />

@@ -111,6 +111,16 @@ test('editor keeps extensions, invalid inputs and edits made during an in-flight
   assert.equal(editor.config.value.customized, false)
 })
 
+test('editing historical presets preserves their displayed photo treatment and choreography', () => {
+  const editor = useViewerConfigEditor('fixture')
+  editor.replace(JSON.stringify({ presetName: 'rose-dream', layout: { mode: 'carousel', params: { composition: 'curated' } } }))
+  assert.equal(editor.config.value.effects.photo, undefined)
+  editor.patch({ layout: { params: { spacing: 1.5 } } })
+  assert.equal(editor.config.value.customized, true)
+  assert.equal(editor.config.value.effects.photo?.style, 'prism')
+  assert.equal(editor.config.value.layout.params?.arrangement, 'fan')
+})
+
 test('iframe document reload reboots the latest draft and rejects receipts from the old document', async () => {
   const sent: any[] = [], applied: any[] = [], ready: boolean[] = []
   const source = { postMessage: (message: unknown) => sent.push(message) } as unknown as Window

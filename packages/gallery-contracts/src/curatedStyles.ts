@@ -1,4 +1,5 @@
 import { mergeViewerConfig, type ViewerConfig } from './viewerConfig'
+import { photoPresentationPatch } from './photoEffects'
 
 /** Composition changes preserve the gallery's background, lighting and effects. */
 export const CURATED_STYLES = [
@@ -9,8 +10,8 @@ export const CURATED_STYLES = [
 export type CuratedStyle = typeof CURATED_STYLES[number]['id']
 
 export function applyCuratedStyle(current: ViewerConfig, mode: CuratedStyle): ViewerConfig {
-  return mergeViewerConfig(current, {
+  return mergeViewerConfig(mergeViewerConfig(current, photoPresentationPatch(current)), {
     customized: true,
-    layout: { mode, params: { composition: 'curated' } }
+    layout: { mode, params: { composition: 'curated', arrangement: ({ helix: 'ribbon', carousel: 'arc', grid: 'wave' } as const)[mode] } }
   })
 }

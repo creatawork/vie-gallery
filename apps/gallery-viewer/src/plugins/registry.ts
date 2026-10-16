@@ -1,5 +1,6 @@
 /** Lazy factories used by the viewer engine without eagerly re-exporting effects. */
 export const pluginRegistry = {
+  PhotoSurface: () => import('./PhotoSurfacePlugin').then(m => new m.PhotoSurfacePlugin()),
   SpatialStage: () => import('./SpatialStagePlugin').then(m => new m.SpatialStagePlugin()),
   PhotoTheatre: () => import('./PhotoTheatrePlugin').then(m => new m.PhotoTheatrePlugin()),
   Layout: () => import('./LayoutPlugin').then(m => new m.LayoutPlugin()),
