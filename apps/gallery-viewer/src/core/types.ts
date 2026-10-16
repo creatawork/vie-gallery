@@ -20,6 +20,7 @@ export interface PhotoMesh extends THREE.Mesh {
     layoutScale?: number
     inView?: boolean
     textureState?: 'placeholder' | 'ready' | 'failed'
+    presentation?: THREE.Mesh[]
   }
 }
 

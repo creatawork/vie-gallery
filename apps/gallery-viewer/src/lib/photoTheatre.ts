@@ -1,6 +1,8 @@
 import type { LayoutPosition } from '../core/types'
 
 export const THEATRE_MODES = [
+  { id: 'book', label: '巨幅翻页', group: '叙事' },
+  { id: 'tunnel', label: '时空长廊', group: '叙事' },
   { id: 'cloud', label: '浮游照片云', group: '排列' },
   { id: 'ring', label: '轨道环廊', group: '排列' },
   { id: 'fold', label: '折页长廊', group: '排列' },
@@ -26,8 +28,8 @@ export type TheatreCommand =
 
 export const SHOW_DURATION = 31
 const SHOW_CUES: Array<{ at: number; mode: TheatreMode }> = [
-  { at: 0, mode: 'cloud' }, { at: 8, mode: 'ring' }, { at: 15, mode: 'fold' },
-  { at: 22, mode: 'triptych' }, { at: 26, mode: 'focus' }, { at: 29, mode: 'cloud' }
+  { at: 0, mode: 'cloud' }, { at: 8, mode: 'ring' }, { at: 15, mode: 'book' },
+  { at: 22, mode: 'tunnel' }, { at: 26, mode: 'focus' }, { at: 29, mode: 'cloud' }
 ]
 export function showCueAt(seconds: number) {
   return [...SHOW_CUES].reverse().find(cue => seconds >= cue.at) ?? SHOW_CUES[0]
@@ -35,6 +37,8 @@ export function showCueAt(seconds: number) {
 export function theatreCapacity(mode: TheatreMode, width: number): number {
   const compact = width < 650
   switch (mode) {
+    case 'book': return 3
+    case 'tunnel': return compact ? 6 : 10
     case 'focus': return 1
     case 'diptych': return 2
     case 'triptych': return 3
@@ -70,6 +74,14 @@ export function createTheatrePoses(ratios: number[], mode: TheatreMode, space: {
   for (let i = 0; i < n; i++) {
     const t = n === 1 ? 0 : i / (n - 1), u = t - .5
     switch (effective) {
+      case 'book':
+        place(i, (i % 2 ? -1 : 1) * w * .22, 0, i === 0 ? 40 : 0, w * .4, h * .8); break
+      case 'tunnel': {
+        const angle = i * 1.42
+        place(i, Math.sin(angle) * w * .34, Math.cos(angle) * h * .28,
+          160 - i * 250, w * .3, h * .52, Math.sin(angle) * -.2, Math.sin(angle) * .1)
+        break
+      }
       case 'focus': place(i, 0, 0, 50, w * .65, h * .86); break
       case 'diptych':
         place(i, (i - (n - 1) / 2) * w * .45, 0, i ? -20 : 30, w * .4, h * .8, 0, i ? -.018 : .018); break

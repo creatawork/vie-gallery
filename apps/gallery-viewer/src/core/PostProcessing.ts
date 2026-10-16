@@ -41,6 +41,8 @@ export class PostProcessing {
   private bloom: UnrealBloomPass | null = null
   private grade: ShaderPass | null = null
   private signature = ''
+  private bloomStrength = 0
+  private bloomThreshold = 0
   private size = { width: 1, height: 1, dpr: 1, scale: 1 }
   private state: PostProcessingState = { bloom: false, grading: false, vignette: false, width: 1, height: 1,
     uniforms: { brightness: 1, contrast: 1, saturation: 1, vignette: 0 } }
@@ -70,9 +72,9 @@ export class PostProcessing {
       contrast: grading ? config.postGrade?.contrast ?? 1 : 1, saturation: grading ? config.postGrade?.saturation ?? 1 : 1,
       vignette: vignette ? config.vignette?.strength ?? .25 : 0 }
     if (this.bloom) {
-      this.bloom.strength = config.bloom?.strength ?? .7
+      this.bloom.strength = this.bloomStrength = config.bloom?.strength ?? .7
       this.bloom.radius = config.bloom?.radius ?? .5
-      this.bloom.threshold = config.bloom?.threshold ?? .2
+      this.bloom.threshold = this.bloomThreshold = config.bloom?.threshold ?? .2
     }
     if (this.grade) {
       const u = this.grade.uniforms
@@ -91,7 +93,15 @@ export class PostProcessing {
     this.state.width = Math.floor(width * dpr * resolutionScale)
     this.state.height = Math.floor(height * dpr * resolutionScale)
   }
-  render(delta: number): void { if (this.composer) this.composer.render(delta); else this.renderer.render(this.scene, this.camera) }
+  render(delta: number, paperPresentation = false): void {
+    // Broad white paper is reflective, not a light source. Keep the authored
+    // atmosphere while preventing a whole spread from blooming over its images.
+    if (this.bloom) {
+      this.bloom.strength = paperPresentation ? Math.min(.12, this.bloomStrength) : this.bloomStrength
+      this.bloom.threshold = paperPresentation ? Math.max(.85, this.bloomThreshold) : this.bloomThreshold
+    }
+    if (this.composer) this.composer.render(delta); else this.renderer.render(this.scene, this.camera)
+  }
   getState(): PostProcessingState { return structuredClone(this.state) }
   private release(): void {
     for (const pass of this.passes) pass.dispose()

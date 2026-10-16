@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { ViewerContext, ViewerPlugin } from '../core/types'
 import { resolvePhotoArrangement } from '@vie/gallery-contracts'
 import { stageArrangement } from '../lib/stageArrangements'
+import { PaperBook } from '../core/PaperBook'
 
 /** A single progress value drives the photographs, framing, and visitor navigation. */
 export class SpatialStagePlugin implements ViewerPlugin {
@@ -15,6 +16,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
   private autoplay = true
   private configuredAutoplay = true
   private suspended = false
+  private theatreActive = false
   private hovered: number | null = null
   private moving = false
   private dwell = 0
@@ -30,6 +32,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
   private entrances = new WeakMap<THREE.Mesh, number>()
   private entranceSignature = ''
   private paths = new THREE.Group()
+  private book: PaperBook | null = null
 
   install(context: ViewerContext) {
     this.installed = true
@@ -38,7 +41,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     this.entrances = new WeakMap()
     this.lastIndex = -1
     this.cursor = 0; this.target = 0; this.dwell = 0
-    this.suspended = false; this.hovered = null; this.pointer.set(0, 0)
+    this.suspended = false; this.theatreActive = false; this.hovered = null; this.pointer.set(0, 0)
     this.canvas = context.renderer.domElement
     this.autoplay = this.configuredAutoplay = !!context.config.camera?.autoRotate
     this.entranceSignature = JSON.stringify([context.config.effects.photoEntrance, context.config.effects.entranceDuration])
@@ -47,6 +50,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     context.on('stage:autoplay', this.setAutoplay)
     context.on('stage:suspend', this.setSuspended)
     context.on('theatre:hover', this.hover)
+    context.on('theatre:active', this.setTheatreActive)
     context.on('photos:loaded', this.photosChanged)
     context.on('config:update', this.configChanged)
     this.canvas.addEventListener('pointerdown', this.down)
@@ -70,13 +74,20 @@ export class SpatialStagePlugin implements ViewerPlugin {
   }
 
   private step = (direction: number) => {
-    if (this.suspended || this.context.photos.length < 2 || !Number.isFinite(direction) || direction === 0) return
+    if (this.suspended || this.theatreActive || this.context.photos.length < 2 || !Number.isFinite(direction) || direction === 0) return
     this.target = Math.round(this.target) + Math.sign(direction)
     this.dwell = 0
     this.context.emit('stage:interaction')
   }
   private reset = () => { this.target = 0; this.pointer.set(0, 0); this.dwell = 0 }
   private setAutoplay = (enabled: boolean) => { this.autoplay = enabled; this.dwell = 0 }
+  private setTheatreActive = (active: boolean) => {
+    this.theatreActive = active; this.cancel(); this.dwell = 0
+    if (active) {
+      this.book?.hide(); this.paths.visible = false
+      if (this.moving) { this.moving = false; this.context.emit('transition:end') }
+    } else this.known = new WeakSet()
+  }
   private setSuspended = (suspended: boolean) => {
     this.suspended = suspended; this.dwell = 0
     if (suspended) { this.cancel(); this.target = Math.round(this.target); this.pointer.set(0, 0) }
@@ -94,13 +105,13 @@ export class SpatialStagePlugin implements ViewerPlugin {
   private hover = (index: number | null) => { this.hovered = index }
   private photosChanged = () => { this.lastIndex = -1; this.dwell = 0 }
   private down = (event: PointerEvent) => {
-    if (this.suspended || this.drag || this.context.photos.length < 2 || event.button !== 0 || event.isPrimary === false) return
+    if (this.suspended || this.theatreActive || this.drag || this.context.photos.length < 2 || event.button !== 0 || event.isPrimary === false) return
     this.drag = { id:event.pointerId, x:event.clientX, y:event.clientY, target:this.target }
     this.canvas.setPointerCapture(event.pointerId)
     this.dwell = 0
   }
   private move = (event: PointerEvent) => {
-    if (this.suspended) return
+    if (this.suspended || this.theatreActive) return
     const box = this.canvas.getBoundingClientRect()
     if (!box.width || !box.height) return
     this.pointer.set((event.clientX - box.left) / box.width - .5, (event.clientY - box.top) / box.height - .5)
@@ -120,7 +131,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
   }
   private leave = () => { this.pointer.set(0, 0); this.hovered = null }
   private wheel = (event: WheelEvent) => {
-    if (this.suspended || this.context.photos.length < 2) return
+    if (this.suspended || this.theatreActive || this.context.photos.length < 2) return
     event.preventDefault()
     const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
     if (Math.abs(delta) < 3 || performance.now() - this.wheelAt < 420) return
@@ -128,7 +139,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     this.step(delta)
   }
   private key = (event: KeyboardEvent) => {
-    if (this.suspended || !this.context.photos.length) return
+    if (this.suspended || this.theatreActive || !this.context.photos.length) return
     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault(); this.step(event.key === 'ArrowRight' ? 1 : -1)
     } else if (event.key === 'Enter') {
@@ -137,6 +148,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
   }
 
   update(delta: number, elapsed: number) {
+    if (this.theatreActive) return
     const context = this.context, count = context.photos.length
     const camera = context.camera as THREE.PerspectiveCamera
     const mobile = camera.aspect < .85
@@ -166,11 +178,26 @@ export class SpatialStagePlugin implements ViewerPlugin {
     const mode = context.config.layout.mode
     const params = context.config.layout.params
     const arrangement = resolvePhotoArrangement(context.config)
+    if (arrangement === 'book') {
+      if (!this.book) this.book = new PaperBook(context.scene)
+      const distance = mobile ? 1040 : 1120
+      this.cameraPosition.set(this.pointer.x * 12 * (reduced ? 0 : 1), mobile ? 48 : 55, distance)
+      camera.position.lerp(this.cameraPosition, blend)
+      camera.lookAt(0, 24, 30)
+      const fullH = 2 * Math.tan(camera.fov * Math.PI / 360) * (distance - 60)
+      const canvasH = this.canvas.clientHeight || 800
+      this.book.render(context.photos, this.cursor, fullH * camera.aspect * .94,
+        fullH * Math.max(.38, (canvasH - (mobile ? 330 : 230)) / canvasH), params?.scale ?? 1)
+      this.paths.visible = false
+      this.reportIndex(count)
+      return
+    }
+    this.book?.hide()
     const parallax = reduced || this.suspended ? 0 : 1
     this.cameraPosition.set(this.pointer.x * 32 * parallax, -this.pointer.y * 22 * parallax, mobile ? 1040 : 930)
     camera.position.lerp(this.cameraPosition, blend)
     camera.lookAt(0, mobile ? 12 : 0, -100)
-    this.paths.visible = count > 2 && !mobile
+    this.paths.visible = count > 2 && !mobile && arrangement !== 'tunnel'
     this.paths.rotation.z += ((mode === 'helix' ? -.12 : mode === 'grid' ? .14 : 0) - this.paths.rotation.z) * blend
 
     for (let i = 0; i < count; i++) {
@@ -179,7 +206,9 @@ export class SpatialStagePlugin implements ViewerPlugin {
       const a = Math.abs(d)
       // The wrap happens outside the visible ribbon. Opacity hides even a three-photo seam.
       const edge = count > 2 ? Math.min(1, Math.max(0, (count / 2 - a) * 2)) : 1
-      const presence = Math.min(1, Math.max(0, 5 - a)) * edge
+      const presence = arrangement === 'tunnel'
+        ? Math.min(1, Math.max(0, d + .6) * 4, Math.max(0, 4.5 - d)) * edge
+        : Math.min(1, Math.max(0, 5 - a)) * edge
       let { x, y, z, ry, rz } = stageArrangement(d, arrangement, mobile, params)
       if (count === 1) { x = 0; y = 0; z = 180; ry = 0; rz = 0 }
       if (!reduced && !this.suspended && context.config.effects.photoFloat) {
@@ -199,14 +228,14 @@ export class SpatialStagePlugin implements ViewerPlugin {
       const width = geometry.parameters.width || 80, height = geometry.parameters.height || 60
       const fit = Math.min((mobile ? 240 : 360) / width, (mobile ? 285 : 315) / height)
       const hover = !reduced && !this.drag && !this.suspended && this.hovered === i ? 1.028 : 1
-      const scale = fit * (params?.scale ?? 1) * (1 - Math.min(a, 4) * .12) * hover
+      const scale = fit * (params?.scale ?? 1) * (arrangement === 'tunnel' ? 1.28 : 1 - Math.min(a, 4) * .12) * hover
       mesh.scale.setScalar(fresh ? scale : THREE.MathUtils.lerp(mesh.scale.x, scale, blend))
       mesh.userData.layoutScale = mesh.scale.x
       mesh.visible = presence > .005
       const material = mesh.material as THREE.MeshStandardMaterial
       material.opacity = presence * entrance
       if (!material.transparent) { material.transparent = true; material.needsUpdate = true }
-      // Light the aluminium, not the photograph: keep the image's own color and contrast.
+      // Preserve the photograph's own color and contrast through every viewing angle.
       material.color.setScalar(.28)
       material.emissiveIntensity = .85
       if (material.toneMapped) { material.toneMapped = false; material.needsUpdate = true }
@@ -217,10 +246,14 @@ export class SpatialStagePlugin implements ViewerPlugin {
         child.scale.set((width + .65) / (width + 2), (height + .65) / (height + 2), 1)
       }
     }
+    this.reportIndex(count)
+  }
+
+  private reportIndex(count: number) {
     const index = count ? ((Math.round(this.cursor) % count) + count) % count : 0
     if (index !== this.lastIndex) {
       this.lastIndex = index
-      context.emit('stage:change', { index, count })
+      this.context.emit('stage:change', { index, count })
     }
   }
 
@@ -232,12 +265,14 @@ export class SpatialStagePlugin implements ViewerPlugin {
     context.off('stage:step', this.step); context.off('stage:reset', this.reset)
     context.off('stage:autoplay', this.setAutoplay); context.off('stage:suspend', this.setSuspended)
     context.off('theatre:hover', this.hover); context.off('photos:loaded', this.photosChanged)
+    context.off('theatre:active', this.setTheatreActive)
     context.off('config:update', this.configChanged)
     this.canvas.removeEventListener('pointerdown', this.down); this.canvas.removeEventListener('pointermove', this.move)
     this.canvas.removeEventListener('pointerup', this.up); this.canvas.removeEventListener('pointercancel', this.cancel)
     this.canvas.removeEventListener('pointerleave', this.leave); this.canvas.removeEventListener('wheel', this.wheel)
     this.canvas.removeEventListener('keydown', this.key)
     this.cancel()
+    this.book?.dispose(); this.book = null
     for (const mesh of context.photos) {
       mesh.visible = true
       const material = mesh.material as THREE.MeshStandardMaterial

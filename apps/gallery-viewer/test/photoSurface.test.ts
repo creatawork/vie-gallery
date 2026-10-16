@@ -30,11 +30,12 @@ test('surface hooks survive texture replacement, handle page append, and restore
   assert.equal(added.material.onBeforeCompile, original)
 })
 
-test('all eight arrangements have distinct poses and finite coordinates across phone and desktop sizes', () => {
+test('spatial paths have distinct poses and finite coordinates across phone and desktop sizes', () => {
+  const paths = PHOTO_ARRANGEMENTS.filter(item => item.id !== 'book') // The book uses flexible leaves instead of path poses.
   for (const mobile of [false, true]) {
-    const signatures = new Set(PHOTO_ARRANGEMENTS.map(item => JSON.stringify(stageArrangement(1, item.id, mobile))))
-    assert.equal(signatures.size, 8)
-    for (const item of PHOTO_ARRANGEMENTS) for (const d of [-50, -2, -.2, 0, 1, 50]) {
+    const signatures = new Set(paths.map(item => JSON.stringify(stageArrangement(1, item.id, mobile))))
+    assert.equal(signatures.size, paths.length)
+    for (const item of paths) for (const d of [-50, -2, -.2, 0, 1, 50]) {
       const pose = stageArrangement(d, item.id, mobile)
       assert.ok(Object.values(pose).every(Number.isFinite))
       if (d === 0) assert.ok(Math.abs(pose.x) < .001 && Math.abs(pose.y) < .001)

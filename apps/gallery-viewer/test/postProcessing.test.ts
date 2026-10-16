@@ -4,6 +4,24 @@ import * as THREE from 'three'
 import type { Pass } from 'three/examples/jsm/postprocessing/Pass.js'
 import { PostProcessing } from '../src/core/PostProcessing'
 import { normalizeViewerConfig } from '@vie/gallery-contracts'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+
+test('paper presentation limits bloom temporarily and restores authored values without rebuilding passes', () => {
+  let bloom: UnrealBloomPass | undefined, created = 0
+  const pipeline = new PostProcessing({} as THREE.WebGLRenderer, new THREE.Scene(), new THREE.PerspectiveCamera(), () => {
+    created++
+    return { addPass: pass => { if (pass instanceof UnrealBloomPass) bloom = pass }, setPixelRatio: () => {}, setSize: () => {}, render: () => {}, dispose: () => {} }
+  })
+  pipeline.apply({ bloom: { enabled: true, strength: 1.2, threshold: .2 } })
+  pipeline.render(.016, true)
+  assert.equal(bloom!.strength, .12)
+  assert.equal(bloom!.threshold, .85)
+  pipeline.render(.016)
+  assert.equal(bloom!.strength, 1.2)
+  assert.equal(bloom!.threshold, .2)
+  assert.equal(created, 1)
+  pipeline.dispose()
+})
 test('independent grading, neutral uniforms, real dimensions and explicit disposal', () => {
   let created = 0, disposed = 0, targets = 0
   let passes: Pass[] = []

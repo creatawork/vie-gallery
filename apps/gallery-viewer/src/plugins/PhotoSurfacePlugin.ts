@@ -90,8 +90,9 @@ export class PhotoSurfacePlugin implements ViewerPlugin {
     if (this.pointerDirty) {
       this.pointerDirty = false
       this.raycaster.setFromCamera(this.pointer, this.context.camera)
-      const hit = this.raycaster.intersectObjects(this.context.photos.filter(mesh => mesh.visible), false)[0]
-      this.hovered = hit ? hit.object as PhotoMesh : null
+      const faces = this.context.photos.filter(mesh => mesh.visible).flatMap(mesh => [mesh, ...mesh.children.filter(child => child.name === 'photo-back')])
+      const hit = this.raycaster.intersectObjects(faces, false)[0]
+      this.hovered = hit ? this.context.photos[hit.object.userData.index] : null
       if (hit?.uv && this.hovered) (this.surfaces.get(this.hovered)?.uniforms.uViePointer.value as THREE.Vector2)?.copy(hit.uv)
     }
     const style = PHOTO_EFFECTS.findIndex(item => item.id === effect.style)

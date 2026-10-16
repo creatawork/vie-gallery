@@ -6,6 +6,17 @@ export function stageArrangement(d: number, arrangement: PhotoArrangement, mobil
   const radius = (params.radius ?? 340) / 340
   let x = 0, y = 0, z = 180, ry = 0, rz = 0
   switch (arrangement) {
+    case 'tunnel': {
+      // Successive works travel from the distant vanishing point, across the
+      // viewport and past the viewer, instead of orbiting a fixed central card.
+      const angle = offset * 1.42
+      const spread = 1 - Math.exp(-Math.abs(offset) * 1.8)
+      x = Math.sin(angle) * (mobile ? 270 : 590) * spread * radius
+      y = Math.cos(angle) * (mobile ? 195 : 255) * spread
+      z = 80 - offset * (mobile ? 400 : 490)
+      ry = -Math.sin(angle) * .22; rz = Math.sin(angle) * .12
+      break
+    }
     case 'orbit': {
       const angle = offset * .66
       x = Math.sin(angle) * (mobile ? 390 : 730) * radius

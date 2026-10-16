@@ -30,23 +30,17 @@ export class PhotoScene {
       if (!mesh) {
         const ratio = photo.width > 0 && photo.height > 0 ? photo.width / photo.height : 4 / 3
         const width = Math.min(80, 120 * ratio), height = width / ratio
-        const material = new THREE.MeshStandardMaterial({ color: '#b8bcc4', side: THREE.DoubleSide, metalness: 0, roughness: .7 })
+        const material = new THREE.MeshStandardMaterial({ color: '#b8bcc4', side: THREE.FrontSide, metalness: 0, roughness: .7 })
         mesh = Object.assign(new THREE.Mesh(new THREE.PlaneGeometry(width, height, 24, 24), material), {
           userData: { index, url: '', thumbnailUrl: '', textureState: 'placeholder' as const }
         })
         mesh.geometry.computeBoundingSphere()
         // Surface shaders may bend a photograph a few units beyond the flat plane.
         mesh.geometry.boundingSphere!.radius += 5
-        // A shallow aluminium mount makes grazing angles read as an object.
-        const mount = new THREE.Mesh(new THREE.BoxGeometry(width + 2, height + 2, 1.7),
-          new THREE.MeshStandardMaterial({ color: '#76859b', metalness: .65, roughness: .28 }))
-        mount.position.z = -1.05
-        mesh.add(mount)
-        // Put the same photograph outside the rear of the mount. Sharing the
-        // surface resources keeps texture upgrades and entrance fades in sync.
+        // Two printed faces share one paper-thin surface, without a dark mount.
         const back = new THREE.Mesh(mesh.geometry, material)
         back.name = 'photo-back'
-        back.position.z = -2.1
+        back.position.z = -.015
         back.rotation.y = Math.PI
         mesh.add(back)
         mesh.userData = { index, url: '', thumbnailUrl: '', textureState: 'placeholder' }
@@ -55,6 +49,7 @@ export class PhotoScene {
       }
       Object.assign(mesh.userData, { index, title: photo.title ?? `Photo ${index + 1}`, thumbnailUrl: photo.thumbnailUrl ?? '',
         mediumUrl: photo.mediumUrl, textureUrl: photo.textureUrl, url: photo.mediumUrl ?? photo.thumbnailUrl ?? '' })
+      mesh.getObjectByName('photo-back')!.userData = mesh.userData
       return mesh
     })
     return { all, added, removed }
@@ -126,9 +121,11 @@ export class PhotoScene {
     this.matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     this.frustum.setFromProjectionMatrix(this.matrix)
     for (const [photo, mesh] of this.meshes) {
-      const visible = mesh.visible && this.frustum.intersectsObject(mesh)
+      const surfaces = mesh.userData.presentation ?? [mesh]
+      const visible = surfaces.some(surface => surface.visible && this.frustum.intersectsObject(surface))
       mesh.userData.inView = visible
-      mesh.getWorldPosition(this.position)
+      const nearestSurface = surfaces[0] ?? mesh
+      nearestSurface.getWorldPosition(this.position)
       // Reserve [0, 1) for thumbnails and [1, 2) for full textures. A nearby
       // upgrade must not occupy the download slots needed by other visible photos.
       const distance = this.position.distanceToSquared(camera.position)

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { PhotoMesh, ViewerContext, ViewerPlugin } from '../core/types'
 import { QUALITY_BUDGETS } from '../core/QualityController'
+import { PaperBook } from '../core/PaperBook'
 import { createTheatrePoses, showCueAt, SHOW_DURATION, type TheatreCommand, type TheatreMode, type TheatrePose, type TheatreState } from '../lib/photoTheatre'
 
 interface Move {
@@ -27,6 +28,10 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
   private lastRingBeat = 0
   private floatTime = 0
   private poses: TheatrePose[] = []
+  private book: PaperBook | null = null
+  private bookCursor = 0
+  private bookTarget = 0
+  private lastBookBeat = 0
   private space: { width: number; height: number; limit?: number } = { width: 1100, height: 570 }
 
   install(context: ViewerContext): void {
@@ -47,11 +52,12 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
       ['photo:blur', this.blur], ['config:update', this.configUpdated], ['webgl:lost', this.exit]
     ] as const) this.context?.off(event, handler)
     this.context = null
+    this.book?.dispose(); this.book = null
   }
   snapshot(): TheatreState { return { ...this.state, indices: [...this.state.indices] } }
   private report(): void { this.context?.emit('theatre:state', this.snapshot()) }
   private syncActivity(): void {
-    const active = this.state.active && (this.state.status === 'playing' || (this.moves.length > 0 && this.state.status !== 'paused'))
+    const active = this.state.active && (this.state.status === 'playing' || ((this.moves.length > 0 || this.state.mode === 'book' && Math.abs(this.bookCursor - this.bookTarget) > .001) && this.state.status !== 'paused'))
     if (active !== this.counted) {
       this.counted = active
       this.context?.emit(active ? 'transition:start' : 'transition:end')
@@ -105,6 +111,12 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
         this.present(command.mode); return
       case 'step': {
         this.state.status = 'idle'; this.pendingFocus = null
+        if (this.state.mode === 'book') {
+          this.bookTarget = Math.round(this.bookTarget) + Math.sign(command.direction)
+          this.state.offset = ((this.bookTarget % this.context.photos.length) + this.context.photos.length) % this.context.photos.length
+          if (this.state.reducedMotion) this.bookCursor = this.bookTarget
+          this.renderBook(); this.syncActivity(); this.report(); return
+        }
         const sequential = ['ring', 'fold', 'ribbon', 'stack', 'focus'].includes(this.state.mode)
         const stride = sequential ? 1 : Math.max(1, this.state.indices.length)
         this.state.offset = ((this.state.offset + Math.sign(command.direction) * stride) % this.context.photos.length + this.context.photos.length) % this.context.photos.length
@@ -154,6 +166,13 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
     }
     this.state.mode = mode
     this.measure()
+    if (mode === 'book') {
+      this.moves = []
+      this.bookCursor = this.bookTarget = this.state.offset
+      this.lastBookBeat = 0
+      this.renderBook(); this.syncActivity(); this.report(); return
+    }
+    this.book?.hide()
     const ratios = this.context.photos.map(photo => {
       photo.geometry.computeBoundingBox()
       const box = photo.geometry.boundingBox!
@@ -177,6 +196,7 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
       const from = photo.position.clone()
       const arc = new THREE.Vector3()
       if (mode === 'ring') arc.set(-from.y * .22, from.x * .12, 110)
+      else if (mode === 'tunnel') arc.set(Math.sin(index * 1.42) * this.space.width * .28, Math.cos(index * 1.42) * this.space.height * .3, 520)
       else if (mode === 'fold' || mode === 'ribbon') arc.set(0, Math.sin(index * .7) * this.space.height * .13, -70)
       else if (mode === 'stack' || mode === 'fan') arc.set(0, 65, index * 3)
       else if (mode === 'cloud') arc.set(Math.sin(index * 2.4) * 65, 45, 50)
@@ -189,6 +209,13 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
     })
     if (this.context.reducedMotion()) this.finishMoves()
     this.syncActivity(); this.report()
+  }
+  private renderBook(): void {
+    if (!this.context) return
+    if (!this.book) this.book = new PaperBook(this.context.scene)
+    this.book.render(this.context.photos, this.bookCursor, this.space.width, this.space.height)
+    const count = this.context.photos.length
+    this.state.indices = Array.from(new Set([this.state.offset, (this.state.offset - 1 + count) % count, (this.state.offset + 1) % count]))
   }
   private finishMoves(): void {
     for (const m of this.moves) {
@@ -217,9 +244,22 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
           this.present('ring', 1.6)
         }
       }
+      if (cue.mode === 'book') {
+        const beat = Math.floor((this.state.elapsed - cue.at) / 2.3)
+        if (beat > this.lastBookBeat) {
+          this.bookTarget += beat - this.lastBookBeat; this.lastBookBeat = beat
+          this.state.offset = this.bookTarget % this.context.photos.length
+        }
+      }
       if (this.state.elapsed >= SHOW_DURATION) this.state.status = 'finished'
       const second = Math.floor(this.state.elapsed)
       if (second !== this.lastReportedSecond) { this.lastReportedSecond = second; this.report() }
+    }
+    if (this.state.mode === 'book') {
+      const distance = this.bookTarget - this.bookCursor
+      // Bounded angular speed keeps a full page turn legible; a fast swipe can queue more pages.
+      this.bookCursor += this.context.reducedMotion() ? distance : Math.sign(distance) * Math.min(Math.abs(distance), delta * .78)
+      this.renderBook(); this.syncActivity(); return
     }
     if (this.context.reducedMotion()) this.finishMoves()
     for (const m of this.moves) {
@@ -247,6 +287,7 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
   private exit = (): void => {
     if (!this.state.active) return
     this.moves = []; this.pendingFocus = null; this.returnMode = null; this.poses = []
+    this.book?.hide()
     this.state = { ...this.state, active: false, status: 'idle', elapsed: 0, indices: [] }
     this.context?.photos.forEach(photo => { photo.visible = true; photo.userData.entranceOffsetY = 0 })
     this.syncActivity()

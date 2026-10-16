@@ -479,6 +479,12 @@ export class ViewerEngine {
     return this.photos
   }
 
+  getPickablePhotos(): THREE.Mesh[] {
+    return this.photos.flatMap(photo => photo.userData.presentation ?? (photo.visible
+      ? [photo, ...photo.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh && child.name === 'photo-back')]
+      : []))
+  }
+
   /**
    * 获取当前引擎性能指标 APM
    */
@@ -917,7 +923,7 @@ export class ViewerEngine {
     this.photoScene.updateVisibility(this.camera)
 
     try {
-      if (this.postProcessing) this.postProcessing.render(delta)
+      if (this.postProcessing) this.postProcessing.render(delta, this.scene.children.some(object => object.name === 'paper-book' && object.visible))
       else this.renderer.render(this.scene, this.camera)
     }
     catch (error) {
@@ -1004,7 +1010,7 @@ export class ViewerEngine {
     const background = this.pluginManager.get('Background') as { getInfo?: () => { url: string | null; width: number; height: number; bytes: number; projection: 'flat' | 'equirectangular' | 'none' } } | undefined
     const direction = new THREE.Vector3()
     this.camera.getWorldDirection(direction)
-    const visiblePhotos = this.photos.filter(photo => photo.visible && photo.userData.inView)
+    const visiblePhotos = this.photos.filter(photo => (photo.visible || photo.userData.presentation?.length) && photo.userData.inView)
     return { plugins: this.pluginManager.getInstalled().map(plugin => plugin.name), postProcessing, requestedConfig: requested, requested,
       renderedPhotos: { visible: visiblePhotos.length, ready: visiblePhotos.filter(photo => photo.userData.textureState === 'ready').length },
       effectiveConfig: structuredClone(this.pluginContext!.config), effectiveQuality: this.effectiveQuality, reason: this.qualityReason,

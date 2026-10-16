@@ -24,6 +24,7 @@ export type PhotoEffectStyle = typeof PHOTO_EFFECTS[number]['id']
 export interface PhotoEffectConfig { style: PhotoEffectStyle; intensity: number; speed: number }
 
 export const PHOTO_ARRANGEMENTS = [
+  { id: 'book', label: '巨幅翻页' }, { id: 'tunnel', label: '时空长廊' },
   { id: 'ribbon', label: '扭转丝带' }, { id: 'orbit', label: '星轨环绕' },
   { id: 'filmstrip', label: '横向胶卷' }, { id: 'fan', label: '折扇展开' },
   { id: 'wave', label: '潮汐波列' }, { id: 'arc', label: '月弧回廊' },

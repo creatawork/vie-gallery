@@ -32,6 +32,9 @@
 .exhibition-heading { position: absolute; left: clamp(24px, 3.4vw, 56px); top: 126px; z-index: 20; pointer-events: none; max-width: min(560px, 44vw); }
 .exhibition-heading h1 { font: 400 clamp(28px, 3.4vw, 52px)/1.3 var(--font-serif); letter-spacing: .015em; text-wrap: balance; overflow-wrap: anywhere; text-shadow: 0 3px 24px #171d1a; }
 .exhibition-heading p { font-size: 12px; letter-spacing: .035em; color: #c1cbc2; margin-top: 16px; }
+.is-book .exhibition-heading { top: 104px; max-width: 240px; }
+.is-book .exhibition-heading h1 { font-size: 28px; }
+.is-book .exhibition-heading p { margin-top: 8px; }
 .canvas-container { position: fixed; inset: 0; width: 100%; height: 100svh; z-index: 10; }
 .webgl-canvas { display: block; width: 100% !important; height: 100% !important; touch-action: none; cursor: grab; }.webgl-canvas:active { cursor: grabbing; }
 .webgl-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -5px; }
@@ -76,10 +79,11 @@
   .exhibition-header { padding: max(12px, env(safe-area-inset-top)) 18px 12px; gap: 12px; }.exhibition-brand { font-size: 34px; }.exhibition-tools { gap: 7px; }
   .exhibition-view button { padding: 0 10px; font-size: 11px; }.exhibition-share { width: 44px; padding: 0; }.exhibition-share span, .fullscreen-button { display: none; }
   .tour-button { position: fixed; right: 20px; top: 94px; min-width: 44px; padding: 0 12px; border: 1px solid #829489; background: #222a25; }.tour-button span { display: none; }
+  .choreography-button { position: fixed; right: 72px; top: 94px; width: 44px; padding: 0; border: 1px solid #829489; background: #222a25; }.choreography-button span { display: none; }
   .exhibition-heading { left: 24px; top: 102px; max-width: calc(100% - 110px); }.exhibition-heading h1 { font-size: clamp(25px, 6vw, 34px); }.exhibition-heading p { margin-top: 10px; font-size: 11px; }
   .stage-info { left: 24px; bottom: calc(142px + env(safe-area-inset-bottom)); max-width: calc(100% - 150px); }.stage-info p { display: none; }.stage-current { font-size: 17px; padding-top: 5px; gap: 10px; }
   .stage-navigation { right: 20px; bottom: calc(146px + env(safe-area-inset-bottom)); gap: 8px; }.stage-navigation button { width: 44px; height: 44px; }
-  .composition-dock { bottom: calc(48px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); }.composition-dock button { gap: 7px; padding: 8px 15px; font-size: 12px; }.composition-dock svg { width: 26px; }
+  .composition-dock { bottom: calc(48px + env(safe-area-inset-bottom)); width: calc(100% - 32px); max-width: 460px; justify-content: space-between; }.composition-dock button { flex-direction: column; flex: 1; gap: 3px; padding: 6px 5px; font-size: 11px; }.composition-dock svg { width: 26px; height: 21px; }
   .composition-dock.with-theatre-entry { bottom: calc(130px + env(safe-area-inset-bottom)); }
   .spatial-tips { bottom: calc(16px + env(safe-area-inset-bottom)); font-size: 10px; }.desktop-tip { display: none; }.touch-tip { display: inline; }.tip-separator { padding: 0 7px; }
   .load-more-floating { bottom: calc(211px + env(safe-area-inset-bottom)); white-space: nowrap; font-size: 12px; }.spatial-error { bottom: calc(264px + env(safe-area-inset-bottom)); }

@@ -32,7 +32,7 @@ public final class ViewerConfigValidator {
             Map.entry("layout.mode", new Rule("enum", 0, 0, Set.of("sphere", "carousel", "helix", "grid", "spiral", "random"))),
             Map.entry("layout.params", new Rule("object", 0, 0, Set.of())),
             Map.entry("layout.params.composition", new Rule("enum", 0, 0, Set.of("curated", "spatial"))),
-            Map.entry("layout.params.arrangement", new Rule("enum", 0, 0, Set.of("ribbon", "orbit", "filmstrip", "fan", "wave", "arc", "cascade", "stack"))),
+            Map.entry("layout.params.arrangement", new Rule("enum", 0, 0, Set.of("book", "tunnel", "ribbon", "orbit", "filmstrip", "fan", "wave", "arc", "cascade", "stack"))),
             Map.entry("layout.params.scale", new Rule("number", 0.5, 2, Set.of())),
             Map.entry("layout.params.spacing", new Rule("number", 0.5, 3, Set.of())),
             Map.entry("layout.params.radius", new Rule("number", 100, 1500, Set.of())),

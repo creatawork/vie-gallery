@@ -4,13 +4,15 @@ import * as THREE from 'three'
 import { PhotoScene } from '../src/core/PhotoScene'
 import { TexturePool } from '../src/core/TexturePool'
 
-test('both sides show an upright photograph outside the mount and share texture updates', async () => {
+test('paper-thin faces show the upright photograph and share texture updates', async () => {
   const texture = new THREE.Texture()
   const pool = new TexturePool({ maxEdge: 1, bytes: 1000, concurrent: 1, resident: 2 }, async () => ({ texture, bytes: 4 }))
   const scene = new THREE.Scene(), photos = new PhotoScene(scene, pool)
   const photo = { thumbnailUrl: 'photo', width: 800, height: 600, sortOrder: 0 }
   const mesh = photos.sync([photo]).all[0]
   const material = mesh.material as THREE.MeshStandardMaterial
+  assert.ok(mesh.children.every(child => !(child instanceof THREE.Mesh) || !(child.geometry instanceof THREE.BoxGeometry)))
+  assert.ok(Math.abs(mesh.getObjectByName('photo-back')!.position.z) < .02)
   pool.touch(photo, 0)
   await new Promise(resolve => setImmediate(resolve))
   try {
@@ -21,6 +23,7 @@ test('both sides show an upright photograph outside the mount and share texture 
       const surface = raycaster.intersectObject(mesh, true)[0].object as THREE.Mesh
       assert.equal(surface.material, material, 'the mount must not occlude the photograph')
       assert.equal((surface.material as THREE.MeshStandardMaterial).map, texture)
+      assert.equal(surface.userData.index, 0, 'both faces resolve to the same selectable photograph')
       // Looking at either outward face, image-right and image-up remain readable.
       const right = new THREE.Vector3(1, 0, 0).transformDirection(surface.matrixWorld)
       const up = new THREE.Vector3(0, 1, 0).transformDirection(surface.matrixWorld)

@@ -15,7 +15,12 @@ test('all presets have a unique photograph treatment independent of background a
     assert.equal(changed.effects.photo?.intensity, PRESET_PHOTO_EFFECTS[name].intensity)
     assert.equal((changed.effects.photo as Record<string, unknown>).extension, 'keep')
   }
-  assert.equal(new Set(Object.values(VIEWER_PRESETS).filter(c => c.layout.params?.composition === 'curated').map(resolvePhotoArrangement)).size, PHOTO_ARRANGEMENTS.length)
+  const arrangements = new Set(PHOTO_ARRANGEMENTS.map(item => item.id))
+  for (const config of Object.values(VIEWER_PRESETS)) assert.ok(arrangements.has(resolvePhotoArrangement(config)))
+  for (const mode of ['book', 'tunnel'] as const) {
+    const changed = applyCuratedStyle(normalizeViewerConfig({}).config, mode)
+    assert.equal(resolvePhotoArrangement(parseViewerConfig(serializeViewerConfig(changed)).config), mode)
+  }
 })
 
 test('historical untouched presets get effects, custom photographs and explicit off keep their intent', () => {

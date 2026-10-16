@@ -8,6 +8,12 @@ import java.nio.file.Files;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ViewerConfigValidatorTest {
+    @Test void narrativePhotoArrangementsCanBePublished() {
+        var validator = new ViewerConfigValidator();
+        for (String arrangement : new String[]{"book", "tunnel"}) {
+            assertDoesNotThrow(() -> validator.validate("{\"layout\":{\"mode\":\"helix\",\"params\":{\"composition\":\"curated\",\"arrangement\":\"" + arrangement + "\"}}}", 1));
+        }
+    }
     @Test void sharedFixtures() throws Exception {
         Path root = Path.of("").toAbsolutePath();
         while (!Files.exists(root.resolve("packages/gallery-contracts/fixtures/viewer-config-cases.json"))) {

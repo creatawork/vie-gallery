@@ -21,7 +21,7 @@ function changeMode(event: Event) {
         <Icon name="grid" :size="17" />
         <select aria-label="照片排列与组合" :value="selection" :disabled="busy" @change="changeMode">
           <option value="">照片编排</option>
-          <optgroup v-for="group in ['排列', '组合']" :key="group" :label="group">
+          <optgroup v-for="group in ['叙事', '排列', '组合']" :key="group" :label="group">
             <option v-for="mode in THEATRE_MODES.filter(m => m.group === group)" :key="mode.id" :value="mode.id">{{ mode.label }}</option>
           </optgroup>
           <option v-if="state.mode === 'focus'" value="focus">单张聚焦</option>
@@ -34,9 +34,9 @@ function changeMode(event: Event) {
       </button>
       <template v-if="state.active">
         <div class="theatre-navigation" aria-label="编排照片导航">
-          <button type="button" aria-label="上一组照片" :disabled="busy || total <= state.indices.length" @click="emit('command', { type: 'step', direction: -1 })"><Icon name="arrow-left" :size="17" /></button>
+          <button type="button" :aria-label="state.mode === 'book' ? '向前翻页' : '上一组照片'" :disabled="busy || (state.mode === 'book' ? total < 2 : total <= state.indices.length)" @click="emit('command', { type: 'step', direction: -1 })"><Icon name="arrow-left" :size="17" /></button>
           <button type="button" aria-label="查看当前主图" :disabled="busy || mainIndex === undefined" @click="emit('command', { type: 'focus', index: mainIndex! })"><Icon name="photo" :size="17" /></button>
-          <button type="button" aria-label="下一组照片" :disabled="busy || total <= state.indices.length" @click="emit('command', { type: 'step', direction: 1 })"><Icon name="arrow-right" :size="17" /></button>
+          <button type="button" :aria-label="state.mode === 'book' ? '向后翻页' : '下一组照片'" :disabled="busy || (state.mode === 'book' ? total < 2 : total <= state.indices.length)" @click="emit('command', { type: 'step', direction: 1 })"><Icon name="arrow-right" :size="17" /></button>
         </div>
         <button type="button" class="theatre-exit" aria-label="退出编排" :disabled="busy" @click="emit('command', { type: 'exit' })"><Icon name="x" :size="17" /></button>
       </template>
@@ -45,7 +45,7 @@ function changeMode(event: Event) {
       <span v-if="state.status === 'playing' || state.status === 'paused'">{{ state.status === 'paused' ? '已暂停' : '正在编排' }}<span aria-hidden="true"> · {{ Math.floor(state.elapsed) }} / {{ SHOW_DURATION }} 秒</span></span>
       <span v-else-if="state.status === 'finished'">演出结束 · 可继续自由浏览</span>
       <span v-else>本组 {{ state.indices.length }} 张 · 从第 {{ state.offset + 1 }} 张开始</span>
-      <span>{{ state.reducedMotion ? '已减少动态效果' : '左右拖动换组 · 点击照片聚焦' }}</span>
+      <span>{{ state.reducedMotion ? '已减少动态效果' : state.mode === 'book' ? '滑动翻页 · 方向键翻页 · 点击照片聚焦' : '左右拖动换组 · 点击照片聚焦' }}</span>
     </div>
     <progress v-if="state.status !== 'idle'" class="theatre-progress" aria-label="编排播放进度" :value="state.elapsed" :max="SHOW_DURATION" />
   </section>

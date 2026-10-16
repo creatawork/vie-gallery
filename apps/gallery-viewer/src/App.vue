@@ -407,14 +407,16 @@ async function init3DEngine() {
     // 初始相机行为跟随已发布配置
     const initialConfig = activeEngine.getConfigManager().getConfig() as Record<string, any>
     viewer.setAppliedConfigSnapshot(activeEngine.getRequestedConfig())
-    selectedStyle.value = initialConfig?.layout?.mode ?? ''
+    selectedStyle.value = ['book', 'tunnel'].includes(initialConfig?.layout?.params?.arrangement)
+      ? initialConfig.layout.params.arrangement : initialConfig?.layout?.mode ?? ''
     stageActive.value = initialConfig?.layout?.params?.composition === 'curated'
     stageIndex.value = 0
     activeEngine.getEventBus().on('stage:change', (state: { index: number }) => { stageIndex.value = state.index })
     activeEngine.getEventBus().on('stage:open', (index: number) => openLightbox(index))
     activeEngine.getEventBus().on('stage:interaction', () => activeEngine.wakeUp())
     activeEngine.getEventBus().on('config:update', (config: { layout: { mode: string; params?: Record<string, unknown> } }) => {
-      selectedStyle.value = config.layout.mode
+      selectedStyle.value = ['book', 'tunnel'].includes(String(config.layout.params?.arrangement))
+        ? String(config.layout.params?.arrangement) : config.layout.mode
       stageActive.value = config.layout.params?.composition === 'curated'
     })
     applyAutoTour(initialConfig?.camera?.autoRotate === true)
@@ -482,7 +484,7 @@ function bindCanvasInteractions() {
     activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
     activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
-    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible), false)
+    const intersects = activeRaycaster.intersectObjects(engine.getPickablePhotos(), false)
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh
@@ -521,12 +523,12 @@ function bindCanvasInteractions() {
     activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
     activeRaycaster.setFromCamera(activeMousePos, engine.getCamera())
-    const intersects = activeRaycaster.intersectObjects(engine.getPhotos().filter(photo => photo.visible), false)
+    const intersects = activeRaycaster.intersectObjects(engine.getPickablePhotos(), false)
 
     if (intersects.length > 0) {
       const hit = intersects[0].object as Three.Mesh
       const idx = hit.userData.index
-      if (stageActive.value) { openLightbox(idx); return }
+      if (stageActive.value && !theatre.value.active) { openLightbox(idx); return }
       
       if (theatre.value.active) {
         void sendTheatreCommand({ type: 'focus', index: idx })
@@ -534,7 +536,7 @@ function bindCanvasInteractions() {
       }
 
       // 触发照片点击事件，让光照系统响应
-      engine.getEventBus().emit('photo:click', { photo: hit })
+      engine.getEventBus().emit('photo:click', { photo: engine.getPhotos()[idx] })
       
       flyToPhotoAndFocus(hit, () => {
         openLightbox(idx)
@@ -555,10 +557,10 @@ function flyToPhotoAndFocus(mesh: Three.Mesh, onComplete?: () => void) {
   if (!engine) return
   const target = new threeRuntime!.Vector3()
   mesh.getWorldPosition(target)
-  const normal = new threeRuntime!.Vector3(0, 0, 1).applyEuler(mesh.rotation)
+  const normal = new threeRuntime!.Vector3(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new threeRuntime!.Quaternion()))
   const position = target.clone().add(normal.multiplyScalar(220))
   position.y += 15
-  engine.getEventBus().emit('photo:focus', { photo: mesh })
+  engine.getEventBus().emit('photo:focus', { photo: engine.getPhotos()[mesh.userData.index] })
   engine.flyTo(position, target, theatreMotion.matches ? 0 : 1.4, onComplete)
 }
 
@@ -698,7 +700,7 @@ function resetView() {
 </script>
 
 <template>
-  <div class="viewer-app-root" :style="sceneStyle" :class="{ 'is-spatial': viewMode === '3d' && (viewer.isReady.value || isEmbedPreview()), 'is-editorial': viewMode === '2d', 'is-embedded': isEmbedPreview() }">
+  <div class="viewer-app-root" :style="sceneStyle" :class="{ 'is-spatial': viewMode === '3d' && (viewer.isReady.value || isEmbedPreview()), 'is-editorial': viewMode === '2d', 'is-embedded': isEmbedPreview(), 'is-book': theatre.active ? theatre.mode === 'book' : selectedStyle === 'book' }">
     <!-- 1. 加载中状态 -->
     <div v-if="viewer.state.value === 'loading'" class="loading-screen" role="status" aria-live="polite" aria-busy="true">
       <div class="loader-box">
@@ -792,6 +794,7 @@ function resetView() {
             <button type="button" :aria-pressed="viewMode === '2d'" @click="viewMode = '2d'">平面展览</button>
           </div>
           <button v-if="show3dHud && !theatre.active && !theatre.reducedMotion" type="button" class="quiet-button tour-button" :aria-label="isAutoTour ? '暂停漫游' : '自动漫游'" :aria-pressed="isAutoTour" @click="toggleAutoTour"><Icon :name="isAutoTour ? 'pause' : 'play'" :size="15" /><span>{{ isAutoTour ? '暂停漫游' : '自动漫游' }}</span></button>
+          <button v-if="show3dHud && stageActive && !theatre.active && !theatre.reducedMotion" type="button" class="quiet-button choreography-button" aria-label="播放照片编排" :disabled="theatreBusy" @click="sendTheatreCommand({ type: 'play' })"><Icon name="grid" :size="15" /><span>编排演出</span></button>
           <button v-if="fullscreenAvailable" type="button" class="quiet-button fullscreen-button" :aria-label="isFullscreen ? '退出全屏' : '全屏欣赏'" :aria-pressed="isFullscreen" @click="toggleFullscreen"><Icon name="maximize" :size="17" /></button>
           <button type="button" class="exhibition-share" aria-label="分享" @click="showShareSheet = true"><Icon name="share" :size="15" /><span>分享</span></button>
         </div>
@@ -811,7 +814,7 @@ function resetView() {
       </div>
       <nav v-if="show3dHud && !theatre.active" class="composition-dock" :class="{ 'with-theatre-entry': showTheatreControls }" aria-label="展示风格">
         <button v-for="style in CURATED_STYLES" :key="style.id" type="button" :aria-pressed="selectedStyle === style.id" :disabled="styleBusy" @click="selectStyle(style.id)">
-          <svg viewBox="0 0 44 24" aria-hidden="true"><path v-if="style.id === 'helix'" d="M4 19C3 1 39 1 39 8S4 24 4 16S38 9 40 4"/><ellipse v-else-if="style.id === 'carousel'" cx="22" cy="12" rx="18" ry="8"/><path v-else d="M2 12Q12 -2 22 12T42 12M2 20Q12 6 22 20T42 20"/></svg>
+          <svg viewBox="0 0 44 24" aria-hidden="true"><path v-if="style.id === 'helix'" d="M4 19C3 1 39 1 39 8S4 24 4 16S38 9 40 4"/><ellipse v-else-if="style.id === 'carousel'" cx="22" cy="12" rx="18" ry="8"/><path v-else-if="style.id === 'book'" d="M22 6Q12 1 3 5v16q10-4 19 0 9-4 19 0V5q-9-4-19 1v15M22 6q10-7 14-4v14q-8 0-14 5"/><path v-else-if="style.id === 'tunnel'" d="m2 2 40 20M2 22 42 2M10 4h24v16H10zM17 8h10v8H17z"/><path v-else d="M2 12Q12 -2 22 12T42 12M2 20Q12 6 22 20T42 20"/></svg>
           {{ style.label }}
         </button>
       </nav>
