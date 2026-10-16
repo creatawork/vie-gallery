@@ -1,11 +1,13 @@
-const csrfState = { token: '' }
-let csrfRequest: Promise<void> | null = null
+let csrfRequest: Promise<string> | null = null
 const REQUEST_TIMEOUT_MS = 30_000  // 通用请求超时 30 秒
 const UPLOAD_TIMEOUT_MS = 120_000  // 文件上传超时 120 秒（足够处理大文件和后端图片处理）
 const SINGLE_FILE_TIMEOUT_MS = 300_000  // 逐文件上传超时 300 秒：单文件最大 50MB，慢速网络也需要余量
 
 function readCookie(name: string): string | undefined {
-  return document.cookie.split('; ').find(value => value.startsWith(`${name}=`))?.split('=').slice(1).join('=')
+  const value = document.cookie.split(';').map(part => part.trim())
+    .find(part => part.startsWith(`${name}=`))?.slice(name.length + 1)
+  if (!value) return undefined
+  try { return decodeURIComponent(value) } catch { return undefined }
 }
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -28,34 +30,51 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
   }
 }
 
-export async function csrfToken(): Promise<string> {
-  if (!csrfState.token) {
-    if (!csrfRequest) {
-      csrfRequest = (async () => {
-        const response = await fetchWithTimeout('/api/auth/csrf', { credentials: 'include' }, REQUEST_TIMEOUT_MS)
-        if (!response.ok) throw new Error('无法建立安全连接，请刷新后重试。')
-        const body = await response.json() as { token: string }
-        csrfState.token = body.token
-      })().finally(() => { csrfRequest = null })
+export async function csrfToken(forceRefresh = false): Promise<string> {
+  if (csrfRequest) return csrfRequest
+  // Cookie 会随退出登录或其他标签页的操作变化，不能长期缓存其副本。
+  const cookieToken = readCookie('XSRF-TOKEN')
+  if (!forceRefresh && cookieToken) return cookieToken
+
+  csrfRequest = (async () => {
+    const response = await fetchWithTimeout('/api/auth/csrf', {
+      credentials: 'include', cache: 'no-store'
+    }, REQUEST_TIMEOUT_MS)
+    if (!response.ok) throw new Error('无法建立安全连接，请刷新后重试。')
+    const body = await response.json() as { token?: unknown }
+    if (typeof body.token !== 'string' || !body.token) {
+      throw new Error('无法建立安全连接，请刷新后重试。')
     }
-    await csrfRequest
-  }
-  return csrfState.token || readCookie('XSRF-TOKEN') || ''
+    return body.token
+  })().finally(() => { csrfRequest = null })
+  return csrfRequest
+}
+
+async function isCsrfFailure(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false
+  const body = await response.clone().json().catch(() => null) as { code?: string } | null
+  return body?.code === 'CSRF_INVALID'
 }
 
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const method = (init.method || 'GET').toUpperCase()
-  const headers = new Headers(init.headers)
+  const request = input instanceof Request ? input : undefined
+  const method = (init.method || request?.method || 'GET').toUpperCase()
+  const headers = new Headers(init.headers ?? request?.headers)
   const isMutating = !['GET', 'HEAD', 'OPTIONS'].includes(method)
   if (isMutating) headers.set('X-XSRF-TOKEN', await csrfToken())
 
   // 检测是否为文件上传请求（body 是 FormData）
   const isFileUpload = init.body instanceof FormData
   const timeout = isFileUpload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS
+  const canRetry = isMutating && !(init.body instanceof ReadableStream)
+  const retryInput = canRetry && request ? request.clone() : input
 
   const response = await fetchWithTimeout(input, { ...init, headers, credentials: 'include' }, timeout)
-  if (response.status === 403 && isMutating) {
-    csrfState.token = ''
+  if (canRetry && !init.signal?.aborted && await isCsrfFailure(response)) {
+    // CSRF 过滤器在业务处理前拒绝请求，刷新令牌后只重试一次。
+    headers.set('X-XSRF-TOKEN', await csrfToken(true))
+    if (init.signal?.aborted) return response
+    return fetchWithTimeout(retryInput, { ...init, headers, credentials: 'include' }, timeout)
   }
   return response
 }
@@ -93,7 +112,6 @@ export async function uploadFileWithProgress(
         statusText: xhr.statusText,
         headers: { 'Content-Type': xhr.getResponseHeader('Content-Type') || 'application/json' }
       })
-      if (xhr.status === 403) csrfState.token = ''
       resolve(response)
     }
     xhr.onerror = () => reject(new TypeError('Failed to fetch'))
