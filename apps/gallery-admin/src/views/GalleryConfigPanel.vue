@@ -6,7 +6,7 @@ import type { Gallery, PublishReadinessResponse, ViewerConfigVersion } from '@vi
 import { useToast } from '../composables/useToast'
 import { useViewerConfigEditor } from '../composables/useViewerConfigEditor'
 import { createViewerPreviewChannel } from '../lib/viewerPreviewChannel'
-import { createRecommendedViewerConfig, isViewerPreset, parseViewerConfig, serializeViewerConfig, type PresetName } from '@vie/gallery-contracts'
+import { createRecommendedViewerConfig, isViewerPreset, parseViewerConfig, serializeViewerConfig, VIEWER_PRESET_CARDS, PHOTO_ARRANGEMENTS, PHOTO_EFFECTS, resolvePhotoArrangement, resolvePhotoEffect, type PresetName } from '@vie/gallery-contracts'
 import LayoutControls from '../components/gallery-config/LayoutControls.vue'
 import AtmosphereControls from '../components/gallery-config/AtmosphereControls.vue'
 import MotionQualityControls from '../components/gallery-config/MotionQualityControls.vue'
@@ -62,6 +62,7 @@ const lastSaveFailed = ref(false)
 const loadError = ref('')
 const isFullscreen = ref(false)
 const previewIframeRef = ref<HTMLIFrameElement | null>(null)
+const configSideRef = ref<HTMLElement | null>(null)
 const previewLive = ref(false)
 const embedTimedOut = ref(false)
 const previewLoadingSlow = ref(false)
@@ -72,14 +73,21 @@ let handshakeTimer: number | null = null
 let previewSlowTimer: number | null = null
 const PREVIEW_PROGRESS_MS = 8000
 const PREVIEW_TIMEOUT_MS = 30000
-const configTab = ref<'basics' | 'atmosphere' | 'advanced' | 'history'>('basics')
+const configTab = ref<'style' | 'composition' | 'atmosphere' | 'history'>('style')
 
 const CONFIG_TABS = [
-  { id: 'basics' as const, label: '基础' },
-  { id: 'atmosphere' as const, label: '氛围' },
-  { id: 'advanced' as const, label: '高级' },
-  { id: 'history' as const, label: '版本' }
+  { id: 'style' as const, label: '风格', number: '01' },
+  { id: 'composition' as const, label: '编排', number: '02' },
+  { id: 'atmosphere' as const, label: '氛围', number: '03' },
+  { id: 'history' as const, label: '版本', number: '↺' }
 ]
+const currentStyle = computed(() => VIEWER_PRESET_CARDS.find(item => item.name === config.value.presetName))
+const currentArrangement = computed(() => config.value.layout.params?.composition === 'curated'
+  ? PHOTO_ARRANGEMENTS.find(item => item.id === resolvePhotoArrangement(config.value))?.label ?? '逐张策展'
+  : '自由漫游')
+const currentTreatment = computed(() => config.value.layout.params?.composition === 'curated' && resolvePhotoArrangement(config.value) === 'book'
+  ? '原片印相' : PHOTO_EFFECTS.find(item => item.id === resolvePhotoEffect(config.value).style)?.label ?? '原片')
+watch(configTab, () => { configSideRef.value?.scrollTo({ top: 0 }) })
 
 function handleTabKeydown(event: KeyboardEvent) {
   const index = CONFIG_TABS.findIndex(tab => tab.id === configTab.value)
@@ -753,7 +761,10 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <div class="config-caption"><div><span class="config-eyebrow">场景工作室</span><h1>{{ galleryInfo?.name || '展厅配置' }}</h1></div><div class="config-status"><p role="status" class="status-chip" :class="`is-${draftStatus.tone}`">{{ draftStatus.text }}</p><p role="status" class="status-chip" :class="`is-${publishStatus.tone}`">{{ publishStatus.text }}</p></div></div>
+    <div class="config-caption">
+      <div><span class="config-eyebrow">VIE / 展示设计</span><h1>{{ galleryInfo?.name || '展厅配置' }}<span class="caption-divider">/</span><span class="caption-subtitle">让作品被看见</span></h1></div>
+      <div class="config-status"><p role="status" class="status-chip" :class="`is-${draftStatus.tone}`">{{ draftStatus.text }}</p><p role="status" class="status-chip" :class="`is-${publishStatus.tone}`">{{ publishStatus.text }}</p></div>
+    </div>
 
     <div v-if="loading" class="config-state">正在载入展厅配置…</div>
     <div v-else-if="loadError" class="config-state">
@@ -766,8 +777,8 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="config-split">
-      <aside class="config-side">
-        <div class="side-heading"><strong>塑造观看的方式</strong><span>调整会自动保存至草稿，发布后访客可见。</span></div>
+      <aside ref="configSideRef" class="config-side">
+        <div class="side-heading"><strong>你的照片，你的展览。</strong><span>从一种风格开始，让编排、光影与作品彼此呼应。</span></div>
         <div class="side-tabs" role="tablist" aria-label="配置分区" @keydown="handleTabKeydown">
           <button
             v-for="tab in CONFIG_TABS"
@@ -782,19 +793,20 @@ onUnmounted(() => {
             :tabindex="configTab === tab.id ? 0 : -1"
             @click="configTab = tab.id"
           >
-            {{ tab.label }}
+            <span class="tab-number" aria-hidden="true">{{ tab.number }}</span>{{ tab.label }}
           </button>
         </div>
 
-        <div id="config-panel-basics" role="tabpanel" aria-labelledby="config-tab-basics" v-show="configTab === 'basics'"><LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" /></div>
-        <div id="config-panel-atmosphere" role="tabpanel" aria-labelledby="config-tab-atmosphere" v-if="configTab === 'atmosphere'">
+        <div id="config-panel-style" role="tabpanel" aria-labelledby="config-tab-style" v-show="configTab === 'style'">
           <PresetCards :config="config" :disabled="!canConfigWrite || !configLoaded" @preset="applyPreset" @reset="resetPreset" />
-          <PhotoEffectControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
-          <p class="atmosphere-hint">一键应用照片质感、运动编排与场景；调节后实时预览，发布后访客可见。</p>
         </div>
-        <div id="config-panel-advanced" role="tabpanel" aria-labelledby="config-tab-advanced" v-if="configTab === 'advanced'">
-          <MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
+        <div id="config-panel-composition" role="tabpanel" aria-labelledby="config-tab-composition" v-if="configTab === 'composition'">
+          <LayoutControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
+          <PhotoEffectControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
+        </div>
+        <div id="config-panel-atmosphere" role="tabpanel" aria-labelledby="config-tab-atmosphere" v-if="configTab === 'atmosphere'">
           <AtmosphereControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
+          <MotionQualityControls :config="config" :issues="issues" :disabled="!canConfigWrite || !configLoaded" @patch="patchConfig" />
         </div>
         <p v-if="issues.length" class="config-errors" role="alert">有 {{ issues.length }} 项配置错误，请修正后保存。</p>
 
@@ -870,6 +882,11 @@ onUnmounted(() => {
             <span>{{ isFullscreen ? '退出全屏' : '全屏' }}</span>
           </button>
         </div>
+        <div v-if="previewLive && !isFullscreen" class="preview-caption" aria-label="当前展示方案">
+          <span class="preview-caption-label">当前方案</span>
+          <strong>{{ currentStyle?.label || '自定义风格' }}<span v-if="config.customized" class="customized-mark">已微调</span></strong>
+          <span>{{ currentArrangement }}<span class="summary-dot">·</span>{{ currentTreatment }}</span>
+        </div>
       </section>
     </div>
 
@@ -937,6 +954,11 @@ onUnmounted(() => {
   color:var(--text-primary)
 }
 
+.caption-divider { margin:0 12px; color:#c8ccc4; font-weight:350 }
+.caption-subtitle { font-size:17px; font-weight:400; letter-spacing:0; color:var(--text-secondary) }
+.tab-number { display:block; margin-bottom:5px; font-size:10px; font-weight:450; color:var(--text-tertiary); font-variant-numeric:tabular-nums; letter-spacing:.06em }
+.side-tab.active .tab-number { color:var(--brand-deep) }
+
 .config-scene {
   display:none
 }
@@ -946,8 +968,9 @@ onUnmounted(() => {
   align-items:center;
   justify-content:space-between;
   gap:20px;
-  min-height:80px;
-  padding:16px 32px;
+  min-height:70px;
+  padding:12px 28px;
+  background:var(--bg-surface);
   border-bottom:1px solid var(--border-strong)
 }
 
@@ -1089,11 +1112,11 @@ onUnmounted(() => {
   align-items:center;
   justify-content:space-between;
   gap:20px;
-  padding:24px 32px
+  padding:22px 28px
 }
 
 .config-eyebrow {
-  font-size:10px;
+  font-size:11px;
   letter-spacing:.12em;
   color:var(--brand-deep)
 }
@@ -1145,16 +1168,16 @@ onUnmounted(() => {
 
 .config-split {
   display:grid;
-  grid-template-columns:350px minmax(0,1fr);
-  gap:20px;
+  grid-template-columns:408px minmax(0,1fr);
+  gap:16px;
   margin:0 24px 24px;
-  height:calc(100dvh - 212px);
+  height:calc(100dvh - 194px);
   min-height:520px
 }
 
 .config-side {
   overflow:auto;
-  padding:22px 18px;
+  padding:24px;
   background:var(--bg-surface);
   border:1px solid var(--border-strong);
   border-radius:12px;
@@ -1168,33 +1191,33 @@ onUnmounted(() => {
 }
 
 .side-heading strong {
-  font-size:17px;
+  font-size:21px;
   font-weight:650;
   letter-spacing:-.02em
 }
 
 .side-heading>span {
-  font-size:11px;
+  font-size:12px;
   color:var(--text-secondary);
   line-height:1.6
 }
 
 .side-tabs {
   position:sticky;
-  top:-22px;
+  top:-24px;
   z-index:5;
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:3px;
-  padding:5px 0;
-  margin:20px 0 18px;
+  padding:9px 0;
+  margin:18px 0;
   background:var(--bg-surface);
   border-bottom:1px solid var(--border-strong)
 }
 
 .side-tab {
-  min-height:40px;
-  padding:9px 4px;
+  min-height:55px;
+  padding:8px 4px;
   border-radius:6px;
   border:0;
   background:none;
@@ -1355,8 +1378,21 @@ onUnmounted(() => {
   overflow:hidden;
   border:1px solid var(--border-strong);
   border-radius:12px;
-  background:#18241f
+  background:#131b18;
+  box-shadow:0 10px 32px #17261d0a
 }
+
+.preview-caption {
+  position:absolute; bottom:22px; left:22px; z-index:2; display:grid; gap:7px;
+  padding:16px 20px; max-width:calc(100% - 44px); pointer-events:none;
+  color:#f4f2e9; background:rgba(17,26,22,.8); border:1px solid #ffffff1c;
+  border-radius:10px; backdrop-filter:blur(16px); box-shadow:0 4px 24px #0001;
+}
+.preview-caption-label { color:#c1cbbf; font-size:10px; letter-spacing:.12em }
+.preview-caption strong { display:flex; gap:10px; align-items:center; font-size:15px; font-weight:500 }
+.preview-caption>span:last-child { font-size:11px; color:#d0d7cf }
+.summary-dot { padding:0 7px; color:#93a397 }
+.customized-mark { font-size:10px; font-weight:400; color:#c8d6ca; border:1px solid #d3e9d333; border-radius:4px; padding:2px 5px }
 
 .preview-empty {
   position:absolute;
@@ -1563,7 +1599,7 @@ onUnmounted(() => {
   }
   .config-split {
     height:calc(100dvh - 260px);
-    grid-template-columns:320px minmax(0,1fr)
+    grid-template-columns:360px minmax(0,1fr)
   }
   .config-caption {
     padding:20px 24px
@@ -1587,6 +1623,7 @@ onUnmounted(() => {
   .side-tabs {
     top:0
   }
+  .preview-caption { bottom:14px; left:14px; padding:12px 16px }
   .config-caption {
     align-items:flex-start
   }
@@ -1635,6 +1672,7 @@ onUnmounted(() => {
   .config-caption h1 {
     font-size:23px
   }
+  .caption-subtitle,.caption-divider { display:none }
   .config-status {
     max-width:none;
     justify-content:flex-start
@@ -1667,6 +1705,7 @@ onUnmounted(() => {
   .preview-mode {
     font-size:10px
   }
+  .preview-caption { display:none }
   .preview-empty {
     padding:20px
   }

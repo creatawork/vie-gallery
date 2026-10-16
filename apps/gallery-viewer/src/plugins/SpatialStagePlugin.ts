@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { ViewerContext, ViewerPlugin } from '../core/types'
 import { resolvePhotoArrangement } from '@vie/gallery-contracts'
 import { stageArrangement } from '../lib/stageArrangements'
+import { stageFraming } from '../lib/stageFraming'
 import { PaperBook } from '../core/PaperBook'
 
 /** A single progress value drives the photographs, framing, and visitor navigation. */
@@ -17,6 +18,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
   private configuredAutoplay = true
   private suspended = false
   private theatreActive = false
+  private immersive = false
   private hovered: number | null = null
   private moving = false
   private dwell = 0
@@ -41,7 +43,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     this.entrances = new WeakMap()
     this.lastIndex = -1
     this.cursor = 0; this.target = 0; this.dwell = 0
-    this.suspended = false; this.theatreActive = false; this.hovered = null; this.pointer.set(0, 0)
+    this.suspended = false; this.theatreActive = false; this.immersive = false; this.hovered = null; this.pointer.set(0, 0)
     this.canvas = context.renderer.domElement
     this.autoplay = this.configuredAutoplay = !!context.config.camera?.autoRotate
     this.entranceSignature = JSON.stringify([context.config.effects.photoEntrance, context.config.effects.entranceDuration])
@@ -49,6 +51,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     context.on('stage:reset', this.reset)
     context.on('stage:autoplay', this.setAutoplay)
     context.on('stage:suspend', this.setSuspended)
+    context.on('stage:immersive', this.setImmersive)
     context.on('theatre:hover', this.hover)
     context.on('theatre:active', this.setTheatreActive)
     context.on('photos:loaded', this.photosChanged)
@@ -80,6 +83,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     this.context.emit('stage:interaction')
   }
   private reset = () => { this.target = 0; this.pointer.set(0, 0); this.dwell = 0 }
+  private setImmersive = (enabled: boolean) => { this.immersive = enabled; this.pointer.set(0, 0) }
   private setAutoplay = (enabled: boolean) => { this.autoplay = enabled; this.dwell = 0 }
   private setTheatreActive = (active: boolean) => {
     this.theatreActive = active; this.cancel(); this.dwell = 0
@@ -178,6 +182,10 @@ export class SpatialStagePlugin implements ViewerPlugin {
     const mode = context.config.layout.mode
     const params = context.config.layout.params
     const arrangement = resolvePhotoArrangement(context.config)
+    const canvasHeight = this.canvas.clientHeight || 800
+    const canvasWidth = this.canvas.clientWidth || canvasHeight * camera.aspect
+    const preview = this.canvas.dataset?.presentation === 'preview'
+    const frame = stageFraming(canvasWidth, canvasHeight, camera.fov, (mobile ? 1040 : 930) - 180, this.immersive, preview)
     if (arrangement === 'book') {
       if (!this.book) this.book = new PaperBook(context.scene)
       const distance = mobile ? 1040 : 1120
@@ -185,9 +193,9 @@ export class SpatialStagePlugin implements ViewerPlugin {
       camera.position.lerp(this.cameraPosition, blend)
       camera.lookAt(0, 24, 30)
       const fullH = 2 * Math.tan(camera.fov * Math.PI / 360) * (distance - 60)
-      const canvasH = this.canvas.clientHeight || 800
+      const canvasH = canvasHeight
       this.book.render(context.photos, this.cursor, fullH * camera.aspect * .94,
-        fullH * Math.max(.38, (canvasH - (mobile ? 330 : 230)) / canvasH), params?.scale ?? 1)
+        fullH * Math.max(.38, (canvasH - (preview ? 80 : this.immersive ? 100 : mobile ? 330 : 230)) / canvasH), params?.scale ?? 1)
       this.paths.visible = false
       this.reportIndex(count)
       return
@@ -211,12 +219,14 @@ export class SpatialStagePlugin implements ViewerPlugin {
         : Math.min(1, Math.max(0, 5 - a)) * edge
       let { x, y, z, ry, rz } = stageArrangement(d, arrangement, mobile, params)
       if (count === 1) { x = 0; y = 0; z = 180; ry = 0; rz = 0 }
+      y += frame.centerY
       if (!reduced && !this.suspended && context.config.effects.photoFloat) {
         y += Math.sin(elapsed * (context.config.effects.floatSpeed ?? 1) + i) * 5 * (context.config.effects.floatAmplitude ?? 1)
       }
       if (!this.entrances.has(mesh)) this.entrances.set(mesh, elapsed)
-      const entrance = reduced || context.config.effects.photoEntrance === 'none' ? 1
+      const entranceProgress = reduced || context.config.effects.photoEntrance === 'none' ? 1
         : Math.min(1, Math.max(0, (elapsed - this.entrances.get(mesh)!) / (context.config.effects.entranceDuration ?? .5)))
+      const entrance = 1 - Math.pow(1 - entranceProgress, 3)
       if (context.config.effects.photoEntrance === 'rise') y -= (1 - entrance) * 80
       this.photoPosition.set(x, y, z)
       this.rotation.set(0, ry, rz)
@@ -226,18 +236,19 @@ export class SpatialStagePlugin implements ViewerPlugin {
       else { mesh.position.lerp(this.photoPosition, blend); mesh.quaternion.slerp(this.quaternion, blend) }
       const geometry = mesh.geometry as THREE.PlaneGeometry
       const width = geometry.parameters.width || 80, height = geometry.parameters.height || 60
-      const fit = Math.min((mobile ? 240 : 360) / width, (mobile ? 285 : 315) / height)
+      const fit = Math.min(frame.width / width, frame.height / height)
       const hover = !reduced && !this.drag && !this.suspended && this.hovered === i ? 1.028 : 1
-      const scale = fit * (params?.scale ?? 1) * (arrangement === 'tunnel' ? 1.28 : 1 - Math.min(a, 4) * .12) * hover
+      const scale = fit * (params?.scale ?? 1) * (arrangement === 'tunnel' ? 1.12 : 1 - Math.min(a, 4) * .12) * hover
       mesh.scale.setScalar(fresh ? scale : THREE.MathUtils.lerp(mesh.scale.x, scale, blend))
       mesh.userData.layoutScale = mesh.scale.x
       mesh.visible = presence > .005
       const material = mesh.material as THREE.MeshStandardMaterial
+      const depth = .36 + .64 * Math.exp(-a * .72)
       material.opacity = presence * entrance
       if (!material.transparent) { material.transparent = true; material.needsUpdate = true }
       // Preserve the photograph's own color and contrast through every viewing angle.
-      material.color.setScalar(.28)
-      material.emissiveIntensity = .85
+      material.color.setScalar(.28 * depth)
+      material.emissiveIntensity = .85 * depth
       if (material.toneMapped) { material.toneMapped = false; material.needsUpdate = true }
       for (const child of mesh.children) {
         if (!(child instanceof THREE.Mesh) || child.material === material) continue
@@ -264,6 +275,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     if (this.moving) { this.moving = false; context.emit('transition:end') }
     context.off('stage:step', this.step); context.off('stage:reset', this.reset)
     context.off('stage:autoplay', this.setAutoplay); context.off('stage:suspend', this.setSuspended)
+    context.off('stage:immersive', this.setImmersive)
     context.off('theatre:hover', this.hover); context.off('photos:loaded', this.photosChanged)
     context.off('theatre:active', this.setTheatreActive)
     context.off('config:update', this.configChanged)

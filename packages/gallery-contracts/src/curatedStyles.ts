@@ -1,5 +1,5 @@
 import { mergeViewerConfig, type ViewerConfig } from './viewerConfig'
-import { photoPresentationPatch } from './photoEffects'
+import { PHOTO_ARRANGEMENTS, photoPresentationPatch, resolvePhotoArrangement, type PhotoArrangement } from './photoEffects'
 
 /** Composition changes preserve the gallery's background, lighting and effects. */
 export const CURATED_STYLES = [
@@ -11,10 +11,27 @@ export const CURATED_STYLES = [
 ] as const
 export type CuratedStyle = typeof CURATED_STYLES[number]['id']
 
-export function applyCuratedStyle(current: ViewerConfig, mode: CuratedStyle): ViewerConfig {
+const CURATED_STYLE_ARRANGEMENTS = {
+  helix: 'ribbon', carousel: 'arc', grid: 'wave', book: 'book', tunnel: 'tunnel'
+} as const satisfies Record<CuratedStyle, PhotoArrangement>
+
+/** Apply one visual composition without changing the authored atmosphere or photo treatment. */
+export function applyPhotoArrangement(current: ViewerConfig, arrangement: PhotoArrangement): ViewerConfig {
+  const definition = PHOTO_ARRANGEMENTS.find(item => item.id === arrangement)!
   return mergeViewerConfig(mergeViewerConfig(current, photoPresentationPatch(current)), {
     customized: true,
-    layout: { mode: mode === 'book' || mode === 'tunnel' ? 'helix' : mode,
-      params: { composition: 'curated', arrangement: ({ helix: 'ribbon', carousel: 'arc', grid: 'wave', book: 'book', tunnel: 'tunnel' } as const)[mode] } }
+    layout: { mode: definition.mode, params: { composition: 'curated', arrangement },
+      transition: { style: current.layout.transition?.style === 'none' ? 'none' : 'smooth' } }
   })
+}
+
+export function applyCuratedStyle(current: ViewerConfig, mode: CuratedStyle): ViewerConfig {
+  return applyPhotoArrangement(current, CURATED_STYLE_ARRANGEMENTS[mode])
+}
+
+/** Selection is based on the rendered arrangement; book and tunnel share the helix geometry mode. */
+export function resolveCuratedStyle(config: ViewerConfig): CuratedStyle | undefined {
+  if (config.layout.params?.composition !== 'curated') return undefined
+  const arrangement = resolvePhotoArrangement(config)
+  return CURATED_STYLES.find(item => CURATED_STYLE_ARRANGEMENTS[item.id] === arrangement)?.id
 }

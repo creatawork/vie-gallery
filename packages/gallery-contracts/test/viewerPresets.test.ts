@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { VIEWER_PRESETS, applyViewerPreset, restoreViewerPreset, createRecommendedViewerConfig, RECOMMENDED_SCENE_PRESET } from '../src/viewerPresets'
+import { VIEWER_PRESETS, VIEWER_PRESET_CARDS, applyViewerPreset, restoreViewerPreset, createRecommendedViewerConfig, RECOMMENDED_SCENE_PRESET } from '../src/viewerPresets'
 import { normalizeViewerConfig, serializeViewerConfig } from '../src/viewerConfig'
 import { SCENE_BACKGROUND_VERSION, backgroundTextureUrl, sceneBackgroundThumbUrl, sceneBackgroundUrl } from '../src/galleryMedia'
 import { applyCuratedStyle } from '../src/curatedStyles'
+import { PHOTO_EFFECTS, PHOTO_ARRANGEMENTS, resolvePhotoArrangement } from '../src/photoEffects'
 
 test('scene background urls are versioned, thumbnailed and tiered by quality', () => {
   assert.equal(sceneBackgroundUrl('minimal'), `/g/backgrounds/minimal.webp?v=${SCENE_BACKGROUND_VERSION}`)
@@ -123,4 +124,24 @@ test('visitor composition controls preserve the authored atmosphere', () => {
   assert.equal(next.layout.mode, 'carousel')
   assert.equal(next.layout.params?.composition, 'curated')
   for (const key of ['background', 'particles', 'effects', 'lighting', 'camera', 'interaction'] as const) assert.deepEqual(next[key], current[key], key)
+})
+
+test('style cards describe their actual treatment, composition and palette', () => {
+  assert.deepEqual(VIEWER_PRESET_CARDS.map(card => card.name).sort(), Object.keys(VIEWER_PRESETS).sort())
+  for (const card of VIEWER_PRESET_CARDS) {
+    const preset = VIEWER_PRESETS[card.name]
+    const treatment = PHOTO_EFFECTS.find(item => item.id === preset.effects.photo?.style)!
+    assert.ok(card.hint.includes(treatment.label), card.name)
+    assert.ok(card.description.startsWith('适合'), card.name)
+    assert.match(card.accent, /^#[0-9a-f]{6}$/i)
+    if (preset.layout.params?.composition === 'curated') {
+      const arrangement = PHOTO_ARRANGEMENTS.find(item => item.id === resolvePhotoArrangement(preset))!
+      assert.equal(card.category, 'light')
+      assert.ok(card.hint.includes(arrangement.label))
+      assert.equal(preset.layout.mode, arrangement.mode, card.name)
+    } else {
+      assert.equal(card.category, 'panorama')
+      assert.ok(card.hint.includes('360° 全景'))
+    }
+  }
 })

@@ -19,8 +19,8 @@ import BrandMark from './components/BrandMark.vue'
 
 <style scoped>
 .admin-shell { min-height: 100dvh; background: var(--bg-app); color: var(--text-primary); }
-.skip-link { position: fixed; left: 20px; top: -60px; z-index: 2000; padding: 12px 18px; border-radius: 8px; background: var(--brand-deep); color: white; }
-.skip-link:focus { top: 12px; }
+.skip-link { position: fixed; left: 20px; top: 12px; z-index: 2000; padding: 12px 18px; border-radius: 8px; background: var(--brand-deep); color: white; transform: translateY(-200%); opacity: 0; pointer-events: none; }
+.skip-link:focus { transform: translateY(0); opacity: 1; pointer-events: auto; }
 .content-viewport:focus { outline: none; }
 .route-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 100dvh; color: var(--text-secondary); font-size: 14px; }
 </style>

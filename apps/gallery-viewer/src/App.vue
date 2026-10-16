@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, type CSSProperties } from 'vue'
 import type * as Three from 'three'
-import { CURATED_STYLES, applyCuratedStyle, PHOTO_EFFECTS, PHOTO_ARRANGEMENTS, resolvePhotoEffect, resolvePhotoArrangement, type CuratedStyle } from '@vie/gallery-contracts'
+import { CURATED_STYLES, PHOTO_ARRANGEMENTS, applyCuratedStyle, resolveCuratedStyle, resolvePhotoArrangement, type CuratedStyle, type PhotoArrangement, type ViewerConfig } from '@vie/gallery-contracts'
 import { isTrustedPreviewMessage, normalizeViewerConfig, serializeViewerConfig, ViewerConfigValidationError } from '@vie/gallery-contracts'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
@@ -136,21 +136,36 @@ const sceneStyle = computed<CSSProperties>(() => ({
   '--scene-color': sceneConfig.value?.background?.color ?? '#111a17',
   '--scene-tone': sceneConfig.value?.background?.secondaryColor ?? '#263b32'
 }))
+const currentArrangement = ref<PhotoArrangement>()
 const stageCaption = computed(() => {
-  const config = sceneConfig.value
-  if (config) {
-    const effect = resolvePhotoEffect(config)
-    if (effect.style !== 'none' && effect.intensity > 0) return `${PHOTO_EFFECTS.find(item => item.id === effect.style)?.label} · ${PHOTO_ARRANGEMENTS.find(item => item.id === resolvePhotoArrangement(config))?.label}`
-  }
-  return CURATED_STYLES.find(style => style.id === selectedStyle.value)?.caption || '让照片，在空间里相遇'
+  return PHOTO_ARRANGEMENTS.find(item => item.id === currentArrangement.value)?.caption || '停留片刻，走近作品'
 })
+const isImmersive = ref(false)
+const immersiveButton = ref<HTMLButtonElement | null>(null)
+const immersiveExit = ref<HTMLButtonElement | null>(null)
+async function setImmersive(enabled: boolean) {
+  isImmersive.value = enabled
+  engine?.getEventBus().emit('stage:immersive', enabled)
+  engine?.wakeUp(1800)
+  await nextTick()
+  ;(enabled ? immersiveExit.value : immersiveButton.value)?.focus({ preventScroll: true })
+}
+function handleImmersiveKey(event: KeyboardEvent) {
+  if (!isImmersive.value || showLightbox.value || showShareSheet.value || event.defaultPrevented) return
+  if (event.key === 'Escape') void setImmersive(false)
+  else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+    event.preventDefault()
+    stepStage(event.key === 'ArrowRight' ? 1 : -1)
+  }
+}
+watch(viewMode, () => { if (isImmersive.value) void setImmersive(false) })
 function stepStage(direction: number) {
   engine?.getEventBus().emit('stage:step', direction)
   engine?.wakeUp()
 }
 
 // HUD Controls
-const selectedStyle = ref<string>('')
+const selectedStyle = ref<CuratedStyle>()
 const styleBusy = ref(false)
 async function selectStyle(mode: CuratedStyle) {
   if (!engine || styleBusy.value) return
@@ -189,6 +204,7 @@ let lastHoveredMesh: Three.Mesh | null = null
 
 onMounted(() => {
   theatreMotion.addEventListener('change', theatreMotionChanged)
+  window.addEventListener('keydown', handleImmersiveKey)
   window.addEventListener('message', handlePostMessage)
   if (isConfigPreview()) {
     previewHost()?.postMessage({ type: 'VIE_PREVIEW_BOOTSTRAP_REQUEST' }, adminEmbedOrigin())
@@ -207,6 +223,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   theatreMotion.removeEventListener('change', theatreMotionChanged)
+  window.removeEventListener('keydown', handleImmersiveKey)
   stopPreviewProgress()
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
   window.removeEventListener('deviceorientation', handleOrientation, true)
@@ -405,18 +422,18 @@ async function init3DEngine() {
     }
 
     // 初始相机行为跟随已发布配置
-    const initialConfig = activeEngine.getConfigManager().getConfig() as Record<string, any>
+    const initialConfig = activeEngine.getConfigManager().getConfig()
     viewer.setAppliedConfigSnapshot(activeEngine.getRequestedConfig())
-    selectedStyle.value = ['book', 'tunnel'].includes(initialConfig?.layout?.params?.arrangement)
-      ? initialConfig.layout.params.arrangement : initialConfig?.layout?.mode ?? ''
+    selectedStyle.value = resolveCuratedStyle(initialConfig)
+    currentArrangement.value = resolvePhotoArrangement(initialConfig)
     stageActive.value = initialConfig?.layout?.params?.composition === 'curated'
     stageIndex.value = 0
     activeEngine.getEventBus().on('stage:change', (state: { index: number }) => { stageIndex.value = state.index })
     activeEngine.getEventBus().on('stage:open', (index: number) => openLightbox(index))
     activeEngine.getEventBus().on('stage:interaction', () => activeEngine.wakeUp())
-    activeEngine.getEventBus().on('config:update', (config: { layout: { mode: string; params?: Record<string, unknown> } }) => {
-      selectedStyle.value = ['book', 'tunnel'].includes(String(config.layout.params?.arrangement))
-        ? String(config.layout.params?.arrangement) : config.layout.mode
+    activeEngine.getEventBus().on('config:update', (config: ViewerConfig) => {
+      selectedStyle.value = resolveCuratedStyle(config)
+      currentArrangement.value = resolvePhotoArrangement(config)
       stageActive.value = config.layout.params?.composition === 'curated'
     })
     applyAutoTour(initialConfig?.camera?.autoRotate === true)
@@ -658,6 +675,7 @@ function destroy3DEngine() {
     engine = null
   }
   engineReady.value = false
+  isImmersive.value = false
   stageActive.value = false
   theatre.value = { ...theatre.value, active: false, status: 'idle', elapsed: 0, indices: [] }
   theatreBusy.value = false
@@ -700,7 +718,7 @@ function resetView() {
 </script>
 
 <template>
-  <div class="viewer-app-root" :style="sceneStyle" :class="{ 'is-spatial': viewMode === '3d' && (viewer.isReady.value || isEmbedPreview()), 'is-editorial': viewMode === '2d', 'is-embedded': isEmbedPreview(), 'is-book': theatre.active ? theatre.mode === 'book' : selectedStyle === 'book' }">
+  <div class="viewer-app-root" :style="sceneStyle" :class="{ 'is-spatial': viewMode === '3d' && (viewer.isReady.value || isEmbedPreview()), 'is-editorial': viewMode === '2d', 'is-embedded': isEmbedPreview(), 'is-immersive': isImmersive, 'is-book': theatre.active ? theatre.mode === 'book' : selectedStyle === 'book' }">
     <!-- 1. 加载中状态 -->
     <div v-if="viewer.state.value === 'loading'" class="loading-screen" role="status" aria-live="polite" aria-busy="true">
       <div class="loader-box">
@@ -722,7 +740,7 @@ function resetView() {
     <!-- 3. Admin 嵌入预览：草稿/未公开时仍渲染 WebGL 沙盒 -->
     <div v-else-if="isEmbedPreview() && viewMode === '3d'" class="gallery-viewport embed-preview">
       <div class="canvas-container">
-        <canvas ref="canvasRef" class="webgl-canvas"></canvas>
+        <canvas ref="canvasRef" class="webgl-canvas" data-presentation="preview"></canvas>
       </div>
     </div>
 
@@ -786,7 +804,7 @@ function resetView() {
         <button type="button" @click="webglFallbackMessage = ''">知道了</button>
       </div>
 
-      <header class="exhibition-header">
+      <header class="exhibition-header" :inert="isImmersive || undefined">
         <button type="button" class="exhibition-brand" @click="returnToStart" aria-label="回到展厅起点">vie<span>光影之间</span></button>
         <div class="exhibition-tools">
           <div class="exhibition-view" role="group" aria-label="观看方式">
@@ -795,29 +813,35 @@ function resetView() {
           </div>
           <button v-if="show3dHud && !theatre.active && !theatre.reducedMotion" type="button" class="quiet-button tour-button" :aria-label="isAutoTour ? '暂停漫游' : '自动漫游'" :aria-pressed="isAutoTour" @click="toggleAutoTour"><Icon :name="isAutoTour ? 'pause' : 'play'" :size="15" /><span>{{ isAutoTour ? '暂停漫游' : '自动漫游' }}</span></button>
           <button v-if="show3dHud && stageActive && !theatre.active && !theatre.reducedMotion" type="button" class="quiet-button choreography-button" aria-label="播放照片编排" :disabled="theatreBusy" @click="sendTheatreCommand({ type: 'play' })"><Icon name="grid" :size="15" /><span>编排演出</span></button>
+          <button v-if="show3dHud && stageActive && !theatre.active" ref="immersiveButton" type="button" class="quiet-button immersive-button" aria-label="沉浸欣赏" :aria-pressed="isImmersive" @click="setImmersive(true)"><Icon name="eye" :size="17" /></button>
           <button v-if="fullscreenAvailable" type="button" class="quiet-button fullscreen-button" :aria-label="isFullscreen ? '退出全屏' : '全屏欣赏'" :aria-pressed="isFullscreen" @click="toggleFullscreen"><Icon name="maximize" :size="17" /></button>
           <button type="button" class="exhibition-share" aria-label="分享" @click="showShareSheet = true"><Icon name="share" :size="15" /><span>分享</span></button>
         </div>
       </header>
       <div v-if="viewMode === '3d'" class="exhibition-heading">
+        <span class="exhibition-eyebrow" aria-hidden="true">A PHOTOGRAPHIC EXHIBITION</span>
         <h1>{{ viewer.gallery.value?.title || '光影之间' }}</h1>
         <p>{{ viewer.total.value }} 件作品 · 摄影展览</p>
       </div>
-      <div v-if="show3dHud && stageActive && !theatre.active" class="stage-info">
+      <div v-if="show3dHud && stageActive && !theatre.active" class="stage-info" :inert="isImmersive || undefined">
         <div class="stage-counter" aria-live="polite" aria-atomic="true"><span>{{ String(stageIndex + 1).padStart(2, '0') }}</span><i aria-hidden="true"></i><span>{{ String(viewer.photos.value.length).padStart(2, '0') }}</span></div>
         <button type="button" class="stage-current" aria-label="查看当前作品" @click="openLightbox(stageIndex)"><span>{{ stagePhoto?.title || `作品 ${stageIndex + 1}` }}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button>
         <p>{{ stageCaption }}</p>
       </div>
-      <div v-if="show3dHud && stageActive && !theatre.active" class="stage-navigation" aria-label="逐张浏览">
+      <div v-if="show3dHud && stageActive && !theatre.active" class="stage-navigation" aria-label="逐张浏览" :inert="isImmersive || undefined">
         <button type="button" aria-label="上一张作品" :disabled="viewer.photos.value.length < 2" @click="stepStage(-1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h13"/></svg></button>
         <button type="button" aria-label="下一张作品" :disabled="viewer.photos.value.length < 2" @click="stepStage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6M3 12h13"/></svg></button>
       </div>
-      <nav v-if="show3dHud && !theatre.active" class="composition-dock" :class="{ 'with-theatre-entry': showTheatreControls }" aria-label="展示风格">
+      <nav v-if="show3dHud && !theatre.active" class="composition-dock" :class="{ 'with-theatre-entry': showTheatreControls }" aria-label="展示风格" :inert="isImmersive || undefined">
         <button v-for="style in CURATED_STYLES" :key="style.id" type="button" :aria-pressed="selectedStyle === style.id" :disabled="styleBusy" @click="selectStyle(style.id)">
           <svg viewBox="0 0 44 24" aria-hidden="true"><path v-if="style.id === 'helix'" d="M4 19C3 1 39 1 39 8S4 24 4 16S38 9 40 4"/><ellipse v-else-if="style.id === 'carousel'" cx="22" cy="12" rx="18" ry="8"/><path v-else-if="style.id === 'book'" d="M22 6Q12 1 3 5v16q10-4 19 0 9-4 19 0V5q-9-4-19 1v15M22 6q10-7 14-4v14q-8 0-14 5"/><path v-else-if="style.id === 'tunnel'" d="m2 2 40 20M2 22 42 2M10 4h24v16H10zM17 8h10v8H17z"/><path v-else d="M2 12Q12 -2 22 12T42 12M2 20Q12 6 22 20T42 20"/></svg>
           {{ style.label }}
         </button>
       </nav>
+      <template v-if="isImmersive">
+        <button ref="immersiveExit" type="button" class="immersive-exit" aria-label="退出沉浸欣赏" @click="setImmersive(false)"><Icon name="x" :size="16" /><span>退出沉浸</span></button>
+        <p class="immersive-help">{{ String(stageIndex + 1).padStart(2, '0') }} / {{ String(viewer.photos.value.length).padStart(2, '0') }}<span>拖动或使用方向键，慢慢欣赏</span></p>
+      </template>
       <!-- APM Real-time Dashboard Capsule -->
       <aside v-if="diagnosticsEnabled && showApm && viewMode === '3d' && apmMetrics" class="apm-dashboard">
         <div class="apm-title">

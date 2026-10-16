@@ -96,3 +96,51 @@ test('spatial controls fit touch screens and respect reduced motion', async ({ p
   await expect(page.getByRole('button', { name: '查看当前作品' })).toBeFocused()
   expect(errors).toEqual([])
 })
+
+test('immersive viewing keeps keyboard navigation and restores the viewing controls', async ({ page }, info) => {
+  const { errors } = await mockGallery(page, { config: { camera: { autoRotate: false } } })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/g/effects-fixture')
+  await page.getByRole('button', { name: '螺旋', exact: true }).click()
+  const enter = page.getByRole('button', { name: '沉浸欣赏', exact: true })
+  await enter.click()
+  const exit = page.getByRole('button', { name: '退出沉浸欣赏', exact: true })
+  await expect(exit).toBeFocused()
+  await expect(page.locator('.exhibition-header')).toHaveAttribute('inert', '')
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('.immersive-help')).toContainText('02 / 12')
+  await page.screenshot({ path: info.outputPath('immersive-mobile.png') })
+  await page.keyboard.press('Escape')
+  await expect(enter).toBeFocused()
+  await expect(page.locator('.exhibition-header')).not.toHaveAttribute('inert', '')
+  await expect(page.getByRole('button', { name: '查看当前作品' })).toContainText('Sample 2')
+  expect(errors).toEqual([])
+})
+
+test('lightbox keeps a photographic preview visible while the full image is loading', async ({ page }) => {
+  const { errors } = await mockGallery(page, { count: 1 })
+  await page.addInitScript(() => localStorage.setItem('vie:view-mode', '2d'))
+  await page.route('**/api/public/g/effects-fixture/photos**', route => route.fulfill({ json: {
+    items: [{ title: '山川来信', width: 900, height: 600, sortOrder: 0, thumbnailUrl: '/fixtures/photo-0.svg', textureUrl: '/fixtures/full-resolution.svg' }],
+    page: 0, pageSize: 50, total: 1,
+  } }))
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/fixtures/full-resolution.svg', async route => {
+    await gate
+    await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#527465"/></svg>' })
+  })
+  try {
+    await page.goto('/g/effects-fixture')
+    await page.getByRole('button', { name: '查看照片 1：山川来信', exact: true }).click()
+    await expect(page.locator('.image-preview')).toBeVisible()
+    await expect.poll(() => page.locator('.image-preview').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+    await expect(page.locator('.image-wrapper')).toHaveAttribute('aria-busy', 'true')
+    release()
+    await expect(page.locator('.main-image')).toHaveClass(/is-ready/)
+    await expect(page.locator('.image-preview')).toHaveCount(0)
+    await expect(page.locator('.image-wrapper')).toHaveAttribute('aria-busy', 'false')
+    expect(errors).toEqual([])
+  } finally { release() }
+})

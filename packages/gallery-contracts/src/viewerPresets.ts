@@ -1,6 +1,6 @@
 import { createDefaultViewerConfig, mergeViewerConfig, VIEWER_CONFIG_RULES, type ViewerConfig } from './viewerConfig'
 import { SCENE_PRESETS, sceneBackgroundUrl } from './galleryMedia'
-import { PRESET_PHOTO_EFFECTS, PRESET_PHOTO_ARRANGEMENTS } from './photoEffects'
+import { PHOTO_EFFECTS, PHOTO_ARRANGEMENTS, PRESET_PHOTO_EFFECTS, PRESET_PHOTO_ARRANGEMENTS, resolvePhotoArrangement } from './photoEffects'
 
 export type PresetName = typeof SCENE_PRESETS[number]['name'] | 'jade-flow' | 'aurora' | 'amber-hour' | 'rose-dream' | 'deep-ocean' | 'moonlight' | 'lavender' | 'silver-mist'
 function scene(name: PresetName, patch: unknown): ViewerConfig {
@@ -56,17 +56,32 @@ export function createRecommendedViewerConfig(): ViewerConfig {
   return structuredClone(VIEWER_PRESETS[RECOMMENDED_SCENE_PRESET])
 }
 
+/** Cards describe the actual recipe, so labels cannot drift from its treatment or composition. */
+function presetCard(name: PresetName, label: string, description: string) {
+  const preset = VIEWER_PRESETS[name]
+  const effect = PHOTO_EFFECTS.find(item => item.id === preset.effects.photo?.style)!
+  const arrangement = PHOTO_ARRANGEMENTS.find(item => item.id === resolvePhotoArrangement(preset))!
+  const curated = preset.layout.params?.composition === 'curated'
+  return { name, label, description, hint: `${effect.label} · ${curated ? arrangement.label : '360° 全景'}`,
+    category: curated ? 'light' as const : 'panorama' as const,
+    accent: preset.background?.secondaryColor ?? preset.background?.color ?? '#657eab' }
+}
 export const VIEWER_PRESET_CARDS = [
-  { name: 'jade-flow', label: '翡翠流光', hint: '丝绸起伏 · 扭转丝带', category: 'light' },
-  { name: 'aurora', label: '极光星河', hint: '全息扫描 · 星轨环绕', category: 'light' },
-  { name: 'amber-hour', label: '琥珀时刻', hint: '35mm 胶片 · 横向胶卷', category: 'light' },
-  { name: 'rose-dream', label: '玫瑰梦境', hint: '棱镜色散 · 折扇展开', category: 'light' },
-  { name: 'deep-ocean', label: '深海潮汐', hint: '水波折射 · 潮汐波列', category: 'light' },
-  { name: 'moonlight', label: '月下回廊', hint: '黑白银盐 · 月弧回廊', category: 'light' },
-  { name: 'lavender', label: '紫雾花语', hint: '双色网印 · 错落瀑布', category: 'light' },
-  { name: 'silver-mist', label: '银雾诗篇', hint: '雾面玻璃 · 层叠画册', category: 'light' },
-  ...SCENE_PRESETS.map(item => ({ ...item, hint: ({ minimal: '美术纸印 · 纯净展厅', 'forest-dream': '游移叶影 · 森林光斑', 'starry-night': '星尘显影 · 银河全景', 'ocean-breeze': '焦散波光 · 海岸全景', 'sunset-glow': '日落漏光 · 暮色全景', romantic: '柔焦散景 · 浪漫花园', 'winter-snow': '冰晶折面 · 雪境全景', 'film-gallery': '接触印相 · 暗房展厅' } as Record<string, string>)[item.name]!, category: 'panorama' as const }))
-] satisfies { name: PresetName; label: string; hint: string; category: string }[]
+  presetCard('jade-flow', '翡翠流光', '适合旅行、日常与自然题材'),
+  presetCard('aurora', '极光星河', '适合城市夜景与未来感创作'),
+  presetCard('amber-hour', '琥珀时刻', '适合街拍、人文与温暖的旧时光'),
+  presetCard('rose-dream', '玫瑰梦境', '适合人像、婚礼与浪漫纪念'),
+  presetCard('deep-ocean', '深海潮汐', '适合海岸、风景与自由的夏天'),
+  presetCard('moonlight', '月下回廊', '适合黑白摄影与安静的人物故事'),
+  presetCard('lavender', '紫雾花语', '适合花卉、时尚与艺术实验'),
+  presetCard('silver-mist', '银雾诗篇', '适合建筑、静物与简洁的作品集'),
+  ...SCENE_PRESETS.map(item => presetCard(item.name, item.label, ({
+    minimal: '适合保留原色的摄影作品集', 'forest-dream': '适合户外、亲子与自然记录',
+    'starry-night': '适合星空、夜景与梦幻主题', 'ocean-breeze': '适合海岛旅行与清新的风景',
+    'sunset-glow': '适合落日、旅途与温暖的回忆', romantic: '适合婚礼、情侣与纪念日',
+    'winter-snow': '适合冬日旅行与静谧的风景', 'film-gallery': '适合纪实、人文与胶片摄影'
+  } as const)[item.name]))
+]
 
 export function isViewerPreset(name: string): name is PresetName { return Object.hasOwn(VIEWER_PRESETS, name) }
 export function applyViewerPreset(name: PresetName, current: ViewerConfig): ViewerConfig {

@@ -24,11 +24,16 @@ export type PhotoEffectStyle = typeof PHOTO_EFFECTS[number]['id']
 export interface PhotoEffectConfig { style: PhotoEffectStyle; intensity: number; speed: number }
 
 export const PHOTO_ARRANGEMENTS = [
-  { id: 'book', label: '巨幅翻页' }, { id: 'tunnel', label: '时空长廊' },
-  { id: 'ribbon', label: '扭转丝带' }, { id: 'orbit', label: '星轨环绕' },
-  { id: 'filmstrip', label: '横向胶卷' }, { id: 'fan', label: '折扇展开' },
-  { id: 'wave', label: '潮汐波列' }, { id: 'arc', label: '月弧回廊' },
-  { id: 'cascade', label: '错落瀑布' }, { id: 'stack', label: '层叠画册' }
+  { id: 'book', label: '巨幅翻页', mode: 'helix', caption: '像翻阅画册一样，让故事一页页展开' },
+  { id: 'tunnel', label: '时空长廊', mode: 'helix', caption: '沿着纵深光廊，走进下一段回忆' },
+  { id: 'ribbon', label: '扭转丝带', mode: 'helix', caption: '照片沿流动的曲线，轻盈舒展' },
+  { id: 'orbit', label: '星轨环绕', mode: 'helix', caption: '作品如星辰环绕，聚焦此刻的主角' },
+  { id: 'filmstrip', label: '横向胶卷', mode: 'carousel', caption: '横向铺开连续画格，保留叙事的节奏' },
+  { id: 'fan', label: '折扇展开', mode: 'carousel', caption: '层层展开的扇面，让每一次切换更从容' },
+  { id: 'wave', label: '潮汐波列', mode: 'grid', caption: '让照片随波起伏，在光影中相遇' },
+  { id: 'arc', label: '月弧回廊', mode: 'carousel', caption: '沿柔和的弧线，欣赏一场私人展览' },
+  { id: 'cascade', label: '错落瀑布', mode: 'helix', caption: '高低错落地铺陈，呈现丰富的画面层次' },
+  { id: 'stack', label: '层叠画册', mode: 'grid', caption: '一叠珍藏的照片，每张都有自己的位置' }
 ] as const
 export type PhotoArrangement = typeof PHOTO_ARRANGEMENTS[number]['id']
 
@@ -72,8 +77,10 @@ export function resolvePhotoArrangement(config: ViewerConfig): PhotoArrangement 
 
 /** Capture a historical preset's displayed treatment before an edit marks it as customized. */
 export function photoPresentationPatch(config: ViewerConfig): Partial<ViewerConfig> {
+  const photo = config.effects.photo
   return {
-    ...(!config.effects.photo ? { effects: { photo: resolvePhotoEffect(config) } } : {}),
+    ...(!photo || photo.style === undefined || photo.intensity === undefined || photo.speed === undefined
+      ? { effects: { photo: resolvePhotoEffect(config) } } : {}),
     ...(config.layout.params?.composition === 'curated' && !config.layout.params.arrangement
       ? { layout: { ...config.layout, params: { ...config.layout.params, arrangement: resolvePhotoArrangement(config) } } } : {})
   }

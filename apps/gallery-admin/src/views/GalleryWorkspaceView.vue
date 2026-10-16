@@ -668,7 +668,7 @@ async function reloadGalleryAccess() {
             </button>
             <button v-if="canConfig" class="btn outline" type="button" @click="goToConfig">
               <Icon name="settings" :size="15" />
-              <span>更多设置</span>
+              <span>展示设计</span>
             </button>
             <button
               v-if="canPublish && workspace.gallery.value.status !== 'PUBLISHED'"

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { CURATED_STYLES, applyCuratedStyle, serializeViewerConfig, type CuratedStyle } from '@vie/gallery-contracts'
+import { CURATED_STYLES, applyCuratedStyle, resolveCuratedStyle, serializeViewerConfig, type CuratedStyle } from '@vie/gallery-contracts'
 import { useViewerConfigEditor } from '../../composables/useViewerConfigEditor'
 import Icon from '../Icon.vue'
 const props = defineProps<{ galleryId: string; canWrite: boolean; photos: { thumbnailUrl?: string | null }[] }>()
 const emit = defineEmits<{ busy: [value: boolean]; saved: []; ready: [value: boolean] }>()
 const editor = useViewerConfigEditor(props.galleryId, { canWrite: () => props.canWrite })
 const loaded = ref(false), message = ref('')
-const selected = computed(() => editor.config.value.layout.mode)
-const hasCuratedStyle = computed(() => CURATED_STYLES.some(style => style.id === selected.value))
+const selected = computed(() => resolveCuratedStyle(editor.config.value))
+const hasCuratedStyle = computed(() => selected.value !== undefined)
 async function load() {
   emit('busy', true); message.value = ''
   try { await editor.load(); loaded.value = true; emit('ready', true) }
@@ -30,8 +30,8 @@ onMounted(load)
 
 <template>
   <section class="quick-styles" aria-label="选择展示风格">
-    <div class="style-heading"><div><span>02 / 展示风格</span><h2>给照片一个空间</h2></div><span class="style-autosave"><Icon name="check" :size="13" /> 选好即保存</span></div>
-    <p class="style-intro">同一组作品，三种观看方式。随时可以切换。</p>
+    <div class="style-heading"><div><span>02 / 观看编排</span><h2>给照片一个空间</h2></div><span class="style-autosave"><Icon name="check" :size="13" /> 选好即保存</span></div>
+    <p class="style-intro">先选择观看编排，再到展示设计中搭配照片质感与空间氛围。切换编排会保留已保存的氛围设置。</p>
     <div class="style-choices">
       <button v-for="style in CURATED_STYLES" :key="style.id" type="button" :class="style.id" :aria-pressed="loaded && selected === style.id" :disabled="!loaded || editor.saving.value || !canWrite" @click="choose(style.id)">
         <span class="style-miniature" :style="{ '--tone': style.color }" aria-hidden="true">
@@ -93,7 +93,7 @@ onMounted(load)
 
 .style-choices {
   display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-columns:repeat(5,minmax(0,1fr));
   gap:12px
 }
 
@@ -165,6 +165,24 @@ onMounted(load)
   transform:translate(calc((var(--i) - 3)*38px),calc((var(--i) - 3)*8px)) rotateY(-25deg)
 }
 
+.book .mini-photo {
+  width:58px;
+  height:70px;
+  top:27%;
+  left:36%;
+  border:3px solid #e8e2d2;
+  transform-origin:left center;
+  transform:translateX(calc((var(--i) - 3)*4px)) rotateY(calc((var(--i) - 3)*-22deg));
+}
+
+.tunnel .mini-photo {
+  top:25%;
+  left:35%;
+  width:62px;
+  height:78px;
+  transform:translateX(calc((var(--i) - 3)*18px)) translateZ(calc((var(--i) - 3)*-80px)) rotateY(-15deg);
+}
+
 .style-name {
   display:flex;
   align-items:center;
@@ -214,6 +232,10 @@ onMounted(load)
   color:var(--brand-deep)
 }
 
+@media(max-width:1050px) {
+  .style-choices { grid-template-columns:repeat(3,minmax(0,1fr)) }
+}
+
 @media(max-width:640px) {
   .quick-styles {
     padding:20px 14px
@@ -225,7 +247,8 @@ onMounted(load)
     font-size:10px
   }
   .style-choices {
-    gap:7px
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px
   }
   .style-miniature {
     height:108px

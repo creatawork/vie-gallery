@@ -65,6 +65,7 @@ export class ViewerEngine {
   private isRunning = false
   private isContextLost = false
   private firstPhotoRendered = false
+  private photoFocused = false
   private effectsStarted = false
   private effectsReadyEmitted = false
   private effectsDeadlineTimer: number | null = null
@@ -149,6 +150,8 @@ export class ViewerEngine {
     this.eventBus.on('transition:end', () => this.notifyTransitionEnd())
 
     this.eventBus.on('theatre:active', this.handleTheatreActive)
+    this.eventBus.on('photo:focus', () => { this.photoFocused = true })
+    this.eventBus.on('photo:blur', () => { this.photoFocused = false })
     this.canvas.addEventListener('pointerdown', this.theatrePointerDown)
     this.canvas.addEventListener('pointerup', this.theatrePointerUp)
     this.canvas.addEventListener('pointermove', this.theatrePointerMove)
@@ -923,7 +926,9 @@ export class ViewerEngine {
     this.photoScene.updateVisibility(this.camera)
 
     try {
-      if (this.postProcessing) this.postProcessing.render(delta, this.scene.children.some(object => object.name === 'paper-book' && object.visible))
+      if (this.postProcessing) this.postProcessing.render(delta,
+        this.scene.children.some(object => object.name === 'paper-book' && object.visible),
+        this.pluginManager.isInstalled('SpatialStage') || this.theatreView !== null || this.photoFocused)
       else this.renderer.render(this.scene, this.camera)
     }
     catch (error) {

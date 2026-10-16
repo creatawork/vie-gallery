@@ -5,6 +5,7 @@ import { createRecommendedViewerConfig } from '@vie/gallery-contracts'
 import { SpatialStagePlugin } from '../src/plugins/SpatialStagePlugin'
 import { createViewerContext } from './helpers/viewerContext'
 import type { PhotoMesh } from '../src/core/types'
+import { stageFraming } from '../src/lib/stageFraming'
 
 function fixture(count = 12, reduced = true) {
   const photos = Array.from({ length: count }, (_, index) => {
@@ -71,7 +72,8 @@ test('portrait works keep their aspect ratio and fit the mobile focus area', () 
   for(let i=0;i<50;i++) stage.update(.05,i*.05)
   const mesh=context.photos[0]
   const box=new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3())
-  assert.ok(box.x<=241 && box.y<=286)
+  assert.ok(box.x <= 220 && box.y <= 420)
+  assert.ok(box.y > 300, 'the active work should make useful use of the phone viewport')
   assert.ok(Math.abs(box.x/box.y-55/120)<.001)
   stage.uninstall()
 })
@@ -104,7 +106,8 @@ test('photo float is independent of autoplay and stops when disabled', () => {
   assert.ok(Math.abs(context.photos[0].position.y - y) > .1)
   context.config.effects.photoFloat = false
   for (let i = 150; i < 250; i++) stage.update(.05, i * .05)
-  assert.ok(Math.abs(context.photos[0].position.y) < .001)
+  const frame = stageFraming(800, 800, (context.camera as THREE.PerspectiveCamera).fov, 750)
+  assert.ok(Math.abs(context.photos[0].position.y - frame.centerY) < .001)
   stage.uninstall()
 })
 
@@ -218,4 +221,41 @@ test('hover feedback eases into the photograph scale without snapping or accumul
   for (let i = 0; i < 100; i++) stage.update(.05, 5 + i * .05)
   assert.ok(Math.abs(mesh.scale.x - original) < .001)
   stage.uninstall()
+})
+
+test('immersive viewing enlarges the work and restores its authored frame without losing navigation', () => {
+  const { context, stage } = fixture()
+  Object.assign(context.renderer.domElement, { clientWidth: 390, clientHeight: 844 })
+  ;(context.camera as THREE.PerspectiveCamera).aspect = 390 / 844
+  stage.install(context)
+  const original = context.photos[0].scale.x
+  context.emit('stage:immersive', true)
+  stage.update(.05, 1)
+  assert.ok(context.photos[0].scale.x > original * 1.4)
+  context.emit('stage:step', 1)
+  stage.update(.05, 2)
+  assert.ok((context.photos[1].material as THREE.Material).opacity === 1)
+  assert.equal((context.photos[0].material as THREE.Material).opacity, 1, 'photographs should stay opaque instead of showing the works behind them')
+  assert.ok((context.photos[0].material as THREE.MeshStandardMaterial).emissiveIntensity < .65, 'neighbouring works should recede behind the active photograph')
+  context.emit('stage:step', -1)
+  context.emit('stage:immersive', false)
+  stage.update(.05, 3)
+  assert.ok(Math.abs(context.photos[0].scale.x - original) < .001)
+  stage.uninstall()
+})
+
+test('embedded previews reserve their own small safe area instead of the hidden visitor controls', () => {
+  const scales: number[] = []
+  for (const preview of [false, true]) {
+    const { context, stage } = fixture()
+    Object.assign(context.renderer.domElement, { clientWidth: 600, clientHeight: 320, dataset: { presentation: preview ? 'preview' : '' } })
+    ;(context.camera as THREE.PerspectiveCamera).aspect = 600 / 320
+    stage.install(context)
+    scales.push(context.photos[0].scale.x)
+    const frame = stageFraming(600, 320, (context.camera as THREE.PerspectiveCamera).fov, 750, false, preview)
+    const worldHeight = (context.photos[0].geometry as THREE.PlaneGeometry).parameters.height * context.photos[0].scale.y
+    assert.ok(worldHeight <= frame.height + .001)
+    stage.uninstall()
+  }
+  assert.ok(scales[1] > scales[0] * 2.5, 'a short preview must display the photograph at a readable size')
 })

@@ -36,6 +36,6 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       force: true
     },
-    cacheDir: '/tmp/vite-cache'
+    cacheDir: '../../node_modules/.vite/gallery-viewer'
   }
 })

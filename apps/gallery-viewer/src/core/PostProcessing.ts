@@ -93,12 +93,16 @@ export class PostProcessing {
     this.state.width = Math.floor(width * dpr * resolutionScale)
     this.state.height = Math.floor(height * dpr * resolutionScale)
   }
-  render(delta: number, paperPresentation = false): void {
-    // Broad white paper is reflective, not a light source. Keep the authored
-    // atmosphere while preventing a whole spread from blooming over its images.
+  render(delta: number, paperPresentation = false, photoPresentation = false): void {
+    // Photographs and white paper reflect light. The atmosphere can still glow,
+    // while a large bright photograph retains its detail and contrast.
     if (this.bloom) {
-      this.bloom.strength = paperPresentation ? Math.min(.12, this.bloomStrength) : this.bloomStrength
-      this.bloom.threshold = paperPresentation ? Math.max(.85, this.bloomThreshold) : this.bloomThreshold
+      const protectedSurface = paperPresentation || photoPresentation
+      // Map the complete authored ranges into safe photographic ranges. Hard
+      // caps would make most of the creator's sliders appear unresponsive.
+      const safeStrength = paperPresentation ? .12 : .18
+      this.bloom.strength = protectedSurface ? safeStrength * this.bloomStrength / (this.bloomStrength + .4) : this.bloomStrength
+      this.bloom.threshold = protectedSurface ? .85 + .15 * this.bloomThreshold : this.bloomThreshold
     }
     if (this.composer) this.composer.render(delta); else this.renderer.render(this.scene, this.camera)
   }
