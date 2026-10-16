@@ -50,6 +50,7 @@ class MembershipFacadeTest {
     }
     private static final class Memberships implements MembershipRepository {
         final Map<UUID, Membership> values = new LinkedHashMap<>();
+        public List<Membership> listActiveByUserId(UUID id) { return values.values().stream().filter(m -> m.userId().equals(id)).toList(); }
         public Membership save(Membership m) { values.put(m.id(), m); return m; }
         public Optional<Membership> findDefaultActiveByUserId(UUID id) { return values.values().stream().filter(m -> m.userId().equals(id)).findFirst(); }
         public List<Membership> listActiveByTenantId(UUID tenant) { return values.values().stream().filter(m -> m.tenantId().equals(tenant)).toList(); }

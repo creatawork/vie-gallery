@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,7 +20,12 @@ public class InMemoryMembershipRepository implements MembershipRepository {
 
     @Override public Membership save(Membership membership) { memberships.put(membership.id(), membership); return membership; }
     @Override public Optional<Membership> findDefaultActiveByUserId(UUID userId) {
-        return memberships.values().stream().filter(m -> m.userId().equals(userId)).findFirst();
+        return listActiveByUserId(userId).stream().findFirst();
+    }
+    @Override public List<Membership> listActiveByUserId(UUID userId) {
+        return memberships.values().stream().filter(m -> m.userId().equals(userId))
+                .sorted(Comparator.comparing(Membership::createdAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(Membership::id)).toList();
     }
     @Override public List<Membership> listActiveByTenantId(UUID tenantId) {
         return new ArrayList<>(memberships.values().stream().filter(m -> m.tenantId().equals(tenantId)).toList());

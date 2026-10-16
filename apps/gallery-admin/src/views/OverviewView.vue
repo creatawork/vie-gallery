@@ -7,6 +7,7 @@ import { useToast } from '../composables/useToast'
 import { useAuth } from '../composables/useAuth'
 import Icon from '../components/Icon.vue'
 import BrandMark from '../components/BrandMark.vue'
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher.vue'
 import { openCreatorPreview } from '../lib/preview'
 import { useModalFocus } from '../composables/useModalFocus'
 
@@ -220,15 +221,19 @@ async function openViewer(gallery: Gallery) {
   }
 }
 
+let galleryRequestVersion = 0
 async function loadGalleries() {
   if (!currentUser.value) return
+  const version = ++galleryRequestVersion
   loading.value = true
   loadError.value = ''
   try {
     const response = await apiFetch('/api/galleries')
     if (!response.ok) throw new Error(response.status === 401 ? '登录已失效，请重新登录。' : response.status === 403 ? '你没有权限查看这些空间。' : '空间列表加载失败，请稍后重试。')
-    galleries.value = await response.json() as Gallery[]
+    const list = await response.json() as Gallery[]
+    if (version === galleryRequestVersion) galleries.value = list
   } catch (error) {
+    if (version !== galleryRequestVersion) return
     galleries.value = []
     loadError.value = error instanceof Error ? error.message : '空间列表加载失败，请稍后重试。'
     if (loadError.value.includes('登录已失效')) {
@@ -236,14 +241,22 @@ async function loadGalleries() {
     }
     toast.error(loadError.value)
   } finally {
-    loading.value = false
+    if (version === galleryRequestVersion) loading.value = false
   }
 }
 
-watch(currentUser, user => {
+watch(currentUser, (user, previous) => {
+  galleries.value = []
+  if (user?.tenant?.id !== previous?.tenant?.id) {
+    searchQuery.value = ''
+    statusFilter.value = 'ALL'
+    closeMenus()
+  }
   if (user) {
     loadGalleries()
   } else {
+    galleryRequestVersion++
+    loading.value = false
     galleries.value = []
     loadError.value = ''
   }
@@ -579,6 +592,8 @@ async function handleDeleteGallery() {
         <p>从一组照片，到一场属于你的展览。</p>
       </div>
 
+      <WorkspaceSwitcher />
+
       <div class="space-toolbar">
         <button
           v-if="canCreateGallery"
@@ -800,7 +815,7 @@ async function handleDeleteGallery() {
 
       <div v-else-if="!galleries.length && !loadError" class="space-empty">
         <h2>还没有画廊空间</h2>
-        <p>创建第一个 3D 展厅，上传照片后即可配置氛围并分享给访客。</p>
+        <p>{{ canCreateGallery ? '创建第一个 3D 展厅，上传照片后即可配置氛围并分享给访客。' : '当前工作区暂无空间，可以切换到其他工作区，或联系所有者创建空间。' }}</p>
         <button v-if="canCreateGallery" class="space-create-btn" type="button" @click="openCreateModal">
           <Icon name="plus" :size="16" />
           <span>创建第一组照片</span>

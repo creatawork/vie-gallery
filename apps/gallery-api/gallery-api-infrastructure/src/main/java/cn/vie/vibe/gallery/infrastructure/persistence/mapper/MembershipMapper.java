@@ -25,6 +25,13 @@ public interface MembershipMapper {
             "ORDER BY m.created_at ASC LIMIT 1")
     Map<String, Object> findDefaultActiveByUserId(@Param("userId") String userId);
 
+    @Select("SELECT BIN_TO_UUID(m.id) id, BIN_TO_UUID(m.user_id) userId, BIN_TO_UUID(m.tenant_id) tenantId, m.role, m.created_at createdAt " +
+            "FROM membership m JOIN tenant t ON t.id = m.tenant_id " +
+            "WHERE m.user_id = UUID_TO_BIN(#{userId}) AND m.deleted_at IS NULL " +
+            "AND t.status = 'ACTIVE' AND t.deleted_at IS NULL " +
+            "ORDER BY m.created_at ASC, m.id ASC")
+    List<Map<String, Object>> listActiveByUserId(@Param("userId") String userId);
+
     @Select("SELECT BIN_TO_UUID(m.id) id, BIN_TO_UUID(m.user_id) userId, BIN_TO_UUID(m.tenant_id) tenantId, " +
             "m.role, m.created_at createdAt, u.email, u.display_name displayName " +
             "FROM membership m JOIN users u ON u.id = m.user_id " +

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apiFetch, csrfToken } from '../src/api'
+import { apiFetch, csrfToken, getActiveWorkspaceId, setActiveWorkspaceId, uploadFileWithProgress } from '../src/api'
 
 test('CSRF follows browser cookies and recovers rejected registrations', async t => {
   const originalFetch = globalThis.fetch
@@ -148,6 +148,66 @@ test('CSRF follows browser cookies and recovers rejected registrations', async t
       }
       await assert.rejects(csrfToken(), /无法建立安全连接/)
       assert.equal(await csrfToken(), 'recovered')
+    })
+
+    await t.test('workspace selection scopes requests, preserves overrides and clears on logout', async () => {
+      cookie = 'XSRF-TOKEN=current'
+      const values = new Map<string, string>()
+      const originalStorage = globalThis.sessionStorage
+      Object.assign(globalThis, { sessionStorage: {
+        getItem: (key: string) => values.get(key) || null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key)
+      } })
+      try {
+        setActiveWorkspaceId('personal')
+        assert.equal(getActiveWorkspaceId(), 'personal')
+        assert.equal(values.get('vie-active-workspace'), 'personal')
+        const headers: (string | null)[] = []
+        globalThis.fetch = async (_input, init) => {
+          headers.push(new Headers(init?.headers).get('X-Workspace-Id'))
+          return json({})
+        }
+        await apiFetch('/api/galleries')
+        await apiFetch('/api/me', { headers: { 'X-Workspace-Id': 'invited' } })
+        await apiFetch('/api/galleries')
+        // Identity operations stay available after the selected membership is removed.
+        await apiFetch('/api/me/workspaces')
+        await apiFetch('/api/auth/logout', { method: 'POST' })
+        setActiveWorkspaceId(null)
+        await apiFetch('/api/galleries')
+        assert.deepEqual(headers, ['personal', 'invited', 'personal', null, null, null])
+        assert.equal(values.size, 0)
+      } finally {
+        setActiveWorkspaceId(null)
+        Object.assign(globalThis, { sessionStorage: originalStorage })
+      }
+    })
+
+    await t.test('photo uploads use the workspace selected when the upload starts', async () => {
+      const originalXhr = globalThis.XMLHttpRequest
+      const sentHeaders = new Map<string, string>()
+      class UploadRequest {
+        upload = { onprogress: null }
+        status = 201
+        statusText = 'Created'
+        response = '{}'
+        onload = () => {}
+        open() {}
+        setRequestHeader(key: string, value: string) { sentHeaders.set(key, value) }
+        getResponseHeader() { return 'application/json' }
+        send() { this.onload() }
+      }
+      Object.assign(globalThis, { XMLHttpRequest: UploadRequest })
+      cookie = 'XSRF-TOKEN=current'
+      try {
+        setActiveWorkspaceId('invited')
+        assert.equal((await uploadFileWithProgress('/api/galleries/shared/photos', new FormData())).status, 201)
+        assert.equal(sentHeaders.get('X-Workspace-Id'), 'invited')
+      } finally {
+        setActiveWorkspaceId(null)
+        Object.assign(globalThis, { XMLHttpRequest: originalXhr })
+      }
     })
   } finally {
     Object.assign(globalThis, { fetch: originalFetch, window: originalWindow, document: originalDocument })

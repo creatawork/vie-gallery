@@ -16,6 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -83,13 +84,34 @@ public class AuthFacade {
     }
 
     public AuthenticatedUser currentUser(UUID userId) {
+        return currentUser(userId, null);
+    }
+
+    public AuthenticatedUser currentUser(UUID userId, UUID tenantId) {
+        User user = requireActiveUser(userId);
+        Membership membership = tenantId == null ? resolveMembership(user.id())
+                : memberships.findActiveByUserIdAndTenantId(user.id(), tenantId)
+                    .orElseThrow(() -> new DomainException("AUTH_TENANT_NOT_FOUND", "No active tenant membership"));
+        return new AuthenticatedUser(user, resolveTenant(membership), membership.role());
+    }
+
+    public List<WorkspaceView> listWorkspaces(UUID userId) {
+        requireActiveUser(userId);
+        return memberships.listActiveByUserId(userId).stream()
+                .flatMap(membership -> tenants.findActiveById(membership.tenantId()).stream()
+                        .map(tenant -> new WorkspaceView(tenant, membership.role())))
+                .toList();
+    }
+
+    public record WorkspaceView(Tenant tenant, MembershipRole role) {}
+
+    private User requireActiveUser(UUID userId) {
         User user = users.findById(userId)
                 .orElseThrow(() -> new DomainException("AUTH_REQUIRED", "Authentication is required"));
         if (user.status() != UserStatus.ACTIVE) {
             throw new DomainException("AUTH_USER_DISABLED", "User is disabled");
         }
-        Membership membership = resolveMembership(user.id());
-        return new AuthenticatedUser(user, resolveTenant(membership), membership.role());
+        return user;
     }
 
     public AuthenticatedUser currentUserById(UUID userId) {

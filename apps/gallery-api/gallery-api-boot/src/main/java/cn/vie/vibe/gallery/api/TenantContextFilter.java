@@ -18,9 +18,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.UUID;
 
 @Component
 public class TenantContextFilter extends OncePerRequestFilter {
+    public static final String WORKSPACE_HEADER = "X-Workspace-Id";
     private final AuthFacade auth;
     private final ApiErrorWriter errors;
 
@@ -36,7 +38,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
         try {
             if (authentication != null && authentication.isAuthenticated()
                     && authentication.getPrincipal() instanceof CurrentPrincipal principal) {
-                AuthenticatedUser authenticated = auth.currentUser(principal.userId());
+                String workspaceId = request.getHeader(WORKSPACE_HEADER);
+                AuthenticatedUser authenticated = workspaceId == null
+                        ? auth.currentUser(principal.userId())
+                        : auth.currentUser(principal.userId(), parseWorkspaceId(workspaceId));
                 if (authenticated.user().authenticationVersion() != principal.authenticationVersion()) {
                     HttpSession session = request.getSession(false);
                     if (session != null) {
@@ -52,6 +57,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         } catch (DomainException exception) {
             int status = switch (exception.code()) {
                 case "AUTH_USER_DISABLED", "AUTH_TENANT_NOT_FOUND" -> HttpServletResponse.SC_FORBIDDEN;
+                case "VALIDATION_FAILED" -> HttpServletResponse.SC_BAD_REQUEST;
                 default -> HttpServletResponse.SC_UNAUTHORIZED;
             };
             errors.write(request, response, status, exception.code(), exception.getMessage());
@@ -60,6 +66,16 @@ public class TenantContextFilter extends OncePerRequestFilter {
                     "DEPENDENCY_UNAVAILABLE", "A required dependency is unavailable");
         } finally {
             TenantContextHolder.clear();
+        }
+    }
+
+    private static UUID parseWorkspaceId(String value) {
+        try {
+            UUID id = UUID.fromString(value);
+            if (!id.toString().equalsIgnoreCase(value)) throw new IllegalArgumentException();
+            return id;
+        } catch (IllegalArgumentException exception) {
+            throw new DomainException("VALIDATION_FAILED", "Invalid workspace ID");
         }
     }
 }

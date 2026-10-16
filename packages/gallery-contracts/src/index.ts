@@ -72,6 +72,12 @@ export interface AuthCapabilities {
   capabilities: Capability[]
 }
 
+export interface Workspace extends AuthCapabilities {
+  id: string
+  name: string
+  slug: string
+}
+
 export interface AuthResponse {
   user: {
     id?: string

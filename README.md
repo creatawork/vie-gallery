@@ -77,6 +77,7 @@ POST /api/auth/register
 POST /api/auth/login
 POST /api/auth/logout
 GET  /api/me
+GET  /api/me/workspaces
 GET  /api/galleries
 GET  /api/galleries/{id}
 POST /api/galleries
@@ -97,6 +98,11 @@ GET  /api/galleries/{id}/viewer-config/versions
 POST /api/galleries/{id}/viewer-config/rollback
 GET  /api/galleries/{id}/photo-tasks
 ```
+
+管理端“我的空间”页可通过“当前工作区”选择器切换个人或受邀工作区。`GET /api/me/workspaces`
+返回当前账户的有效工作区及对应角色；管理 API 使用 `X-Workspace-Id` 请求头选择工作区，
+不传时仍使用默认工作区。服务端每次请求都会重新校验成员身份与角色。
+选择保存在当前标签页的会话存储中，刷新后保留，各标签页独立；已移除的成员在刷新时回到默认工作区。
 
 公开端：
 

@@ -40,6 +40,12 @@ public class MyBatisMembershipRepository implements MembershipRepository {
     }
 
     @Override
+    public List<Membership> listActiveByUserId(UUID userId) {
+        return mapper.listActiveByUserId(userId.toString()).stream()
+                .map(MyBatisMembershipRepository::toMembershipValue).toList();
+    }
+
+    @Override
     public List<Membership> listActiveByTenantId(UUID tenantId) {
         return mapper.listActiveByTenantId(tenantId.toString()).stream()
                 .map(MyBatisMembershipRepository::toMembershipValue)

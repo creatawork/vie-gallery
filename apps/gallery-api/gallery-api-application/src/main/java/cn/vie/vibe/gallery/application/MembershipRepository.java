@@ -10,6 +10,7 @@ import java.util.UUID;
 public interface MembershipRepository {
     Membership save(Membership membership);
     Optional<Membership> findDefaultActiveByUserId(UUID userId);
+    List<Membership> listActiveByUserId(UUID userId);
     default List<Membership> listActiveByTenantId(UUID tenantId) { return List.of(); }
     default Optional<Membership> findActiveByUserIdAndTenantId(UUID userId, UUID tenantId) { return Optional.empty(); }
     default Optional<Membership> findActiveByIdAndTenantId(UUID membershipId, UUID tenantId) { return Optional.empty(); }

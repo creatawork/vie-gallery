@@ -186,6 +186,7 @@ class AuthFacadeTest {
         final List<Membership> saved = new ArrayList<>();
         public Membership save(Membership membership) { saved.add(membership); return membership; }
         public Optional<Membership> findDefaultActiveByUserId(UUID id) { return saved.stream().filter(m -> m.userId().equals(id)).findFirst(); }
+        public List<Membership> listActiveByUserId(UUID id) { return saved.stream().filter(m -> m.userId().equals(id)).toList(); }
         public java.util.List<Membership> listActiveByTenantId(UUID tenantId) { return saved.stream().filter(m -> m.tenantId().equals(tenantId)).toList(); }
         public Optional<Membership> findActiveByUserIdAndTenantId(UUID userId, UUID tenantId) { return saved.stream().filter(m -> m.userId().equals(userId) && m.tenantId().equals(tenantId)).findFirst(); }
         public Optional<Membership> findActiveByIdAndTenantId(UUID membershipId, UUID tenantId) { return saved.stream().filter(m -> m.id().equals(membershipId) && m.tenantId().equals(tenantId)).findFirst(); }

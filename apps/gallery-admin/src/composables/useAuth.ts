@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import type { AuthCapabilities, Capability, MembershipRole } from '@vie/gallery-contracts'
-import { apiFetch } from '../api'
+import { apiFetch, getActiveWorkspaceId, setActiveWorkspaceId } from '../api'
 
 export interface User {
   id?: string
@@ -63,11 +63,18 @@ export function useAuth() {
     inflight = (async () => {
       loading.value = true
       try {
-        const res = await apiFetch('/api/me')
+        let res = await apiFetch('/api/me')
+        if (getActiveWorkspaceId() && [400, 403].includes(res.status)) {
+          const error = await res.clone().json().catch(() => ({})) as { code?: string }
+          if (error.code === 'AUTH_TENANT_NOT_FOUND' || error.code === 'VALIDATION_FAILED') {
+            setActiveWorkspaceId(null)
+            res = await apiFetch('/api/me')
+          }
+        }
         if (res.ok) {
-          currentUser.value = normalizeAuth(await res.json())
+          setUser(await res.json())
         } else {
-          currentUser.value = null
+          clearUser()
         }
       } catch {
         currentUser.value = null
@@ -84,19 +91,30 @@ export function useAuth() {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' })
     } finally {
-      currentUser.value = null
+      clearUser()
       authChecked.value = true
     }
   }
 
   function setUser(user: AuthState | null) {
     currentUser.value = user ? normalizeAuth(user) : null
+    setActiveWorkspaceId(currentUser.value?.tenant?.id || null)
     authChecked.value = true
   }
 
   function clearUser() {
     currentUser.value = null
+    setActiveWorkspaceId(null)
     authChecked.value = true
+  }
+
+  async function switchWorkspace(id: string) {
+    if (id === currentUser.value?.tenant?.id) return
+    const response = await apiFetch('/api/me', { headers: { 'X-Workspace-Id': id } })
+    if (!response.ok) {
+      throw new Error(response.status === 403 ? '你已无法访问这个工作区，请刷新工作区列表。' : '切换工作区失败，请稍后重试。')
+    }
+    setUser(await response.json())
   }
 
   return {
@@ -115,6 +133,7 @@ export function useAuth() {
     checkAuth,
     logout,
     setUser,
+    switchWorkspace,
     clearUser
   }
 }

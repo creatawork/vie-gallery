@@ -1,4 +1,21 @@
 let csrfRequest: Promise<string> | null = null
+const WORKSPACE_KEY = 'vie-active-workspace'
+let activeWorkspaceId: string | null | undefined
+
+export function getActiveWorkspaceId(): string | null {
+  if (activeWorkspaceId === undefined) {
+    try { activeWorkspaceId = sessionStorage.getItem(WORKSPACE_KEY) } catch { activeWorkspaceId = null }
+  }
+  return activeWorkspaceId
+}
+
+export function setActiveWorkspaceId(id: string | null) {
+  activeWorkspaceId = id
+  try {
+    if (id) sessionStorage.setItem(WORKSPACE_KEY, id)
+    else sessionStorage.removeItem(WORKSPACE_KEY)
+  } catch { /* Workspace selection still works when browser storage is unavailable. */ }
+}
 const REQUEST_TIMEOUT_MS = 30_000  // 通用请求超时 30 秒
 const UPLOAD_TIMEOUT_MS = 120_000  // 文件上传超时 120 秒（足够处理大文件和后端图片处理）
 const SINGLE_FILE_TIMEOUT_MS = 300_000  // 逐文件上传超时 300 秒：单文件最大 50MB，慢速网络也需要余量
@@ -60,6 +77,10 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   const request = input instanceof Request ? input : undefined
   const method = (init.method || request?.method || 'GET').toUpperCase()
   const headers = new Headers(init.headers ?? request?.headers)
+  const workspaceId = getActiveWorkspaceId()
+  const pathname = new URL(request?.url ?? input.toString(), 'http://gallery.local').pathname
+  const workspaceScoped = !pathname.startsWith('/api/auth/') && pathname !== '/api/me/workspaces'
+  if (workspaceId && workspaceScoped && !headers.has('X-Workspace-Id')) headers.set('X-Workspace-Id', workspaceId)
   const isMutating = !['GET', 'HEAD', 'OPTIONS'].includes(method)
   if (isMutating) headers.set('X-XSRF-TOKEN', await csrfToken())
 
@@ -93,6 +114,7 @@ export async function uploadFileWithProgress(
   body: FormData,
   options: UploadFileOptions = {}
 ): Promise<Response> {
+  const workspaceId = getActiveWorkspaceId()
   const token = await csrfToken()
   return new Promise<Response>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -100,6 +122,7 @@ export async function uploadFileWithProgress(
     xhr.withCredentials = true
     xhr.timeout = SINGLE_FILE_TIMEOUT_MS
     if (token) xhr.setRequestHeader('X-XSRF-TOKEN', token)
+    if (workspaceId) xhr.setRequestHeader('X-Workspace-Id', workspaceId)
     for (const [name, value] of Object.entries(options.headers ?? {})) {
       xhr.setRequestHeader(name, value)
     }
