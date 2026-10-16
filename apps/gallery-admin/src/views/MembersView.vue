@@ -201,7 +201,7 @@ onUnmounted(() => {
     <header class="members-nav">
       <RouterLink to="/" class="brand">
         <BrandMark :size="28" />
-        <span>VIE Gallery</span>
+        <span>阳光明媚</span>
       </RouterLink>
 
       <nav class="top-tabs" aria-label="主导航">

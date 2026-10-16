@@ -43,11 +43,11 @@ public class SmtpEmailAdapter implements EmailPort {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
         message.setTo(toEmail);
-        message.setSubject("VIE Gallery 密码重置");
+        message.setSubject("阳光明媚 密码重置");
         message.setText("""
                 您好，
 
-                我们收到了重置您 VIE Gallery 账户密码的请求。
+                我们收到了重置您「阳光明媚」账户密码的请求。
                 请在 %d 分钟内打开以下链接完成重置：
 
                 %s

@@ -143,7 +143,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     this.step(delta)
   }
   private key = (event: KeyboardEvent) => {
-    if (this.suspended || this.theatreActive || !this.context.photos.length) return
+    if (this.suspended || this.theatreActive || !this.context.photos.length || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault(); this.step(event.key === 'ArrowRight' ? 1 : -1)
     } else if (event.key === 'Enter') {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import type { Gallery } from '@vie/gallery-contracts'
 import { apiFetch } from '../api'
@@ -28,7 +28,7 @@ const toast = useToast()
 const { currentUser, setUser, logout, can, userDisplayName, userInitial, isOwner } = useAuth()
 const canCreateGallery = can('GALLERY_CREATE')
 
-const authMode = ref<'login' | 'register' | 'forgot'>('login')
+const authMode = ref<'login' | 'register'>('login')
 const authForm = ref({
   email: '',
   password: '',
@@ -37,9 +37,25 @@ const authForm = ref({
 const authLoading = ref(false)
 const authError = ref('')
 const showPassword = ref(false)
-const forgotEmail = ref('')
-const forgotLoading = ref(false)
-const forgotSuccess = ref(false)
+const capsLock = ref(false)
+
+async function changeAuthMode(mode: typeof authMode.value) {
+  if (authLoading.value) return
+  authMode.value = mode
+  authError.value = ''
+  showPassword.value = false
+  capsLock.value = false
+  await nextTick()
+  document.getElementById(mode === 'register' ? 'auth-display-name' : 'auth-email')?.focus()
+}
+
+function updateCapsLock(event: KeyboardEvent) {
+  capsLock.value = event.getModifierState('CapsLock')
+}
+
+watch([() => authForm.value.email, () => authForm.value.password, () => authForm.value.displayName], () => {
+  authError.value = ''
+})
 
 const galleries = ref<Gallery[]>([])
 const loading = ref(false)
@@ -155,6 +171,31 @@ function closeMenuFromKeyboard(event: KeyboardEvent) {
   ;(event.currentTarget as HTMLElement).querySelector<HTMLButtonElement>('button')?.focus()
 }
 
+async function navigateMenu(event: KeyboardEvent) {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  event.stopPropagation()
+  const wrapper = event.currentTarget as HTMLElement
+  const trigger = wrapper.querySelector<HTMLButtonElement>('button')
+  if (!trigger) return
+  if (trigger.getAttribute('aria-expanded') !== 'true') {
+    if (event.key === 'Home' || event.key === 'End') return
+    trigger.click()
+    await nextTick()
+  }
+  const items = Array.from(wrapper.querySelectorAll<HTMLButtonElement>('.card-menu button, .space-user-menu button')).filter(button => !button.disabled)
+  if (!items.length) return
+  const index = items.indexOf(document.activeElement as HTMLButtonElement)
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+    : index < 0 ? (event.key === 'ArrowUp' ? items.length - 1 : 0)
+    : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
+  items[next]?.focus()
+}
+
+function closeMenuOnBlur(event: FocusEvent) {
+  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) closeMenus()
+}
+
 async function handleLogout() {
   await logout()
   toast.info('已安全退出登录')
@@ -210,6 +251,10 @@ watch(currentUser, user => {
 
 async function handleAuthSubmit() {
   if (authLoading.value) return
+  if (authForm.value.password.length < 6 || authForm.value.password.length > 128) {
+    authError.value = '密码长度需要为 6–128 个字符。'
+    return
+  }
   authLoading.value = true
   authError.value = ''
   try {
@@ -240,36 +285,10 @@ async function handleAuthSubmit() {
     authForm.value.password = ''
     toast.success(authMode.value === 'register' ? '注册成功，欢迎进入！' : '登录成功')
   } catch (error) {
-    authError.value = error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
+    authError.value = error instanceof TypeError ? '网络连接异常，请检查网络后重试。' : error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
     toast.error(authError.value)
   } finally {
     authLoading.value = false
-  }
-}
-
-async function handleForgotPassword() {
-  if (forgotLoading.value) return
-  const email = forgotEmail.value.trim()
-  if (!email) return
-  forgotLoading.value = true
-  authError.value = ''
-  try {
-    const response = await apiFetch('/api/auth/forgot-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    })
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({})) as { message?: string }
-      throw new Error(data.message || '请求发送重置邮件失败。')
-    }
-    forgotSuccess.value = true
-    toast.success('若该邮箱已注册，系统已向您的邮箱发送重置链接。')
-  } catch (error) {
-    authError.value = error instanceof Error ? error.message : '网络连接异常，请稍后重试。'
-    toast.error(authError.value)
-  } finally {
-    forgotLoading.value = false
   }
 }
 
@@ -371,12 +390,15 @@ const { root: renameModalRoot } = useModalFocus(showRenameModal, {
 })
 
 function openRenameModal(gallery: Gallery) {
+  document.querySelector<HTMLButtonElement>('.more-btn[aria-expanded="true"]')?.focus()
+  closeMenus()
   renameForm.value = { id: gallery.id, name: gallery.name }
   renameError.value = ''
   showRenameModal.value = true
 }
 
 async function handleRenameGallery() {
+  if (renaming.value) return
   const name = renameForm.value.name.trim()
   if (!name) {
     renameError.value = '请填写空间名称。'
@@ -423,6 +445,8 @@ const deleteConfirmReady = computed(() =>
 )
 
 function openDeleteModal(gallery: Gallery) {
+  document.querySelector<HTMLButtonElement>('.more-btn[aria-expanded="true"]')?.focus()
+  closeMenus()
   galleryToDelete.value = gallery
   deleteConfirmName.value = ''
   deleteError.value = ''
@@ -461,7 +485,7 @@ async function handleDeleteGallery() {
   <!-- Fullscreen Immersive Login / Register (Guest Mode) -->
   <div v-if="!currentUser" class="auth-immersive">
     <div class="auth-scene">
-      <div class="auth-brand-mark"><BrandMark :size="30" /><span>VIE Gallery</span></div>
+      <div class="auth-brand-mark"><BrandMark :size="30" /><span>阳光明媚</span></div>
       <div class="auth-story">
         <h2>让每一张照片，<br />拥有自己的空间。</h2>
         <p>整理作品，布置展厅，把值得记住的瞬间分享出去。</p>
@@ -469,48 +493,19 @@ async function handleDeleteGallery() {
       </div>
     </div>
     <div class="auth-card">
-      <div class="auth-mobile-brand"><BrandMark :size="28" /><span>VIE Gallery</span></div>
+      <div class="auth-mobile-brand"><BrandMark :size="28" /><span>阳光明媚</span></div>
       <div class="auth-header">
-        <h1>{{ authMode === 'register' ? '从这里，开始创作。' : authMode === 'forgot' ? '找回你的账户' : '欢迎回到你的空间' }}</h1>
-        <p>{{ authMode === 'register' ? '创建账户，让作品在新的空间里被看见。' : authMode === 'forgot' ? '输入注册邮箱，我们会发送重置密码链接。' : '登录后，继续整理作品与布置展厅。' }}</p>
+        <h1>{{ authMode === 'register' ? '从这里，开始创作。' : '欢迎回到你的空间' }}</h1>
+        <p>{{ authMode === 'register' ? '创建账户，让作品在新的空间里被看见。' : '登录后，继续整理作品与布置展厅。' }}</p>
       </div>
-      <div v-if="authMode !== 'forgot'" class="auth-tabs">
-        <button :class="{ active: authMode === 'login' }" :aria-pressed="authMode === 'login'" :disabled="authLoading" type="button" @click="authMode = 'login'; authError = ''; showPassword = false">账号登录</button>
-        <button :class="{ active: authMode === 'register' }" :aria-pressed="authMode === 'register'" :disabled="authLoading" type="button" @click="authMode = 'register'; authError = ''; showPassword = false">注册账户</button>
+      <div class="auth-tabs">
+        <button :class="{ active: authMode === 'login' }" :aria-pressed="authMode === 'login'" :disabled="authLoading" type="button" @click="changeAuthMode('login')">账号登录</button>
+        <button :class="{ active: authMode === 'register' }" :aria-pressed="authMode === 'register'" :disabled="authLoading" type="button" @click="changeAuthMode('register')">注册账户</button>
       </div>
       <div v-if="authError" class="form-error" role="alert"><Icon name="alert-circle" :size="16" /><span>{{ authError }}</span></div>
 
-      <!-- Forgot Password Form -->
-      <template v-if="authMode === 'forgot'">
-        <div v-if="forgotSuccess" class="forgot-success-banner" role="status">
-          <Icon name="check" :size="20" />
-          <div>
-            <strong>重置邮件已发送</strong>
-            <p>若该邮箱已注册，重置链接将发送到你的邮箱。请查收邮件，也可以检查垃圾邮件文件夹。</p>
-          </div>
-        </div>
-        <form v-else @submit.prevent="handleForgotPassword">
-          <div class="form-group auth-field">
-            <label class="form-label" for="forgot-email">注册电子邮箱</label>
-            <div class="auth-input-wrap">
-              <Icon name="users" :size="16" class="auth-input-icon" />
-               <input id="forgot-email" v-model="forgotEmail" type="email" autocomplete="email" inputmode="email" :disabled="forgotLoading" placeholder="name@example.com" class="form-input" required />
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary auth-submit" :disabled="forgotLoading">
-            <Icon v-if="forgotLoading" name="refresh" :size="16" class="spin" />
-            <span>{{ forgotLoading ? '正在发送…' : '发送重置密码邮件' }}</span>
-          </button>
-        </form>
-        <div class="forgot-footer">
-          <button class="link-btn" type="button" @click="authMode = 'login'; forgotSuccess = false; authError = ''">
-            想起密码了？返回登录
-          </button>
-        </div>
-      </template>
-
       <!-- Login / Register Form -->
-      <form v-else @submit.prevent="handleAuthSubmit">
+      <form @submit.prevent="handleAuthSubmit">
         <div v-if="authMode === 'register'" class="form-group auth-field">
           <label class="form-label" for="auth-display-name">用户名称</label>
           <div class="auth-input-wrap">
@@ -528,21 +523,13 @@ async function handleDeleteGallery() {
         <div class="form-group auth-field">
           <div class="field-label-row">
             <label class="form-label" for="auth-password">{{ authMode === 'register' ? '设置密码' : '密码' }}</label>
-            <button
-              v-if="authMode === 'login'"
-              type="button"
-              class="forgot-link-btn"
-              :disabled="authLoading"
-              @click="authMode = 'forgot'; authError = ''; forgotSuccess = false"
-            >
-              忘记密码？
-            </button>
           </div>
           <div class="auth-input-wrap">
             <Icon name="lock" :size="16" class="auth-input-icon" />
-            <input id="auth-password" v-model="authForm.password" :type="showPassword ? 'text' : 'password'" :autocomplete="authMode === 'register' ? 'new-password' : 'current-password'" :placeholder="authMode === 'register' ? '至少 12 个字符' : '输入你的密码'" class="form-input password-input" :minlength="authMode === 'register' ? 12 : undefined" maxlength="128" :disabled="authLoading" required />
-            <button class="password-toggle" type="button" :aria-pressed="showPassword" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</button>
+            <input id="auth-password" v-model="authForm.password" :type="showPassword ? 'text' : 'password'" :autocomplete="authMode === 'register' ? 'new-password' : 'current-password'" :placeholder="authMode === 'register' ? '至少 6 个字符' : '输入你的密码'" class="form-input password-input" minlength="6" maxlength="128" :disabled="authLoading" aria-describedby="auth-password-hint" @keydown="updateCapsLock" @keyup="updateCapsLock" @blur="capsLock = false" required />
+            <button class="password-toggle" type="button" :disabled="authLoading" :aria-pressed="showPassword" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</button>
           </div>
+          <p id="auth-password-hint" class="password-hint" :class="{ 'caps-lock-hint': capsLock }" aria-live="polite">{{ capsLock ? '大写锁定已开启，请注意密码大小写。' : '密码至少 6 个字符。' }}</p>
         </div>
         <button id="btn-auth-submit" type="submit" class="btn btn-primary auth-submit" :disabled="authLoading">
           <Icon v-if="authLoading" name="refresh" :size="16" class="spin" />
@@ -560,7 +547,7 @@ async function handleDeleteGallery() {
     <header class="space-nav">
       <RouterLink to="/" class="space-brand">
         <BrandMark :size="28" />
-        <span class="space-brand-name">VIE Gallery</span>
+        <span class="space-brand-name">阳光明媚</span>
       </RouterLink>
 
       <nav class="space-tabs" aria-label="主导航">
@@ -574,7 +561,7 @@ async function handleDeleteGallery() {
         </RouterLink>
       </nav>
 
-      <div class="space-user" @keydown.esc.stop="closeMenuFromKeyboard">
+      <div class="space-user" @keydown.esc.stop="closeMenuFromKeyboard" @keydown="navigateMenu" @focusout="closeMenuOnBlur">
         <button class="space-user-trigger" type="button" :aria-expanded="userMenuOpen" aria-label="账户菜单" @click.stop="userMenuOpen = !userMenuOpen" @keydown.esc="userMenuOpen = false">
         <div class="space-avatar">{{ userInitial }}</div>
         <span class="space-user-name">{{ userDisplayName }}</span>
@@ -609,6 +596,7 @@ async function handleDeleteGallery() {
           <button
             class="status-tab-btn"
             :class="{ active: statusFilter === 'ALL' }"
+            :aria-pressed="statusFilter === 'ALL'"
             type="button"
             @click="statusFilter = 'ALL'"
           >
@@ -617,6 +605,7 @@ async function handleDeleteGallery() {
           <button
             class="status-tab-btn"
             :class="{ active: statusFilter === 'DRAFT' }"
+            :aria-pressed="statusFilter === 'DRAFT'"
             type="button"
             @click="statusFilter = 'DRAFT'"
           >
@@ -625,6 +614,7 @@ async function handleDeleteGallery() {
           <button
             class="status-tab-btn"
             :class="{ active: statusFilter === 'PUBLISHED' }"
+            :aria-pressed="statusFilter === 'PUBLISHED'"
             type="button"
             @click="statusFilter = 'PUBLISHED'"
           >
@@ -634,6 +624,7 @@ async function handleDeleteGallery() {
             v-if="statusCounts.archived > 0"
             class="status-tab-btn"
             :class="{ active: statusFilter === 'ARCHIVED' }"
+            :aria-pressed="statusFilter === 'ARCHIVED'"
             type="button"
             @click="statusFilter = 'ARCHIVED'"
           >
@@ -680,10 +671,11 @@ async function handleDeleteGallery() {
             <Icon name="search" :size="16" class="search-icon" />
             <input
               v-model="searchQuery"
-              type="text"
+              type="search"
               class="search-input"
               placeholder="搜索空间名称或地址"
               aria-label="搜索空间名称或地址"
+              @keydown.esc="searchQuery = ''"
             />
           </div>
         </div>
@@ -703,7 +695,7 @@ async function handleDeleteGallery() {
           tabindex="0"
           @click="navigateToWorkspace(gallery.id)"
           @keydown.enter.self="navigateToWorkspace(gallery.id)"
-          @keydown.space.prevent.self="navigateToWorkspace(gallery.id)"
+          @keydown.space.self.prevent="navigateToWorkspace(gallery.id)"
         >
           <div class="card-cover">
             <img :src="coverFor(gallery)" class="cover-image" :alt="gallery.name" loading="lazy" />
@@ -737,7 +729,7 @@ async function handleDeleteGallery() {
                 <span class="status-dot" :class="gallery.status === 'PUBLISHED' ? 'is-live' : 'is-draft'"></span>
                 <span>{{ statusLabel(gallery) }}</span>
               </span>
-              <div class="more-wrap" @keydown.esc.stop="closeMenuFromKeyboard">
+              <div class="more-wrap" @keydown.esc.stop="closeMenuFromKeyboard" @keydown="navigateMenu" @focusout="closeMenuOnBlur">
                 <button
                   class="more-btn"
                   type="button"
@@ -841,7 +833,7 @@ async function handleDeleteGallery() {
             </button>
           </div>
 
-          <div v-if="createError" class="form-error">
+          <div v-if="createError" class="form-error" role="alert">
             <Icon name="alert-circle" :size="16" />
             <span>{{ createError }}</span>
           </div>

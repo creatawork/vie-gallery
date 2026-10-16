@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { useAuth } from './composables/useAuth'
@@ -31,8 +31,7 @@ const router = createRouter({
     },
     {
       path: '/reset-password',
-      name: 'reset-password',
-      component: () => import('./views/ResetPasswordView.vue')
+      redirect: { name: 'overview', query: {}, hash: '' }
     },
     {
       path: '/:pathMatch(.*)*',
@@ -41,10 +40,19 @@ const router = createRouter({
   ]
 })
 
+const auth = useAuth()
+watch([() => router.currentRoute.value.name, auth.currentUser], ([name, user]) => {
+  const pageTitle = name === 'overview' ? (user ? '我的空间' : '登录')
+    : name === 'members' ? '成员管理'
+    : name === 'gallery-workspace' ? '作品工作区'
+    : name === 'gallery-config' ? '展示设计' : ''
+  document.title = pageTitle ? `${pageTitle} · 阳光明媚` : '阳光明媚'
+}, { immediate: true })
+
 router.beforeEach(async (to) => {
   const auth = useAuth()
   if (!auth.authChecked.value) await auth.checkAuth()
-  if (to.name !== 'overview' && to.name !== 'reset-password' && !auth.isAuthenticated.value) {
+  if (to.name !== 'overview' && !auth.isAuthenticated.value) {
     return { name: 'overview' }
   }
   if (to.name === 'members' && !auth.isOwner.value) {

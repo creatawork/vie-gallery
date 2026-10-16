@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, useId } from 'vue'
+import { nextTick, ref, useId, watch } from 'vue'
 import Icon from './Icon.vue'
 import VisitorStateShell from './VisitorStateShell.vue'
 
-defineProps<{
+const props = defineProps<{
   isUnlocking: boolean
   error?: string | null
   galleryTitle?: string | null
@@ -19,8 +19,17 @@ const inputId = useId()
 const helpId = useId()
 const errorId = useId()
 const localError = ref('')
+const passwordInput = ref<HTMLInputElement | null>(null)
+
+watch(() => props.isUnlocking, async (busy, wasBusy) => {
+  if (wasBusy && !busy && props.error) {
+    await nextTick()
+    passwordInput.value?.focus({ preventScroll: true })
+  }
+})
 
 function handleSubmit() {
+  if (props.isUnlocking) return
   if (password.value.trim()) {
     emit('unlock', password.value)
   } else {
@@ -39,6 +48,7 @@ function handleSubmit() {
         <div class="input-container">
           <input
             :id="inputId"
+            ref="passwordInput"
             v-model="password"
             :type="showPassword ? 'text' : 'password'"
             placeholder="输入访问密码"

@@ -9,6 +9,7 @@ import { useGalleryWorkspace, type WorkspacePhoto } from '../composables/useGall
 import { useUploadTasks, type UploadTask } from '../composables/useUploadTasks'
 import { usePublishCenter } from '../composables/usePublishCenter'
 import { useConfigVersionMetadata } from '../composables/useConfigVersionMetadata'
+import { useModalFocus } from '../composables/useModalFocus'
 import { apiFetch } from '../api'
 import { openCreatorPreview } from '../lib/preview'
 import Icon from '../components/Icon.vue'
@@ -59,7 +60,7 @@ const dropzoneRef = ref<{ chooseFiles: () => void } | null>(null)
 const failedUploadFiles = ref<File[]>([])
 const userMenuOpen = ref(false)
 const showLightbox = ref(false)
-const lightboxIndex = ref(0)
+const lightboxPhotoId = ref<string | null>(null)
 const photoToDelete = ref<Pick<WorkspacePhoto, 'id'> | null>(null)
 const batchPhotoIdsToDelete = ref<string[]>([])
 const showBatchDeleteModal = ref(false)
@@ -69,11 +70,20 @@ const showUnpublishModal = ref(false)
 const showShareModal = ref(false)
 const visitorAllowDownload = ref(false)
 const previewOpening = ref(false)
+const { root: shortcutsModalRoot } = useModalFocus(showShortcutsModal, {
+  onEscape: () => { showShortcutsModal.value = false }
+})
 
 const lightboxPhotos = computed<LightboxPhoto[]>(() => workspace.photos.value.map(photo => ({
   ...photo,
   title: photo.title || undefined
 })))
+const lightboxIndex = computed(() => Math.max(0, lightboxPhotos.value.findIndex(photo => photo.id === lightboxPhotoId.value)))
+
+function selectLightboxPhoto(index: number) {
+  const photo = lightboxPhotos.value[index]
+  if (photo) lightboxPhotoId.value = photo.id
+}
 
 const hallDescription = computed(() => {
   const gallery = workspace.gallery.value
@@ -162,14 +172,15 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 function handleWorkspaceKeydown(event: KeyboardEvent) {
-  if (isTypingTarget(event.target) || showShareModal.value || showBatchDeleteModal.value || showUnpublishModal.value) return
+  if (event.defaultPrevented || event.isComposing || isTypingTarget(event.target) || showShareModal.value || showBatchDeleteModal.value || showUnpublishModal.value || showPublishMetadata.value) return
   if (event.metaKey || event.ctrlKey || event.altKey) return
 
   if (event.key === 'Escape') {
     showShortcutsModal.value = false
+    userMenuOpen.value = false
     return
   }
-  if (showLightbox.value || photoToDelete.value) return
+  if (showLightbox.value || photoToDelete.value || showShortcutsModal.value) return
 
   const key = event.key.toLowerCase()
   if (key === 'u' && canPhotoWrite.value) {
@@ -213,7 +224,7 @@ async function openViewer() {
 }
 
 function openLightbox(index: number) {
-  lightboxIndex.value = index
+  selectLightboxPhoto(index)
   showLightbox.value = true
 }
 
@@ -579,7 +590,7 @@ async function reloadGalleryAccess() {
       <header class="hall-nav">
         <RouterLink to="/" class="brand">
           <BrandMark :size="28" />
-          <span>VIE Gallery</span>
+          <span>阳光明媚</span>
         </RouterLink>
 
         <nav class="hall-tabs">
@@ -831,7 +842,7 @@ async function reloadGalleryAccess() {
           </div>
         </div>
 
-        <footer class="hall-footer">© 2026 VIE Gallery</footer>
+        <footer class="hall-footer">© 2026 阳光明媚</footer>
       </div>
     </template>
 
@@ -901,7 +912,7 @@ async function reloadGalleryAccess() {
       :current-index="lightboxIndex"
       :can-write="canPhotoWrite"
       @close="showLightbox = false"
-      @select="lightboxIndex = $event"
+      @select="selectLightboxPhoto"
       @set-cover="handleSetCover"
       @delete="promptDeletePhoto"
       @update-title="handleUpdatePhotoTitle"
@@ -911,7 +922,7 @@ async function reloadGalleryAccess() {
 
     <Transition name="modal-fade">
       <div v-if="showShortcutsModal" class="shortcuts-backdrop" @click.self="showShortcutsModal = false">
-        <div class="shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+        <div ref="shortcutsModalRoot" class="shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" tabindex="-1">
           <div class="shortcuts-head">
             <h2 id="shortcuts-title">键盘快捷键</h2>
             <button class="shortcuts-close" type="button" aria-label="关闭" @click="showShortcutsModal = false">

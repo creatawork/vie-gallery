@@ -715,7 +715,7 @@ onUnmounted(() => {
     <header class="config-nav">
       <RouterLink to="/" class="brand">
         <BrandMark :size="28" />
-        <span>VIE Gallery</span>
+        <span>阳光明媚</span>
       </RouterLink>
 
       <nav class="config-tabs" aria-label="展厅导航">
@@ -762,7 +762,7 @@ onUnmounted(() => {
     </header>
 
     <div class="config-caption">
-      <div><span class="config-eyebrow">VIE / 展示设计</span><h1>{{ galleryInfo?.name || '展厅配置' }}<span class="caption-divider">/</span><span class="caption-subtitle">让作品被看见</span></h1></div>
+      <div><span class="config-eyebrow">阳光明媚 / 展示设计</span><h1>{{ galleryInfo?.name || '展厅配置' }}<span class="caption-divider">/</span><span class="caption-subtitle">让作品被看见</span></h1></div>
       <div class="config-status"><p role="status" class="status-chip" :class="`is-${draftStatus.tone}`">{{ draftStatus.text }}</p><p role="status" class="status-chip" :class="`is-${publishStatus.tone}`">{{ publishStatus.text }}</p></div>
     </div>
 

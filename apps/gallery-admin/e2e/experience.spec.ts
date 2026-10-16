@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const id = '11111111-1111-4111-8111-111111111111'
-const output = resolve(process.cwd(), '../../acceptance-shots/experience-refresh')
+const output = resolve(process.cwd(), '../../.cache/experience-polish')
 const user = { role: 'OWNER', capabilities: ['GALLERY_READ', 'GALLERY_CREATE', 'PHOTO_READ', 'PHOTO_WRITE', 'PUBLISH', 'SHARE_MANAGE', 'CONFIG_READ', 'CONFIG_WRITE', 'MEMBER_MANAGE'], user: { displayName: '林小满', email: 'creator@example.com' }, tenant: { name: '林小满的工作室' } }
 const gallery = { id, name: '山间来信', slug: 'mountain-letters', visibility: 'PUBLIC', status: 'DRAFT', photoCount: 8, createdAt: '2026-10-14T00:00:00Z', updatedAt: '2026-10-15T00:00:00Z' }
 
@@ -39,8 +39,7 @@ for (const width of [390, 768, 1440]) {
     await expect(page.locator('#auth-password')).toHaveAttribute('autocomplete', 'new-password')
     await shot(page, `register-${width}`)
     await page.getByRole('button', { name: '账号登录', exact: true }).click()
-    await page.getByRole('button', { name: '忘记密码？' }).click()
-    await shot(page, `forgot-${width}`)
+    await expect(page.getByRole('button', { name: '忘记密码？' })).toHaveCount(0)
     await page.unroute('**/api/**')
     await mockApi(page, true, [gallery, { ...gallery, id: 'two', name: '海风经过', status: 'PUBLISHED', photoCount: 12 }, { ...gallery, id: 'three', name: '城市的慢镜头', visibility: 'PASSWORD', photoCount: 6 }])
     await page.reload()
@@ -51,14 +50,11 @@ for (const width of [390, 768, 1440]) {
     await shot(page, `create-${width}`)
     await page.keyboard.press('Escape')
     await expect(page.locator('#btn-open-create-modal')).toBeFocused()
-    await page.goto('/app/reset-password?token=experience-test')
-    await expect(page.getByRole('heading', { name: '设置新密码' })).toBeVisible()
-    await shot(page, `reset-${width}`)
     expect(errors).toEqual([])
   })
 }
 
-test('login supports password visibility, errors and recovery', async ({ page }) => {
+test('login supports password visibility, errors and retry', async ({ page }) => {
   await mockApi(page, false)
   let attempts = 0
   await page.route('**/api/auth/login', route => {
@@ -173,14 +169,93 @@ test('members fit mobile and preserve failed invite input', async ({ page }) => 
   await expect(trigger).toBeFocused()
 })
 
-test('reset success keeps keyboard focus on the next action', async ({ page }) => {
-  await mockApi(page, true)
-  await page.setViewportSize({ width: 320, height: 740 })
+test('password recovery stays closed and old reset URLs return to login without the token', async ({ page }) => {
+  await mockApi(page, false)
+  const requests: string[] = []
+  page.on('request', request => {
+    if (/\/api\/auth\/(forgot|reset)-password/.test(request.url())) requests.push(request.url())
+  })
   await page.goto('/app/reset-password?token=experience-test')
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.getByLabel('新密码', { exact: true }).fill('new-test-password-123')
-  await page.getByLabel('确认新密码', { exact: true }).fill('new-test-password-123')
-  await page.getByRole('button', { name: '确认重置密码' }).click()
-  await expect(page.getByRole('heading', { name: '密码重置成功' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '立即前往登录' })).toBeFocused()
+  await expect(page).toHaveURL(/\/app\/$/)
+  await expect(page.getByRole('heading', { name: '欢迎回到你的空间' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '忘记密码？' })).toHaveCount(0)
+  await expect(page.getByLabel('新密码', { exact: true })).toHaveCount(0)
+  expect(requests).toEqual([])
+})
+
+for (const mode of ['login', 'register'] as const) {
+  test(`${mode} blocks five characters and accepts a six-character password`, async ({ page }) => {
+    await mockApi(page, false)
+    const passwords: string[] = []
+    await page.route(`**/api/auth/${mode}`, route => {
+      passwords.push(route.request().postDataJSON().password)
+      return route.fulfill({ status: mode === 'register' ? 201 : 200, json: user })
+    })
+    await page.goto('/app/')
+    if (mode === 'register') {
+      await page.getByRole('button', { name: '注册账户', exact: true }).click()
+      await page.getByLabel('用户名称').fill('阳光摄影师')
+    }
+    await page.locator('#auth-email').fill('creator@example.com')
+    await page.locator('#auth-password').fill('abc12')
+    await page.locator('#btn-auth-submit').click()
+    expect(await page.locator('#auth-password').evaluate((input: HTMLInputElement) => input.validity.tooShort)).toBe(true)
+    expect(passwords).toEqual([])
+    await page.locator('#auth-password').fill('abc123')
+    await page.locator('#btn-auth-submit').click()
+    await expect(page.getByRole('heading', { name: '我的空间' })).toBeVisible()
+    await expect(page).toHaveTitle('我的空间 · 阳光明媚')
+    expect(passwords).toEqual(['abc123'])
+  })
+}
+
+test('desktop card menu supports arrow keys and restores focus after renaming', async ({ page }) => {
+  await mockApi(page, true, [gallery])
+  await page.goto('/app/')
+  const trigger = page.getByRole('button', { name: '更多操作' })
+  await trigger.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('button', { name: '进入工作区', exact: true })).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(page.getByRole('button', { name: '删除空间…', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(page.getByRole('button', { name: '重命名', exact: true })).toBeFocused()
+  await page.keyboard.press('Enter')
+  const dialog = page.getByRole('dialog', { name: '重命名空间', exact: true })
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toBeFocused()
+})
+
+test('Space activates card menu buttons without opening the workspace', async ({ page }) => {
+  await mockApi(page, true, [gallery])
+  await page.goto('/app/')
+  const trigger = page.getByRole('button', { name: '更多操作' })
+  await trigger.focus()
+  await page.keyboard.press('Space')
+  const rename = page.getByRole('button', { name: '重命名', exact: true })
+  await expect(rename).toBeVisible()
+  await rename.focus()
+  await page.keyboard.press('Space')
+  const dialog = page.getByRole('dialog', { name: '重命名空间', exact: true })
+  await expect(dialog).toBeVisible()
+  await expect(page).toHaveURL(/\/app\/$/)
+  await page.keyboard.press('Escape')
+  await expect(trigger).toBeFocused()
+})
+
+test('brand icon loads from both deployed application prefixes', async ({ page, request }) => {
+  await mockApi(page, false)
+  await page.goto('/app/')
+  await expect(page).toHaveTitle('登录 · 阳光明媚')
+  await expect(page.locator('.auth-brand-mark')).toContainText('阳光明媚')
+  const icon = page.locator('link[rel="icon"]')
+  await expect(icon).toHaveAttribute('href', '/app/favicon.svg')
+  for (const prefix of ['/app/', '/g/']) {
+    const response = await request.get(`${prefix}favicon.svg`)
+    expect(response.ok()).toBe(true)
+    expect(response.headers()['content-type']).toContain('image/svg+xml')
+    expect(await response.text()).toContain('<svg')
+  }
 })

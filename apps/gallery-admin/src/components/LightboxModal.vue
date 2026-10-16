@@ -40,8 +40,16 @@ const isEditingTitle = ref(false)
 const titleInput = ref('')
 const titleInputRef = ref<HTMLInputElement | null>(null)
 const titleButtonRef = ref<HTMLButtonElement | null>(null)
+const imageState = ref<'loading' | 'loaded' | 'error'>('loading')
+const imageAttempt = ref(0)
 
 const currentPhoto = computed(() => props.photos[props.currentIndex])
+const imageSource = computed(() => currentPhoto.value?.thumbnailUrl || currentPhoto.value?.originalUrl)
+const unavailableMessage = computed(() => {
+  if (currentPhoto.value?.status === 'PROCESSING') return '照片正在处理中，稍后即可查看。'
+  if (currentPhoto.value?.status === 'FAILED') return '照片处理失败，可关闭大图后重试失败项。'
+  return imageSource.value ? '照片未能加载，请重试或查看原图。' : '这张照片暂时没有可用的预览。'
+})
 const { root } = useModalFocus(computed(() => props.show && !!currentPhoto.value), {
   focusContainer: true,
   onEscape: () => {
@@ -50,12 +58,23 @@ const { root } = useModalFocus(computed(() => props.show && !!currentPhoto.value
   }
 })
 
-watch(() => props.currentIndex, async () => {
+watch(() => currentPhoto.value?.id, async () => {
   isEditingTitle.value = false
   titleInput.value = currentPhoto.value?.title || ''
   await nextTick()
   if (props.show && document.activeElement === document.body) root.value?.focus()
 })
+
+watch([() => currentPhoto.value?.id, imageSource], () => {
+  imageState.value = 'loading'
+  imageAttempt.value = 0
+}, { immediate: true })
+
+function retryImage() {
+  imageState.value = 'loading'
+  imageAttempt.value += 1
+  nextTick(() => root.value?.focus())
+}
 
 watch(() => props.show, (shown) => {
   if (shown) {
@@ -135,7 +154,7 @@ function statusLabel(status?: string) {
     >
       <!-- Top Navigation Bar -->
       <div class="lightbox-topbar">
-        <div class="photo-indicator">
+        <div class="photo-indicator" aria-live="polite" aria-atomic="true">
           <span class="index-current">{{ currentIndex + 1 }}</span>
           <span class="index-divider">/</span>
           <span class="index-total">{{ photos.length }}</span>
@@ -204,11 +223,13 @@ function statusLabel(status?: string) {
       </div>
 
       <!-- Main Stage -->
-      <div class="lightbox-stage">
+      <div class="lightbox-stage" :aria-busy="!!imageSource && imageState === 'loading'">
         <!-- Prev Button -->
         <button
-          v-if="currentIndex > 0"
+          v-if="photos.length > 1"
           class="nav-btn prev-btn"
+          type="button"
+          :disabled="currentIndex === 0"
           aria-label="上一张"
           @click="emit('select', currentIndex - 1)"
         >
@@ -218,16 +239,29 @@ function statusLabel(status?: string) {
         <!-- Current Image Display -->
         <div class="image-wrapper">
           <img
-            :src="photos[currentIndex].thumbnailUrl"
+            v-if="imageSource && imageState !== 'error'"
+            :key="`${currentPhoto.id}-${imageAttempt}`"
+            :src="imageSource"
             :alt="photos[currentIndex].title || '未命名照片'"
             class="main-image"
+            :class="{ 'is-loading': imageState === 'loading' }"
+            @load="imageState = 'loaded'"
+            @error="imageState = 'error'"
           />
+          <div v-if="imageSource && imageState === 'loading'" class="image-status" role="status">照片加载中…</div>
+          <div v-else-if="!imageSource || imageState === 'error'" class="image-status" role="status">
+            <Icon name="photo" :size="36" />
+            <p>{{ unavailableMessage }}</p>
+            <button v-if="imageSource" class="action-btn" type="button" @click="retryImage">重新加载</button>
+          </div>
         </div>
 
         <!-- Next Button -->
         <button
-          v-if="currentIndex < photos.length - 1"
+          v-if="photos.length > 1"
           class="nav-btn next-btn"
+          type="button"
+          :disabled="currentIndex === photos.length - 1"
           aria-label="下一张"
           @click="emit('select', currentIndex + 1)"
         >
@@ -251,7 +285,7 @@ function statusLabel(status?: string) {
                 placeholder="输入照片标题（按 Enter 保存）"
                 @blur="saveTitle()"
               />
-              <button class="title-save-btn" type="button" @click="saveTitle(true)">保存</button>
+              <button class="title-save-btn" type="button" @pointerdown.prevent @click="saveTitle(true)">保存</button>
             </template>
             <template v-else>
               <h3 class="photo-title">
@@ -394,25 +428,25 @@ function statusLabel(status?: string) {
 }
 
 .lightbox-stage {
-  flex: 1;
+  flex: 1 1 auto;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100px;
+  min-height: 160px;
   padding: 20px;
 }
 
 .image-wrapper {
-  height: 100%;
-  max-width: 90vw;
-  max-height: 100%;
+  position: absolute;
+  inset: 20px 80px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .main-image {
+  display: block;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -420,6 +454,10 @@ function statusLabel(status?: string) {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   animation: zoomIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+.main-image.is-loading { opacity: 0; }
+.image-status { position: absolute; inset: 0; margin: auto; display: grid; align-content: center; justify-items: center; gap: 16px; max-width: 360px; text-align: center; color: #cbd5e1; font-size: 14px; line-height: 1.7; }
+.image-status p { margin: 0; }
 
 @keyframes zoomIn {
   from {
@@ -450,10 +488,12 @@ function statusLabel(status?: string) {
   z-index: 5;
 }
 
-.nav-btn:hover {
+.nav-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.25);
   transform: translateY(-50%) scale(1.08);
 }
+
+.nav-btn:disabled { opacity: .25; cursor: default; }
 
 .prev-btn {
   left: 24px;
@@ -596,6 +636,7 @@ function statusLabel(status?: string) {
   .photo-indicator { padding-top: 12px; flex-shrink: 0; }
   .topbar-actions { gap: 6px; }
   .lightbox-stage { padding: 12px; }
+  .image-wrapper { inset: 12px 56px; }
   .prev-btn { left: 12px; }
   .next-btn { right: 12px; }
   .lightbox-bottombar { padding: 12px 16px max(16px, env(safe-area-inset-bottom)); }

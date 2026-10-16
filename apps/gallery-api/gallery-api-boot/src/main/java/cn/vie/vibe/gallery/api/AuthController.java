@@ -98,15 +98,17 @@ public class AuthController {
     }
 
     @PostMapping("/forgot-password")
-    public Map<String, String> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        auth.requestPasswordReset(request.email());
-        return Map.of("message", "如果邮箱存在，您将收到密码重置邮件");
+    public Map<String, String> forgotPassword() {
+        throw passwordRecoveryUnavailable();
     }
 
     @PostMapping("/reset-password")
-    public Map<String, Boolean> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        auth.resetPassword(request.token(), request.newPassword());
-        return Map.of("success", true);
+    public Map<String, Boolean> resetPassword() {
+        throw passwordRecoveryUnavailable();
+    }
+
+    private static DomainException passwordRecoveryUnavailable() {
+        return new DomainException("AUTH_PASSWORD_RECOVERY_UNAVAILABLE", "暂未开放找回密码，请妥善保管登录密码");
     }
 
     private void authenticate(AuthenticatedUser result, HttpServletRequest request, HttpServletResponse response) {
@@ -133,19 +135,19 @@ public class AuthController {
     }
 
     public record RegisterRequest(@NotBlank @Email @Size(max = 320) String email,
-                                  @NotBlank @Size(min = 12, max = 128) String password,
+                                  @NotBlank @Size(min = 6, max = 128) String password,
                                   @NotBlank @Size(max = 120) String displayName) {
     }
 
     public record LoginRequest(@NotBlank @Email @Size(max = 320) String email,
-                               @NotBlank @Size(min = 12, max = 128) String password) {
+                               @NotBlank @Size(min = 6, max = 128) String password) {
     }
 
     public record ForgotPasswordRequest(@NotBlank @Email @Size(max = 320) String email) {
     }
 
     public record ResetPasswordRequest(@NotBlank @Size(min = 43, max = 128) String token,
-                                       @NotBlank @Size(min = 12, max = 128) String newPassword) {
+                                       @NotBlank @Size(min = 6, max = 128) String newPassword) {
     }
 
     public record AuthResponse(UserResponse user, TenantResponse tenant, String role, List<Capability> capabilities) {

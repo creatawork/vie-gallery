@@ -11,6 +11,7 @@ const titleId = useId()
 const linkId = useId()
 const shareUrl = ref('')
 const copied = ref(false)
+const copying = ref(false)
 const busy = ref(false)
 const message = ref('')
 const userAgent = navigator.userAgent
@@ -22,8 +23,12 @@ let previousFocus: HTMLElement | null = null
 let previousOverflow: string | null = null
 let copyTimer: number | null = null
 let disposed = false
+let session = 0
 
 function release() {
+  session++
+  copying.value = false
+  busy.value = false
   dialog.value?.close()
   if (previousOverflow !== null) document.body.style.overflow = previousOverflow
   previousOverflow = null
@@ -37,6 +42,7 @@ watch(() => props.show, async open => {
   const publicUrl = new URL(window.location.href)
   publicUrl.searchParams.delete('preview')
   publicUrl.searchParams.delete('embed')
+  publicUrl.searchParams.delete('live')
   shareUrl.value = publicUrl.href
   copied.value = false
   message.value = ''
@@ -52,27 +58,33 @@ onBeforeUnmount(() => { disposed = true; release() })
 
 async function nativeShare() {
   if (busy.value) return
+  const currentSession = session
   busy.value = true
   message.value = ''
   try {
     await navigator.share({ title: props.galleryTitle || '光影之间', text: shareText.value, url: shareUrl.value })
   } catch (error) {
+    if (currentSession !== session || !props.show || disposed) return
     if (!(error instanceof Error && error.name === 'AbortError')) message.value = '系统分享暂不可用，可以复制下方链接发送。'
-  } finally { busy.value = false }
+  } finally { if (currentSession === session) busy.value = false }
 }
 async function copyLink() {
+  if (copying.value) return
+  const currentSession = session
+  copying.value = true
   try {
     await navigator.clipboard.writeText(shareUrl.value)
-    if (!props.show || disposed) return
+    if (currentSession !== session || !props.show || disposed) return
     copied.value = true
     message.value = '展厅链接已复制，可以粘贴发送给朋友。'
     if (copyTimer !== null) window.clearTimeout(copyTimer)
     copyTimer = window.setTimeout(() => { copied.value = false }, 3000)
   } catch {
+    if (currentSession !== session || !props.show || disposed) return
     message.value = '未能自动复制。链接已选中，可长按或按 Ctrl / Command + C 复制。'
     linkInput.value?.focus()
     linkInput.value?.select()
-  }
+  } finally { if (currentSession === session) copying.value = false }
 }
 function keepFocusInDialog(event: KeyboardEvent) {
   if (event.key !== 'Tab') return
@@ -104,7 +116,7 @@ function keepFocusInDialog(event: KeyboardEvent) {
           <input :id="linkId" ref="linkInput" :value="shareUrl" readonly type="url" spellcheck="false" @focus="linkInput?.select()" @click="linkInput?.select()" />
         </div>
         <div class="sheet-actions">
-          <button class="sheet-action copy" type="button" @click="copyLink"><Icon :name="copied ? 'check' : 'share'" :size="17" /><span>{{ copied ? '链接已复制' : '复制链接' }}</span></button>
+          <button class="sheet-action copy" type="button" :disabled="copying" @click="copyLink"><Icon :name="copied ? 'check' : 'share'" :size="17" /><span>{{ copying ? '正在复制…' : copied ? '链接已复制' : '复制链接' }}</span></button>
           <button v-if="canNativeShare" class="sheet-action native" type="button" :disabled="busy" @click="nativeShare"><Icon name="share" :size="17" /><span>{{ busy ? '正在打开…' : '更多分享方式' }}</span></button>
         </div>
         <p class="sheet-feedback" role="status" aria-live="polite">{{ message || '收到链接的人将按展厅的访问设置进入。' }}</p>
@@ -123,7 +135,7 @@ function keepFocusInDialog(event: KeyboardEvent) {
 .sheet-gallery { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; color: #202824; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }.sheet-gallery span { color: #626c65; }
 .app-guide { margin-top: 20px; padding: 14px 16px; border-radius: 6px; background: #e8ede4; color: #355d49; font-size: 13px; line-height: 1.8; }
 .link-field { margin-top: 28px; }.link-field label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 500; }.link-field input { width: 100%; min-height: 46px; padding: 12px; border: 1px solid #bdc7b8; border-radius: 6px; color: #626c65; background: #f4f3ef; font-size: 13px; }
-.sheet-actions { display: flex; gap: 10px; margin-top: 16px; }.sheet-action { display: inline-flex; align-items: center; justify-content: center; gap: 9px; flex: 1; min-height: 46px; border-radius: 6px; font-size: 13px; font-weight: 500; }.copy { color: #fffefa; background: #26735d; }.copy:hover { background: #1b5746; }.native { color: #26735d; background: #e8ede4; }.native:hover:not(:disabled) { background: #dae4d6; }.native:disabled { opacity: .6; cursor: wait; }
+.sheet-actions { display: flex; gap: 10px; margin-top: 16px; }.sheet-action { display: inline-flex; align-items: center; justify-content: center; gap: 9px; flex: 1; min-height: 46px; border-radius: 6px; font-size: 13px; font-weight: 500; }.copy { color: #fffefa; background: #26735d; }.copy:hover:not(:disabled) { background: #1b5746; }.native { color: #26735d; background: #e8ede4; }.native:hover:not(:disabled) { background: #dae4d6; }.sheet-action:disabled { opacity: .6; cursor: wait; }
 .sheet-feedback { min-height: 38px; margin-top: 18px; color: #626c65; font-size: 12px; line-height: 1.7; }
 @media (max-width: 600px) { .share-sheet { inset: auto 0 0; width: 100%; max-height: calc(100dvh - 40px); margin: 0; border-radius: 16px 16px 0 0; }.share-content { padding: 24px 24px max(24px, env(safe-area-inset-bottom)); }.sheet-header h2 { font-size: 23px; } }
 </style>

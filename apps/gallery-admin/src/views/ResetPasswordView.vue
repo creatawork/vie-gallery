@@ -28,8 +28,8 @@ async function handleResetPassword() {
     error.value = '缺少重置令牌，请通过邮件中的重置链接访问或输入令牌。'
     return
   }
-  if (newPassword.value.length < 12) {
-    error.value = '新密码长度至少需要 12 个字符。'
+  if (newPassword.value.length < 6 || newPassword.value.length > 128) {
+    error.value = '新密码长度需要为 6–128 个字符。'
     return
   }
   if (newPassword.value !== confirmPassword.value) {
@@ -76,7 +76,7 @@ function goToLogin() {
     <div class="reset-card">
       <div class="brand-badge">
         <BrandMark :size="32" />
-        <h2>VIE Gallery</h2>
+        <h2>阳光明媚</h2>
       </div>
 
       <div v-if="resetSuccess" class="reset-success-box">
@@ -93,7 +93,7 @@ function goToLogin() {
       <form v-else class="reset-form" @submit.prevent="handleResetPassword">
         <div class="form-header">
           <h1>设置新密码</h1>
-          <p>请输入您的新登录密码（至少 12 个字符）</p>
+          <p>请输入您的新登录密码（至少 6 个字符）</p>
         </div>
 
         <div v-if="!token" class="form-group">
@@ -103,6 +103,9 @@ function goToLogin() {
             v-model="manualToken"
             class="form-input"
             type="text"
+            autocomplete="off"
+            spellcheck="false"
+            :disabled="loading"
             required
             placeholder="输入重置邮件中的完整重置码"
           />
@@ -117,10 +120,10 @@ function goToLogin() {
             type="password"
             autocomplete="new-password"
             :disabled="loading"
-            minlength="12"
+            minlength="6"
             maxlength="128"
             required
-            placeholder="输入新密码（至少 12 位）"
+            placeholder="输入新密码（至少 6 位）"
           />
         </div>
 
@@ -133,7 +136,7 @@ function goToLogin() {
             type="password"
             autocomplete="new-password"
             :disabled="loading"
-            minlength="12"
+            minlength="6"
             maxlength="128"
             required
             placeholder="再次输入新密码"
@@ -151,7 +154,7 @@ function goToLogin() {
         </button>
 
         <div class="form-footer">
-          <button class="link-btn" type="button" @click="goToLogin">
+          <button class="link-btn" type="button" :disabled="loading" @click="goToLogin">
             想起密码了？返回登录
           </button>
         </div>

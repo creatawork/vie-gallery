@@ -6,10 +6,17 @@ import cn.vie.vibe.gallery.domain.DomainException;
 import cn.vie.vibe.gallery.domain.MembershipRole;
 import cn.vie.vibe.gallery.domain.Tenant;
 import cn.vie.vibe.gallery.domain.User;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
 
@@ -20,13 +27,52 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AuthControllerTest {
     private static final String EMAIL = "creator@example.com";
+    private static final String RESET_TOKEN = "1234567890123456789012345678901234567890123";
 
     private static AuthController controller(AuthFacade auth, RedisRateLimiter limiter) {
         return new AuthController(auth, mock(SecurityContextRepository.class), limiter);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {6, 12, 128})
+    void accountRequestsAcceptSixCharactersAndExistingLongerPasswords(int length) {
+        String password = "a".repeat(length);
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertEquals(0, validator.validate(new AuthController.RegisterRequest(EMAIL, password, "Creator")).size());
+            assertEquals(0, validator.validate(new AuthController.LoginRequest(EMAIL, password)).size());
+            assertEquals(0, validator.validate(new AuthController.ResetPasswordRequest(RESET_TOKEN, password)).size());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"12345", "      "})
+    void accountRequestsRejectShortOrBlankPasswords(String password) {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertEquals(1, validator.validate(new AuthController.RegisterRequest(EMAIL, password, "Creator")).size());
+            assertEquals(1, validator.validate(new AuthController.LoginRequest(EMAIL, password)).size());
+            assertEquals(1, validator.validate(new AuthController.ResetPasswordRequest(RESET_TOKEN, password)).size());
+        }
+    }
+
+    @Test
+    void accountRequestsKeepThePasswordUpperBound() {
+        String password = "a".repeat(129);
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertEquals(1, validator.validate(new AuthController.RegisterRequest(EMAIL, password, "Creator")).size());
+            assertEquals(1, validator.validate(new AuthController.LoginRequest(EMAIL, password)).size());
+            assertEquals(1, validator.validate(new AuthController.ResetPasswordRequest(RESET_TOKEN, password)).size());
+        }
     }
 
     @Test
@@ -86,30 +132,23 @@ class AuthControllerTest {
         verify(auth, never()).login(anyString(), anyString());
     }
 
-    @Test
-    void forgotPasswordInvokesFacadeAndReturnsGenericMessage() {
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/auth/forgot-password", "/api/auth/reset-password"})
+    void recoveryEndpointsAreUnavailableWithoutCallingTheFacade(String endpoint) throws Exception {
         AuthFacade auth = mock(AuthFacade.class);
         RedisRateLimiter limiter = mock(RedisRateLimiter.class);
-        AuthController controller = controller(auth, limiter);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller(auth, limiter))
+                .setControllerAdvice(new GlobalExceptionHandler(new ApiErrorFactory()))
+                .build();
 
-        java.util.Map<String, String> response = controller.forgotPassword(
-                new AuthController.ForgotPasswordRequest(EMAIL));
+        for (String body : new String[]{"", "{}", "{\"email\":\"creator@example.com\",\"token\":\""
+                + RESET_TOKEN + "\",\"newPassword\":\"abc123\"}"}) {
+            mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("AUTH_PASSWORD_RECOVERY_UNAVAILABLE"))
+                    .andExpect(jsonPath("$.message").value("暂未开放找回密码，请妥善保管登录密码"));
+        }
 
-        verify(auth).requestPasswordReset(EMAIL);
-        assertEquals("如果邮箱存在，您将收到密码重置邮件", response.get("message"));
-    }
-
-    @Test
-    void resetPasswordInvokesFacadeAndReturnsSuccessMessage() {
-        AuthFacade auth = mock(AuthFacade.class);
-        RedisRateLimiter limiter = mock(RedisRateLimiter.class);
-        AuthController controller = controller(auth, limiter);
-
-        String token = "1234567890123456789012345678901234567890123";
-        java.util.Map<String, Boolean> response = controller.resetPassword(
-                new AuthController.ResetPasswordRequest(token, "NewPassword123"));
-
-        verify(auth).resetPassword(token, "NewPassword123");
-        assertEquals(true, response.get("success"));
+        verifyNoInteractions(auth, limiter);
     }
 }

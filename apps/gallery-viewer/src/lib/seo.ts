@@ -28,7 +28,7 @@ function cleanText(value: unknown, maxLength: number): string {
 }
 
 function safeTitle(gallery: PublicGalleryResponse): string {
-  return cleanText(gallery.title, 120) || 'VIE Gallery'
+  return cleanText(gallery.title, 120) || '阳光明媚'
 }
 
 function safeDescription(gallery: PublicGalleryResponse, title: string): string {
@@ -151,7 +151,7 @@ export function applyViewerSeo(next: ViewerSeoState) {
   removeLegacySocialTags()
 
   if (!next.isPublicReady || !next.gallery || next.gallery.accessState !== 'READY' || next.gallery.visibility !== 'PUBLIC') {
-    document.title = previousTitle || 'VIE Gallery'
+    document.title = previousTitle || '阳光明媚'
     syncShareCoverImage(undefined)
     return
   }
@@ -160,12 +160,12 @@ export function applyViewerSeo(next: ViewerSeoState) {
   const description = safeDescription(next.gallery, title)
   const image = safeImageUrl(next.gallery.cover?.url) ?? safeImageUrl(next.fallbackCoverUrl)
 
-  document.title = `${title} · VIE Gallery`
+  document.title = `${title} · 阳光明媚`
   syncShareCoverImage(image)
   setMeta('name', 'description', description)
   const canonical = canonicalUrl(next.slug)
   setCanonical(canonical)
-  setMeta('property', 'og:site_name', 'VIE Gallery')
+  setMeta('property', 'og:site_name', '阳光明媚')
   setMeta('property', 'og:title', title)
   setMeta('property', 'og:description', description)
   setMeta('property', 'og:url', canonical)

@@ -122,6 +122,7 @@ function loadViewer3dModules() {
 }
 let canvasPointerDownHandler: ((event: PointerEvent) => void) | null = null
 let canvasPointerMoveHandler: ((event: PointerEvent) => void) | null = null
+let canvasPointerLeaveHandler: (() => void) | null = null
 let canvasClickHandler: ((event: MouseEvent) => void) | null = null
 let webglLostHandler: (() => void) | null = null
 
@@ -151,7 +152,7 @@ async function setImmersive(enabled: boolean) {
   ;(enabled ? immersiveExit.value : immersiveButton.value)?.focus({ preventScroll: true })
 }
 function handleImmersiveKey(event: KeyboardEvent) {
-  if (!isImmersive.value || showLightbox.value || showShareSheet.value || event.defaultPrevented) return
+  if (!isImmersive.value || showLightbox.value || showShareSheet.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
   if (event.key === 'Escape') void setImmersive(false)
   else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
     event.preventDefault()
@@ -487,15 +488,23 @@ function bindCanvasInteractions() {
 
   let pointerDownPos = { x: 0, y: 0 }
 
+  canvasPointerLeaveHandler = () => {
+    lastHoveredMesh = null
+    hoveredPhoto.value = null
+    canvas.style.cursor = ''
+    engine?.getEventBus().emit('theatre:hover', null)
+  }
+
   canvasPointerDownHandler = (e) => {
     pointerDownPos = { x: e.clientX, y: e.clientY }
+    canvasPointerLeaveHandler?.()
   }
 
   canvasPointerMoveHandler = (e) => {
     // Touch pointers are reserved for OrbitControls gestures; hover is mouse-only.
     const activeRaycaster = raycaster
     const activeMousePos = mousePos
-    if (e.pointerType !== 'mouse' || !engine || !activeRaycaster || !activeMousePos) return
+    if (e.pointerType !== 'mouse' || e.buttons || !engine || !activeRaycaster || !activeMousePos) return
     const rect = canvas.getBoundingClientRect()
     activeMousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
     activeMousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
@@ -563,6 +572,7 @@ function bindCanvasInteractions() {
 
   canvas.addEventListener('pointerdown', canvasPointerDownHandler)
   canvas.addEventListener('pointermove', canvasPointerMoveHandler)
+  canvas.addEventListener('pointerleave', canvasPointerLeaveHandler)
   canvas.addEventListener('click', canvasClickHandler)
 }
 
@@ -654,6 +664,7 @@ function destroy3DEngine() {
   if (canvas) {
     if (canvasPointerDownHandler) canvas.removeEventListener('pointerdown', canvasPointerDownHandler)
     if (canvasPointerMoveHandler) canvas.removeEventListener('pointermove', canvasPointerMoveHandler)
+    if (canvasPointerLeaveHandler) canvas.removeEventListener('pointerleave', canvasPointerLeaveHandler)
     if (canvasClickHandler) canvas.removeEventListener('click', canvasClickHandler)
   }
 
@@ -663,6 +674,7 @@ function destroy3DEngine() {
 
   canvasPointerDownHandler = null
   canvasPointerMoveHandler = null
+  canvasPointerLeaveHandler = null
   canvasClickHandler = null
   webglLostHandler = null
   hoveredPhoto.value = null
@@ -722,7 +734,7 @@ function resetView() {
     <!-- 1. 加载中状态 -->
     <div v-if="viewer.state.value === 'loading'" class="loading-screen" role="status" aria-live="polite" aria-busy="true">
       <div class="loader-box">
-        <span class="loader-wordmark" aria-hidden="true">vie</span>
+        <span class="loader-wordmark" aria-hidden="true">阳光明媚</span>
         <div class="loader-line" aria-hidden="true"></div>
         <p class="loader-text">正在打开影展…</p>
       </div>
@@ -805,7 +817,7 @@ function resetView() {
       </div>
 
       <header class="exhibition-header" :inert="isImmersive || undefined">
-        <button type="button" class="exhibition-brand" @click="returnToStart" aria-label="回到展厅起点">vie<span>光影之间</span></button>
+        <button type="button" class="exhibition-brand" @click="returnToStart" aria-label="阳光明媚 · 回到展厅起点"><img src="/favicon.svg" width="30" height="30" alt="" /><span>阳光明媚</span></button>
         <div class="exhibition-tools">
           <div class="exhibition-view" role="group" aria-label="观看方式">
             <button type="button" :aria-pressed="viewMode === '3d'" @click="viewMode = '3d'">空间漫游</button>
@@ -924,7 +936,7 @@ function resetView() {
         >
           {{ viewer.loadingMore.value ? '正在加载…' : viewer.error.value ? '重试加载照片' : `加载更多 · 还有 ${viewer.total.value - viewer.photos.value.length} 张` }}
         </button>
-        <footer class="exhibition-footer"><span>vie · 光影之间</span><span>{{ viewer.photos.value.length }} / {{ viewer.total.value }} 件作品</span></footer>
+        <footer class="exhibition-footer"><span>阳光明媚 · 每一帧，都值得被看见</span><span>{{ viewer.photos.value.length }} / {{ viewer.total.value }} 件作品</span></footer>
       </main>
 
       <!-- Lightbox High-Res Viewer Modal -->

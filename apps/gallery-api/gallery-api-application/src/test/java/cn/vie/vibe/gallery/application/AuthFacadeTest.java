@@ -33,6 +33,20 @@ class AuthFacadeTest {
     }
 
     @Test
+    void sixCharacterPasswordsWorkForRegistrationLoginAndReset() {
+        Fixture fixture = new Fixture();
+        AuthenticatedUser registered = fixture.auth.register("six@example.com", "Creator", "abc123");
+
+        assertEquals(registered.user().id(), fixture.auth.login("six@example.com", "abc123").user().id());
+
+        fixture.auth.requestPasswordReset("six@example.com");
+        fixture.auth.resetPassword(fixture.emailPort.lastToken, "def456");
+
+        assertEquals(registered.user().id(), fixture.auth.login("six@example.com", "def456").user().id());
+        assertThrows(DomainException.class, () -> fixture.auth.login("six@example.com", "abc123"));
+    }
+
+    @Test
     void unknownEmailUsesInvalidCredentialsContract() {
         Fixture fixture = new Fixture();
         RuntimeException exception = assertThrows(RuntimeException.class,

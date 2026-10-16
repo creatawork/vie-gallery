@@ -350,7 +350,7 @@ public class SharePosterService {
         // 品牌标识区域
         g.setColor(Color.WHITE);
         g.setFont(new Font("SansSerif", Font.BOLD, 40));
-        drawCenteredText(g, "VIE GALLERY", width / 2, 110);
+        drawCenteredText(g, "阳光明媚", width / 2, 110);
         
         // 封面图片 - 无边框
         int coverWidth = 900;

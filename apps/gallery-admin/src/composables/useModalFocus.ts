@@ -10,6 +10,20 @@ const FOCUSABLE = [
 ].join(',')
 
 const modalStack: symbol[] = []
+let previousBodyOverflow = ''
+let previousBodyPadding = ''
+
+function lockPageScroll() {
+  if (modalStack.length) return
+  previousBodyOverflow = document.body.style.overflow
+  previousBodyPadding = document.body.style.paddingRight
+  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+  if (scrollbarWidth > 0) {
+    const padding = Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0
+    document.body.style.paddingRight = `${padding + scrollbarWidth}px`
+  }
+  document.body.style.overflow = 'hidden'
+}
 
 export function useModalFocus(
   active: MaybeRefOrGetter<boolean>,
@@ -26,7 +40,13 @@ export function useModalFocus(
   function release() {
     window.removeEventListener('keydown', onKeydown, true)
     const index = modalStack.indexOf(token)
-    if (index !== -1) modalStack.splice(index, 1)
+    if (index !== -1) {
+      modalStack.splice(index, 1)
+      if (!modalStack.length) {
+        document.body.style.overflow = previousBodyOverflow
+        document.body.style.paddingRight = previousBodyPadding
+      }
+    }
   }
 
   function focusables() {
@@ -75,6 +95,7 @@ export function useModalFocus(
       return
     }
     previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    lockPageScroll()
     modalStack.push(token)
     await nextTick()
     if (cancelled) return

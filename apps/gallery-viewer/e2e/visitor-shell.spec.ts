@@ -7,7 +7,7 @@ test('share dialog supports keyboard dismissal, focus return and manual copy rec
     localStorage.setItem('vie:view-mode', '2d')
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('blocked')) } })
   })
-  await page.goto('/g/effects-fixture?preview=draft-credential#s=visitor-link')
+  await page.goto('/g/effects-fixture?preview=draft-credential&live=config#s=visitor-link')
   const share = page.getByRole('button', { name: '分享', exact: true })
   await share.click()
   const dialog = page.getByRole('dialog', { name: '把影展分享给朋友' })
@@ -17,6 +17,7 @@ test('share dialog supports keyboard dismissal, focus return and manual copy rec
   expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true)
   await expect(dialog.getByRole('textbox', { name: '展厅链接' })).toHaveValue(/#s=visitor-link$/)
   await expect(dialog.getByRole('textbox', { name: '展厅链接' })).not.toHaveValue(/preview=/)
+  await expect(dialog.getByRole('textbox', { name: '展厅链接' })).not.toHaveValue(/live=/)
   await dialog.getByRole('button', { name: '复制链接', exact: true }).click()
   await expect(dialog.getByRole('status')).toContainText('未能自动复制')
   await expect(dialog.getByRole('textbox', { name: '展厅链接' })).toBeFocused()
@@ -27,6 +28,31 @@ test('share dialog supports keyboard dismissal, focus return and manual copy rec
   await expect(dialog).toBeHidden()
   await expect(share).toBeFocused()
   expect(errors).toEqual([])
+})
+
+test('an earlier copy request cannot change a reopened share dialog', async ({ page }) => {
+  await mockGallery(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('vie:view-mode', '2d')
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => new Promise<void>((_resolve, reject) => {
+      Object.assign(window, { rejectPreviousCopy: () => reject(new Error('blocked')) })
+    }) } })
+  })
+  await page.goto('/g/effects-fixture')
+  const share = page.getByRole('button', { name: '分享', exact: true })
+  await share.click()
+  const dialog = page.getByRole('dialog', { name: '把影展分享给朋友' })
+  await dialog.getByRole('button', { name: '复制链接', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '正在复制…' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await share.click()
+  await page.evaluate(async () => {
+    ;(window as unknown as { rejectPreviousCopy: () => void }).rejectPreviousCopy()
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  await expect(dialog.getByRole('status')).toHaveText('收到链接的人将按展厅的访问设置进入。')
+  await expect(dialog.getByRole('button', { name: '关闭分享' })).toBeFocused()
+  await expect(dialog.getByRole('button', { name: '复制链接', exact: true })).toBeEnabled()
 })
 
 test('password entry has labels, preserves retry feedback and opens the gallery', async ({ page }, info) => {
@@ -49,6 +75,7 @@ test('password entry has labels, preserves retry feedback and opens the gallery'
   await page.getByRole('button', { name: '进入影展' }).click()
   await expect(page.getByRole('alert')).toHaveText('密码不正确，请重新输入。')
   await expect(password).toHaveAttribute('aria-invalid', 'true')
+  await expect(password).toBeFocused()
   await page.screenshot({ path: info.outputPath('password-desktop.png') })
   await page.setViewportSize({ width: 320, height: 700 })
   await page.screenshot({ path: info.outputPath('password-mobile.png') })

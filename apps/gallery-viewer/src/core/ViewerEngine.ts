@@ -633,7 +633,7 @@ export class ViewerEngine {
     this.wakeUp()
   }
   private theatreKey = (event: KeyboardEvent): void => {
-    if (!this.theatreView) return
+    if (!this.theatreView || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
     const state = this.theatreSnapshot()
     let command: TheatreCommand | null = null
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') command = { type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1 }
