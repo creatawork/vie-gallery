@@ -46,6 +46,7 @@ test('large book turns, opens a page, fits mobile and restores other spatial arr
 test('visitor book navigation wraps small albums and returns from focus', async ({ page }, info) => {
   const { errors } = await mockGallery(page, { count: 2, config: { quality: 'mid', effects: { photoEntrance: 'none' }, particles: { enabled: false } } })
   await page.goto('/g/effects-fixture')
+  await page.getByRole('button', { name: '更多观看方式' }).click()
   await page.getByLabel('照片排列与组合').selectOption('book')
   await page.getByRole('button', { name: '向后翻页' }).click()
   await page.waitForTimeout(1700)

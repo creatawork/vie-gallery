@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { PhotoMesh, ViewerContext, ViewerPlugin } from '../core/types'
 import { QUALITY_BUDGETS } from '../core/QualityController'
 import { PaperBook } from '../core/PaperBook'
+import { stageFraming } from '../lib/stageFraming'
 import { createTheatrePoses, showCueAt, SHOW_DURATION, type TheatreCommand, type TheatreMode, type TheatrePose, type TheatreState } from '../lib/photoTheatre'
 
 interface Move {
@@ -33,10 +34,16 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
   private bookTarget = 0
   private lastBookBeat = 0
   private space: { width: number; height: number; limit?: number } = { width: 1100, height: 570 }
+  private centerY = 0
+
+  private layoutKey(): string {
+    const layout = this.context?.config.layout
+    return JSON.stringify([layout?.mode, layout?.params])
+  }
 
   install(context: ViewerContext): void {
     this.context = context
-    this.layoutSignature = JSON.stringify(context.config.layout)
+    this.layoutSignature = this.layoutKey()
     context.on('theatre:command', this.command)
     context.on('theatre:hover', this.hover)
     context.on('photos:loaded', this.photosLoaded)
@@ -68,9 +75,9 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
     const camera = this.context.camera as THREE.PerspectiveCamera
     const canvas = this.context.renderer.domElement
     const height = canvas.clientHeight || 800, width = canvas.clientWidth || 1200
-    const fullHeight = 2 * Math.tan((camera.fov || 50) * Math.PI / 360) * 1000
-    this.space = { width: fullHeight * (camera.aspect || width / height) * .88,
-      height: fullHeight * Math.max(.3, (height - (width < 650 ? 300 : 210)) / height), limit: this.textureCapacity() }
+    const framing = stageFraming(width, height, camera.fov || 50, 1000, false, false, canvas.dataset?.hasMore ? 56 : 0)
+    this.centerY = framing.centerY
+    this.space = { width: framing.width, height: framing.height, limit: this.textureCapacity() }
   }
   private textureCapacity(): number | undefined {
     if (!this.context) return
@@ -145,7 +152,7 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
   }
   private configUpdated = (): void => {
     if (!this.context) return
-    const signature = JSON.stringify(this.context.config.layout)
+    const signature = this.layoutKey()
     if (signature !== this.layoutSignature) { this.layoutSignature = signature; this.exit(); return }
     this.state.reducedMotion = this.context.reducedMotion()
     if (this.state.reducedMotion) { this.state.status = 'idle'; this.finishMoves(); this.syncActivity() }
@@ -179,6 +186,7 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
       return (box.max.x - box.min.x) / Math.max(.01, box.max.y - box.min.y)
     })
     this.poses = createTheatrePoses(ratios, mode, this.space, this.state.offset, this.expanded)
+      .map(pose => ({ ...pose, y: pose.y + this.centerY }))
     const count = this.poses.length
     this.state.indices = this.poses.filter(p => p.visible)
       .sort((a, b) => (a.index - this.state.offset + count) % count - (b.index - this.state.offset + count) % count)
@@ -214,6 +222,7 @@ export class PhotoTheatrePlugin implements ViewerPlugin {
     if (!this.context) return
     if (!this.book) this.book = new PaperBook(this.context.scene)
     this.book.render(this.context.photos, this.bookCursor, this.space.width, this.space.height)
+    this.book.group.position.y = this.centerY
     const count = this.context.photos.length
     this.state.indices = Array.from(new Set([this.state.offset, (this.state.offset - 1 + count) % count, (this.state.offset + 1) % count]))
   }

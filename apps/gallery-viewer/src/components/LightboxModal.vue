@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import Icon from './Icon.vue'
+import { photoLabel } from '../lib/photoTitle'
 
 interface PhotoItem {
   title?: string | null
@@ -301,7 +302,7 @@ function hideBrokenThumbnail(event: Event) {
             :key="imageKey"
             ref="mainImage"
             :src="imageUrl"
-            :alt="photo.title || `照片 ${currentIndex + 1}`"
+            :alt="photoLabel(photo.title, currentIndex)"
             class="main-image"
             :class="{ 'is-ready': status === 'ready' }"
             decoding="async"
@@ -326,7 +327,7 @@ function hideBrokenThumbnail(event: Event) {
       </div>
 
       <footer class="lightbox-bottombar">
-        <h2 :id="titleId" class="photo-title">{{ photo.title || `作品 ${currentIndex + 1}` }}</h2>
+        <h2 :id="titleId" class="photo-title">{{ photoLabel(photo.title, currentIndex) }}</h2>
         <div v-if="photo.width && photo.height" class="photo-meta">{{ photo.width }} × {{ photo.height }} px</div>
         <nav v-if="photos.length > 1" class="thumbnail-nav" aria-label="照片缩略图导航">
           <button
@@ -334,7 +335,7 @@ function hideBrokenThumbnail(event: Event) {
             :key="entry.index"
             type="button"
             class="thumbnail-btn"
-            :aria-label="`查看第 ${entry.index + 1} 张：${entry.item.title || '照片'}`"
+            :aria-label="`查看第 ${entry.index + 1} 张：${photoLabel(entry.item.title, entry.index)}`"
             :aria-current="entry.index === currentIndex ? 'true' : undefined"
             @click="select(entry.index)"
           >

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { mkdir } from 'node:fs/promises'
 import { createRecommendedViewerConfig, applyCuratedStyle } from '@vie/gallery-contracts'
 import { mockGallery } from '../../gallery-viewer/e2e/helpers/mockGallery'
 
@@ -42,6 +43,7 @@ async function studio(page: Page, arrangement: 'helix' | 'book' | 'tunnel' = 'he
 }
 
 test('studio keeps a clear hierarchy and works on desktop, tablet and mobile', async ({ page }) => {
+  test.setTimeout(60000)
   const data = await studio(page)
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto('/app/galleries/studio/config')
@@ -62,6 +64,21 @@ test('studio keeps a clear hierarchy and works on desktop, tablet and mobile', a
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: fileURLToPath(new URL(`../../../.cache/presentation-studio-${width}.png`, import.meta.url)), fullPage: true })
   }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.evaluate(() => window.scrollTo(0, 0))
+  const folder = new URL('../../../.taste-skill/optimization-2026-10-17/', import.meta.url)
+  await mkdir(folder, { recursive: true })
+  const tabs = await page.getByRole('tablist', { name: '配置分区' }).boundingBox()
+  expect(tabs!.y + tabs!.height).toBeLessThan(600)
+  await page.screenshot({ path: fileURLToPath(new URL('config-mobile.png', folder)) })
+  await page.getByRole('button', { name: '收起预览', exact: true }).click()
+  await expect(page.getByRole('button', { name: '展开预览', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.live-preview')).toBeHidden()
+  expect((await page.getByRole('tablist', { name: '配置分区' }).boundingBox())!.y).toBeLessThan(tabs!.y - 100)
+  await page.screenshot({ path: fileURLToPath(new URL('config-mobile-collapsed.png', folder)) })
+  await page.getByRole('button', { name: '展开预览', exact: true }).click()
+  await expect(page.locator('.live-preview')).toBeVisible()
+  expect(data.saves()).toBe(0)
   expect(data.errors).toEqual([])
 })
 

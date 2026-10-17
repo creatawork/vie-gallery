@@ -669,10 +669,6 @@ async function reloadGalleryAccess() {
             </div>
           </div>
           <div class="hero-actions">
-            <button v-if="canPhotoWrite" class="btn outline" type="button" :disabled="workspace.uploading.value" @click="dropzoneRef?.chooseFiles()">
-              <Icon name="upload" :size="15" />
-              <span>{{ workspace.uploading.value ? '正在上传…' : '上传照片' }}</span>
-            </button>
             <button class="btn outline" type="button" :disabled="previewOpening" @click="openViewer">
               <Icon name="eye" :size="15" />
               <span>{{ previewOpening ? '正在打开…' : '预览展厅' }}</span>
@@ -727,8 +723,9 @@ async function reloadGalleryAccess() {
           <div class="workspace-main">
           <section id="workspace-photos" class="photo-panel" tabindex="-1">
             <div class="photo-toolbar">
-              <div><span class="section-kicker">01 / 作品</span><h2>照片管理 <span class="photo-total">{{ workspace.photos.value.length }}</span></h2><p class="section-description">拖动调整展出顺序，选择一张照片作为封面。</p></div>
+              <div><h2>照片管理 <span class="photo-total">{{ workspace.photos.value.length }}</span></h2><p class="section-description">拖动排序，选择封面。</p></div>
               <div class="photo-tools">
+                <button v-if="canPhotoWrite" class="btn solid" type="button" :disabled="workspace.uploading.value" @click="dropzoneRef?.chooseFiles()"><Icon name="upload" :size="15" /><span>{{ workspace.uploading.value ? '正在上传…' : '上传照片' }}</span></button>
                 <div class="view-toggle">
                   <button class="view-btn" :class="{ active: photoViewMode === 'grid' }" type="button" aria-label="网格视图" title="网格视图（G）" @click="photoViewMode = 'grid'">
                     <Icon name="grid" :size="14" />
@@ -1066,15 +1063,15 @@ async function reloadGalleryAccess() {
 .hall-body {
   width:min(1400px,calc(100% - 80px));
   margin:auto;
-  padding:36px 0 24px
+  padding:24px 0
 }
 
 .hall-hero {
   display:flex;
   flex-wrap:wrap;
   justify-content:space-between;
-  gap:24px;
-  padding-bottom:28px
+  gap:16px;
+  padding-bottom:20px
 }
 
 .hero-left {
@@ -1214,7 +1211,7 @@ async function reloadGalleryAccess() {
 .workflow-steps {
   display:flex;
   gap:0;
-  margin:24px 0 0;
+  margin:12px 0 0;
   padding:0;
   list-style:none
 }
@@ -1238,8 +1235,8 @@ async function reloadGalleryAccess() {
   align-items:center;
   gap:10px;
   width:100%;
-  min-height:56px;
-  padding:8px 18px 8px 0;
+  min-height:44px;
+  padding:4px 18px 4px 0;
   color:var(--text-secondary);
   text-align:left;
   border-radius:8px
@@ -1381,11 +1378,13 @@ async function reloadGalleryAccess() {
   margin-bottom:22px
 }
 
+.photo-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px }
+
 .photo-toolbar h2 {
   display:flex;
   align-items:center;
   gap:10px;
-  margin:7px 0 0;
+  margin:0;
   font-size:21px;
   font-weight:650;
   letter-spacing:-.03em

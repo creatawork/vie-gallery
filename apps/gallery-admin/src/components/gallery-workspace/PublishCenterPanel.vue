@@ -62,7 +62,7 @@ function formatDateTime(value?: string | null) {
     <div class="publish-header">
       <div class="header-title">
         <Icon name="send" :size="18" />
-        <div><span class="publish-kicker">03 / 发布与分享</span><h3>让作品被看见</h3></div>
+        <h3>发布与分享</h3>
       </div>
       <button
         class="refresh-btn"
@@ -89,6 +89,9 @@ function formatDateTime(value?: string | null) {
         </span>
       </div>
 
+      <p v-if="readiness?.configDraftChanged" class="draft-hint">展示设计有待同步的更改。</p>
+      <details class="publish-details">
+      <summary>发布时间与配置</summary>
       <div class="meta-details">
         <div v-if="isPublished && readiness?.publishedAt" class="meta-row">
           <span class="meta-label">发布时间：</span>
@@ -99,18 +102,12 @@ function formatDateTime(value?: string | null) {
           <span class="meta-val">已同步给访客</span>
         </div>
       </div>
-
-      <div class="visitor-actions">
-        <button class="btn btn-secondary btn-sm" type="button" @click="emit('preview')">
-          <Icon name="eye" :size="14" />
-          <span>预览展厅</span>
-        </button>
-      </div>
+      </details>
     </section>
 
     <!-- 2. 待发布变更与检查 -->
-    <section class="section-card changes-section">
-      <h4>发布前检查</h4>
+    <details class="section-card changes-section" :open="!isPublished || hasBlockers || !!error">
+      <summary>发布前检查</summary>
       <p v-if="error" class="readiness-error" role="alert">{{ error }}<br />刷新状态后再试。</p>
       <p v-else-if="!readinessKnown" class="readiness-loading" role="status">{{ loading ? '正在检查照片与场景…' : '尚未确认发布状态，请刷新。' }}</p>
       
@@ -136,7 +133,7 @@ function formatDateTime(value?: string | null) {
           <span>展示风格将随本次发布一起生效</span>
         </div>
       </div>
-    </section>
+    </details>
 
     <!-- 3. 操作区 -->
     <section class="publish-actions-section">
@@ -194,7 +191,7 @@ function formatDateTime(value?: string | null) {
 <style scoped>
 .publish-center {
   display:grid;
-  gap:22px;
+  gap:16px;
   padding:24px 20px;
   background:var(--bg-surface);
   border:1px solid var(--border-strong);
@@ -222,7 +219,7 @@ function formatDateTime(value?: string | null) {
 }
 
 h3 {
-  margin:7px 0 0;
+  margin:0;
   font-size:21px;
   font-weight:650;
   letter-spacing:-.03em
@@ -254,9 +251,13 @@ h4 {
 }
 
 .visitor-section {
-  padding-bottom:20px;
-  border-bottom:1px solid var(--border-strong)
+  padding-bottom:0
 }
+
+.publish-details { margin-top:12px }
+.publish-details summary,.changes-section summary { min-height:44px; padding:10px 0; cursor:pointer; font-size:14px; color:var(--text-primary) }
+.changes-section[open] summary { margin-bottom:8px }
+.draft-hint { margin-top:10px; color:var(--text-secondary); font-size:13px }
 
 .status-badge-row {
   display:flex;

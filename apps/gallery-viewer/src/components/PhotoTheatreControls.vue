@@ -52,8 +52,8 @@ function changeMode(event: Event) {
 </template>
 
 <style scoped>
-.theatre-dock { position: absolute; left: 50%; bottom: max(54px, calc(36px + env(safe-area-inset-bottom))); transform: translateX(-50%); z-index: 25; max-width: calc(100% - 32px); color: #f3f3ec; background: #222a25; border: 1px solid #637067; border-radius: 10px; overflow: hidden; }
-.theatre-row { display: flex; align-items: center; gap: 8px; padding: 8px; }
+.theatre-dock { min-width: 0; color: #f3f3ec; background: #25372c; overflow: hidden; }
+.theatre-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; }
 .theatre-select { display: flex; align-items: center; gap: 8px; padding-left: 10px; }
 select { max-width: 180px; min-height: 44px; color: inherit; background: transparent; border: 0; font: inherit; font-size: 13px; cursor: pointer; }
 option, optgroup { color: #f3f3ec; background: #222a25; }
@@ -64,12 +64,12 @@ button:disabled, select:disabled { opacity: .5; cursor: default; }
 .theatre-play { padding: 0 12px; background: #a0c5b2; color: #171d1a; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .theatre-play:hover:not(:disabled) { background: #b9d6c6; }
 .theatre-navigation { display: flex; }
-.theatre-caption { display: flex; gap: 20px; justify-content: space-between; padding: 0 16px 12px; color: #b4c0b6; font-size: 11px; line-height: 1.5; }
+.theatre-caption { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; padding: 0 16px 12px; color: #d2ded4; font-size: 13px; line-height: 1.5; }
 .theatre-progress { display: block; width: 100%; height: 3px; border: 0; accent-color: #a0c5b2; }
 .theatre-progress::-webkit-progress-bar { background: #ffffff15; }
 .theatre-progress::-webkit-progress-value { background: #a0c5b2; }
 @media (max-width: 650px) {
-  .theatre-dock { width: calc(100% - 32px); max-width: 430px; bottom: calc(48px + env(safe-area-inset-bottom)); }
+  .theatre-dock { width: 100%; }
   .theatre-row { flex-wrap: wrap; gap: 4px; }
   .theatre-select { flex: 1 0 150px; min-width: 140px; }
   .theatre-select select { width: 100%; }

@@ -83,6 +83,23 @@ test('reduced motion, rapid retargeting, photo appends and teardown do not leak 
   assert.ok(ctx.photos.every(p => p.visible))
 })
 
+test('changing transition preferences preserves the current work, while geometry changes restore the scene', () => {
+  const ctx = createViewerContext(normalizeViewerConfig({}).config, Array.from({ length: 4 }, photo))
+  const theatre = new PhotoTheatrePlugin(); theatre.install(ctx)
+  ctx.emit('theatre:command', { type: 'mode', mode: 'focus' })
+  ctx.emit('theatre:command', { type: 'step', direction: 1 })
+  ctx.reducedMotion = () => true
+  ctx.config.layout.transition = { ...ctx.config.layout.transition, style: 'none' }
+  ctx.emit('config:update', ctx.config)
+  assert.equal(theatre.snapshot().active, true)
+  assert.equal(theatre.snapshot().offset, 1)
+  assert.equal(theatre.snapshot().reducedMotion, true)
+  ctx.config.layout.mode = 'grid'
+  ctx.emit('config:update', ctx.config)
+  assert.equal(theatre.snapshot().active, false)
+  theatre.uninstall()
+})
+
 test('focus returns to the same group and replay cancels a pending modal focus', () => {
   const ctx = createViewerContext(normalizeViewerConfig({ effects: { photoFloat: false } }).config, Array.from({ length: 20 }, photo))
   const theatre = new PhotoTheatrePlugin(); theatre.install(ctx)

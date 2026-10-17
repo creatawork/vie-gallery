@@ -702,7 +702,7 @@ async function handleDeleteGallery() {
         <button class="btn btn-secondary btn-sm" type="button" @click="loadGalleries">重试</button>
       </div>
 
-      <div v-if="!loading && !loadError && viewMode === 'grid' && filteredGalleries.length" class="space-grid">
+      <div v-if="!loading && !loadError && viewMode === 'grid' && filteredGalleries.length" class="space-grid" :class="{ 'has-one': filteredGalleries.length === 1, 'has-two': filteredGalleries.length === 2 }">
         <article
           v-for="gallery in filteredGalleries"
           :key="gallery.id"
@@ -738,6 +738,7 @@ async function handleDeleteGallery() {
             </div>
 
             <p class="card-date">更新于 {{ formatTime(gallery.updatedAt || gallery.createdAt) }}</p>
+            <button class="card-enter" type="button" @click.stop="navigateToWorkspace(gallery.id)">整理照片 <Icon name="arrow-right" :size="16" /></button>
 
             <div class="card-foot">
               <span class="status-meta">

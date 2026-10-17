@@ -568,7 +568,9 @@ export class ViewerEngine {
   }
   setAutoTour(enabled: boolean): void {
     this.eventBus.emit('stage:autoplay', enabled && !this.motionQuery.matches)
-    if (this.theatreView) this.eventBus.emit('theatre:command', { type: 'exit' })
+    // A paused or reduced-motion view must not resume rotation when choreography exits.
+    if (this.theatreView) this.theatreView.autoRotate = enabled && !this.motionQuery.matches
+    if (enabled && this.theatreView) this.eventBus.emit('theatre:command', { type: 'exit' })
     if (this.controls) {
       this.controls.autoRotate = enabled && !this.motionQuery.matches
       this.controls.autoRotateSpeed = this.pluginContext?.config.camera?.rotateSpeed ?? .5

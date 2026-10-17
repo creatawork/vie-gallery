@@ -30,7 +30,7 @@ onMounted(load)
 
 <template>
   <section class="quick-styles" aria-label="选择展示风格">
-    <div class="style-heading"><div><span>02 / 观看编排</span><h2>给照片一个空间</h2></div><span class="style-autosave"><Icon name="check" :size="13" /> 选好即保存</span></div>
+    <div class="style-heading"><h2>观看编排</h2><span class="style-autosave"><Icon name="check" :size="13" /> 选好即保存</span></div>
     <p class="style-intro">先选择观看编排，再到展示设计中搭配照片质感与空间氛围。切换编排会保留已保存的氛围设置。</p>
     <div class="style-choices">
       <button v-for="style in CURATED_STYLES" :key="style.id" type="button" :class="style.id" :aria-pressed="loaded && selected === style.id" :disabled="!loaded || editor.saving.value || !canWrite" @click="choose(style.id)">

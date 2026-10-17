@@ -64,6 +64,7 @@ const isFullscreen = ref(false)
 const previewIframeRef = ref<HTMLIFrameElement | null>(null)
 const configSideRef = ref<HTMLElement | null>(null)
 const previewLive = ref(false)
+const previewCollapsed = ref(false)
 const embedTimedOut = ref(false)
 const previewLoadingSlow = ref(false)
 const previewToken = ref('')
@@ -76,10 +77,10 @@ const PREVIEW_TIMEOUT_MS = 30000
 const configTab = ref<'style' | 'composition' | 'atmosphere' | 'history'>('style')
 
 const CONFIG_TABS = [
-  { id: 'style' as const, label: '风格', number: '01' },
-  { id: 'composition' as const, label: '编排', number: '02' },
-  { id: 'atmosphere' as const, label: '氛围', number: '03' },
-  { id: 'history' as const, label: '版本', number: '↺' }
+  { id: 'style' as const, label: '风格' },
+  { id: 'composition' as const, label: '编排' },
+  { id: 'atmosphere' as const, label: '氛围' },
+  { id: 'history' as const, label: '版本' }
 ]
 const currentStyle = computed(() => VIEWER_PRESET_CARDS.find(item => item.name === config.value.presetName))
 const currentArrangement = computed(() => config.value.layout.params?.composition === 'curated'
@@ -723,9 +724,9 @@ onUnmounted(() => {
           <Icon name="layout" :size="15" />
           <span>我的空间</span>
         </RouterLink>
-        <button class="config-tab" type="button" @click="goBack">
+        <button class="config-tab" type="button" aria-label="展厅工作区" @click="goBack">
           <Icon name="gallery" :size="15" />
-          <span>展厅工作区</span>
+          <span class="config-back-label">展厅工作区</span><span class="config-back-short" aria-hidden="true">返回</span>
         </button>
         <span class="config-tab is-active">
           <Icon name="settings" :size="15" />
@@ -734,7 +735,7 @@ onUnmounted(() => {
       </nav>
 
       <div class="nav-actions">
-        <details v-if="canConfigWrite" class="config-more"><summary>更多操作 <Icon name="chevron-down" :size="12" /></summary><div class="config-more-menu">
+        <details v-if="canConfigWrite" class="config-more"><summary aria-label="更多操作">更多 <Icon name="chevron-down" :size="12" /></summary><div class="config-more-menu">
         <button v-if="canConfigWrite" class="btn ghost" type="button" @click="requestHeaderRollback">
           <Icon name="undo" :size="14" />
           <span>恢复旧版</span>
@@ -776,7 +777,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-else class="config-split">
+    <div v-else class="config-split" :class="{ 'is-preview-collapsed': previewCollapsed && !isFullscreen }">
       <aside ref="configSideRef" class="config-side">
         <div class="side-heading"><strong>你的照片，你的展览。</strong><span>从一种风格开始，让编排、光影与作品彼此呼应。</span></div>
         <div class="side-tabs" role="tablist" aria-label="配置分区" @keydown="handleTabKeydown">
@@ -793,7 +794,7 @@ onUnmounted(() => {
             :tabindex="configTab === tab.id ? 0 : -1"
             @click="configTab = tab.id"
           >
-            <span class="tab-number" aria-hidden="true">{{ tab.number }}</span>{{ tab.label }}
+            {{ tab.label }}
           </button>
         </div>
 
@@ -864,6 +865,7 @@ onUnmounted(() => {
           :key="previewKey"
           ref="previewIframeRef"
           class="live-preview"
+          id="studio-preview-frame"
           :class="{ 'is-ready': previewLive }"
           :src="previewUrl"
           title="展厅实时预览"
@@ -872,6 +874,7 @@ onUnmounted(() => {
 
         <div class="preview-tools">
           <span class="preview-mode"><span :class="{ 'is-live': previewLive }"></span>{{ previewLive ? '实时预览' : embedTimedOut || previewIssueError ? '预览未连接' : '预览连接中' }}</span>
+          <button class="glass-btn preview-collapse" type="button" :aria-expanded="!previewCollapsed" aria-controls="studio-preview-frame" @click="previewCollapsed = !previewCollapsed">{{ previewCollapsed ? '展开预览' : '收起预览' }}</button>
           <button v-if="previewLive" class="glass-btn" type="button" :disabled="!!issues.length" @click="refreshLivePreview(true)">重新应用</button>
           <button class="glass-btn" type="button" @click="openLivePreview">
             <Icon name="external" :size="14" />
@@ -1005,6 +1008,8 @@ onUnmounted(() => {
   color:var(--brand-deep);
   background:var(--mint-soft)
 }
+
+.config-back-short { display:none }
 
 .nav-actions {
   display:flex;
@@ -1216,12 +1221,12 @@ onUnmounted(() => {
 }
 
 .side-tab {
-  min-height:55px;
+  min-height:44px;
   padding:8px 4px;
   border-radius:6px;
   border:0;
   background:none;
-  font-size:12px;
+  font-size:14px;
   font-weight:600;
   color:var(--text-secondary)
 }
@@ -1381,6 +1386,8 @@ onUnmounted(() => {
   background:#131b18;
   box-shadow:0 10px 32px #17261d0a
 }
+
+.preview-collapse { display:none }
 
 .preview-caption {
   position:absolute; bottom:22px; left:22px; z-index:2; display:grid; gap:7px;
@@ -1638,8 +1645,13 @@ onUnmounted(() => {
 @media(max-width:560px) {
   .config-nav {
     padding:12px 16px;
-    gap:12px
+    gap:8px
   }
+  .config-nav>.brand { display:none }
+  .config-tabs>:not(button) { display:none }
+  .config-tabs .config-tab svg { display:none }
+  .config-back-label { display:none }
+  .config-back-short { display:inline }
   .brand {
     font-size:12px;
     gap:7px
@@ -1648,15 +1660,17 @@ onUnmounted(() => {
     gap:5px
   }
   .btn {
-    font-size:11px;
+    font-size:12px;
     padding:8px 10px;
-    min-height:38px
+    min-height:44px
   }
   .config-more summary {
     font-size:11px;
     padding:8px
   }
   .config-tabs {
+    order:0;
+    width:auto;
     justify-content:flex-start;
     gap:0
   }
@@ -1665,10 +1679,11 @@ onUnmounted(() => {
     padding:9px 8px
   }
   .config-caption {
-    padding:20px 16px;
+    padding:16px;
     flex-direction:column;
-    gap:12px
+    gap:8px
   }
+  .config-eyebrow,.side-heading { display:none }
   .config-caption h1 {
     font-size:23px
   }
@@ -1685,12 +1700,15 @@ onUnmounted(() => {
     gap:16px
   }
   .config-side {
-    padding:20px 16px
+    padding:12px 16px 20px
   }
+  .side-tabs { margin:0 0 12px; top:0; padding:4px 0; border:0 }
   .preview-pane {
-    height:320px;
-    min-height:300px
+    height:220px;
+    min-height:220px
   }
+  .is-preview-collapsed .preview-pane { height:56px; min-height:56px }
+  .is-preview-collapsed .live-preview,.is-preview-collapsed .preview-empty { visibility:hidden; pointer-events:none }
   .preview-tools {
     top:10px;
     left:10px;
@@ -1698,13 +1716,17 @@ onUnmounted(() => {
     gap:5px
   }
   .glass-btn {
-    font-size:10px;
-    min-height:34px;
+    font-size:12px;
+    min-height:36px;
     padding:7px 8px
   }
   .preview-mode {
-    font-size:10px
+    font-size:12px
   }
+  .preview-collapse { display:inline-flex; margin-left:auto }
+  .preview-tools .glass-btn:not(.preview-collapse) { display:none }
+  .is-full .preview-collapse { display:none }
+  .is-full .preview-tools .glass-btn:not(.preview-collapse) { display:inline-flex }
   .preview-caption { display:none }
   .preview-empty {
     padding:20px

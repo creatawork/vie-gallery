@@ -82,7 +82,7 @@ export function createTheatrePoses(ratios: number[], mode: TheatreMode, space: {
           160 - i * 250, w * .3, h * .52, Math.sin(angle) * -.2, Math.sin(angle) * .1)
         break
       }
-      case 'focus': place(i, 0, 0, 50, w * .65, h * .86); break
+      case 'focus': place(i, 0, 0, 0, w * .94, h * .94); break
       case 'diptych':
         place(i, (i - (n - 1) / 2) * w * .45, 0, i ? -20 : 30, w * .4, h * .8, 0, i ? -.018 : .018); break
       case 'triptych': {

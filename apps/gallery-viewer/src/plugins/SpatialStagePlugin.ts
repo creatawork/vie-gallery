@@ -185,7 +185,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
     const canvasHeight = this.canvas.clientHeight || 800
     const canvasWidth = this.canvas.clientWidth || canvasHeight * camera.aspect
     const preview = this.canvas.dataset?.presentation === 'preview'
-    const frame = stageFraming(canvasWidth, canvasHeight, camera.fov, (mobile ? 1040 : 930) - 180, this.immersive, preview)
+    const frame = stageFraming(canvasWidth, canvasHeight, camera.fov, (mobile ? 1040 : 930) - 180, this.immersive, preview, this.canvas.dataset?.hasMore ? 56 : 0)
     if (arrangement === 'book') {
       if (!this.book) this.book = new PaperBook(context.scene)
       const distance = mobile ? 1040 : 1120
@@ -195,7 +195,7 @@ export class SpatialStagePlugin implements ViewerPlugin {
       const fullH = 2 * Math.tan(camera.fov * Math.PI / 360) * (distance - 60)
       const canvasH = canvasHeight
       this.book.render(context.photos, this.cursor, fullH * camera.aspect * .94,
-        fullH * Math.max(.38, (canvasH - (preview ? 80 : this.immersive ? 100 : mobile ? 330 : 230)) / canvasH), params?.scale ?? 1)
+        fullH * Math.max(.38, (canvasH - (preview ? 80 : this.immersive ? 100 : mobile ? 330 : 230) - (!preview && !this.immersive && this.canvas.dataset?.hasMore ? 56 : 0)) / canvasH), params?.scale ?? 1)
       this.paths.visible = false
       this.reportIndex(count)
       return

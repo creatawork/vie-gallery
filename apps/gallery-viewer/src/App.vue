@@ -5,6 +5,7 @@ import { CURATED_STYLES, PHOTO_ARRANGEMENTS, applyCuratedStyle, resolveCuratedSt
 import { isTrustedPreviewMessage, normalizeViewerConfig, serializeViewerConfig, ViewerConfigValidationError } from '@vie/gallery-contracts'
 import { useViewerState } from './composables/useViewerState'
 import { applyViewerSeo, clearViewerSeo } from './lib/seo'
+import { photoLabel } from './lib/photoTitle'
 import type { EngineMetrics, ViewerEngine } from './core/ViewerEngine'
 import PasswordPrompt from './components/PasswordPrompt.vue'
 import EmptyState from './components/EmptyState.vue'
@@ -20,13 +21,34 @@ const theatreMotionChanged = () => {
 }
 const theatre = ref<TheatreState>({ active: false, mode: 'cloud', status: 'idle', elapsed: 0, offset: 0, indices: [], reducedMotion: theatreMotion.matches })
 const theatreBusy = ref(false)
+const showSpatialOptions = ref(false)
+const spatialOptionsButton = ref<HTMLButtonElement | null>(null)
+const photoFocus = computed(() => theatre.value.active && theatre.value.mode === 'focus' && theatre.value.status === 'idle')
 async function sendTheatreCommand(command: TheatreCommand) {
   const active = engine
   if (!active || theatreBusy.value) return
   theatreBusy.value = true
-  try { await active.theatreCommand(command) }
+  try {
+    await active.theatreCommand(command)
+    if (command.type === 'exit' && !showSpatialOptions.value) {
+      await nextTick()
+      spatialOptionsButton.value?.focus({ preventScroll: true })
+    }
+  }
   catch { if (engine === active) webglFallbackMessage.value = '照片编排暂未就绪，请重试。' }
   finally { theatreBusy.value = false }
+}
+
+async function closeSpatialOptions() {
+  showSpatialOptions.value = false
+  if (theatre.value.active && !photoFocus.value) await sendTheatreCommand({ type: 'exit' })
+  await nextTick()
+  spatialOptionsButton.value?.focus({ preventScroll: true })
+}
+
+async function switchExploration() {
+  await sendTheatreCommand(theatre.value.active ? { type: 'exit' } : { type: 'mode', mode: 'focus' })
+  await closeSpatialOptions()
 }
 
 
@@ -131,7 +153,9 @@ const showLightbox = ref(false)
 const lightboxIndex = ref(0)
 const stageIndex = ref(0)
 const stageActive = ref(false)
-const stagePhoto = computed(() => viewer.photos.value[stageIndex.value])
+const currentPhotoIndex = computed(() => photoFocus.value ? theatre.value.offset : stageIndex.value)
+const stagePhoto = computed(() => viewer.photos.value[currentPhotoIndex.value])
+const showPhotoDetails = computed(() => (stageActive.value && !theatre.value.active) || photoFocus.value)
 const sceneConfig = computed(() => viewer.viewerConfig.value)
 const sceneStyle = computed<CSSProperties>(() => ({
   '--scene-color': sceneConfig.value?.background?.color ?? '#111a17',
@@ -159,8 +183,9 @@ function handleImmersiveKey(event: KeyboardEvent) {
     stepStage(event.key === 'ArrowRight' ? 1 : -1)
   }
 }
-watch(viewMode, () => { if (isImmersive.value) void setImmersive(false) })
+watch(viewMode, () => { showSpatialOptions.value = false; if (isImmersive.value) void setImmersive(false) })
 function stepStage(direction: number) {
+  if (photoFocus.value) { void sendTheatreCommand({ type: 'step', direction }); return }
   engine?.getEventBus().emit('stage:step', direction)
   engine?.wakeUp()
 }
@@ -176,6 +201,7 @@ async function selectStyle(mode: CuratedStyle) {
     selectedStyle.value = mode
     viewer.setAppliedConfigSnapshot(engine.getRequestedConfig())
     stageActive.value = true
+    showSpatialOptions.value = false
     applyAutoTour(isAutoTour.value)
     engine.wakeUp(2500)
   } catch { webglFallbackMessage.value = '风格暂未切换成功，请再试一次。' }
@@ -457,6 +483,12 @@ async function init3DEngine() {
     // 绑定 3D 悬停与交互
     bindCanvasInteractions()
     activeEngine.start()
+    // A temporary viewing pose brings the first work forward without rewriting the
+    // published geometry, atmosphere or any creator preview. Exit restores that scene.
+    if (!creatorPreview && !stageActive.value && scenePhotoCount > 0) {
+      await activeEngine.theatreCommand({ type: 'mode', mode: 'focus' })
+      if (initVersion !== engineInitVersion) return
+    }
     engineReady.value = true
     performance.mark('viewer:interactive')
     notifyParentReady()
@@ -523,7 +555,7 @@ function bindCanvasInteractions() {
 
       hoveredPhoto.value = {
         index: hit.userData.index,
-        title: hit.userData.title
+        title: photoLabel(hit.userData.title, hit.userData.index)
       }
       hoveredScreenPos.value = { x: e.clientX, y: e.clientY }
     } else {
@@ -719,7 +751,7 @@ const hudState = computed(() => {
   return viewMode.value === '3d' && !engineReady.value ? 'pending' as const : 'ready' as const
 })
 const show3dHud = computed(() => viewMode.value === '3d' && hudState.value === 'ready')
-const showTheatreControls = computed(() => !isEmbedPreview() && show3dHud.value && (!stageActive.value || theatre.value.active))
+const showTheatreControls = computed(() => !isEmbedPreview() && show3dHud.value && (showSpatialOptions.value || (theatre.value.active && !photoFocus.value)))
 
 // 视角复位：回到默认机位，不打断配置中的自动漫游状态
 function resetView() {
@@ -831,25 +863,43 @@ function resetView() {
         </div>
       </header>
       <div v-if="viewMode === '3d'" class="exhibition-heading">
-        <span class="exhibition-eyebrow" aria-hidden="true">A PHOTOGRAPHIC EXHIBITION</span>
         <h1>{{ viewer.gallery.value?.title || '光影之间' }}</h1>
         <p>{{ viewer.total.value }} 件作品 · 摄影展览</p>
       </div>
-      <div v-if="show3dHud && stageActive && !theatre.active" class="stage-info" :inert="isImmersive || undefined">
-        <div class="stage-counter" aria-live="polite" aria-atomic="true"><span>{{ String(stageIndex + 1).padStart(2, '0') }}</span><i aria-hidden="true"></i><span>{{ String(viewer.photos.value.length).padStart(2, '0') }}</span></div>
-        <button type="button" class="stage-current" aria-label="查看当前作品" @click="openLightbox(stageIndex)"><span>{{ stagePhoto?.title || `作品 ${stageIndex + 1}` }}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button>
-        <p>{{ stageCaption }}</p>
+      <div v-if="show3dHud" class="spatial-controls" :inert="isImmersive || undefined" @keydown.esc.stop="closeSpatialOptions">
+      <div v-if="showPhotoDetails" class="stage-row">
+      <div class="stage-info">
+        <div class="stage-counter" aria-live="polite" aria-atomic="true"><span>{{ String(currentPhotoIndex + 1).padStart(2, '0') }}</span><span aria-hidden="true">/</span><span>{{ String(viewer.photos.value.length).padStart(2, '0') }}</span></div>
+        <button type="button" class="stage-current" aria-label="查看当前作品" @click="openLightbox(currentPhotoIndex)"><span>{{ photoLabel(stagePhoto?.title, currentPhotoIndex) }}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button>
+        <p>{{ photoFocus ? '逐张欣赏，点击作品查看大图' : stageCaption }}</p>
       </div>
-      <div v-if="show3dHud && stageActive && !theatre.active" class="stage-navigation" aria-label="逐张浏览" :inert="isImmersive || undefined">
+      <div class="stage-navigation" aria-label="逐张浏览">
         <button type="button" aria-label="上一张作品" :disabled="viewer.photos.value.length < 2" @click="stepStage(-1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h13"/></svg></button>
         <button type="button" aria-label="下一张作品" :disabled="viewer.photos.value.length < 2" @click="stepStage(1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6M3 12h13"/></svg></button>
       </div>
-      <nav v-if="show3dHud && !theatre.active" class="composition-dock" :class="{ 'with-theatre-entry': showTheatreControls }" aria-label="展示风格" :inert="isImmersive || undefined">
+      </div>
+      <div v-if="!theatre.active || photoFocus" class="spatial-style-row">
+      <nav class="composition-dock" aria-label="展示风格">
         <button v-for="style in CURATED_STYLES" :key="style.id" type="button" :aria-pressed="selectedStyle === style.id" :disabled="styleBusy" @click="selectStyle(style.id)">
           <svg viewBox="0 0 44 24" aria-hidden="true"><path v-if="style.id === 'helix'" d="M4 19C3 1 39 1 39 8S4 24 4 16S38 9 40 4"/><ellipse v-else-if="style.id === 'carousel'" cx="22" cy="12" rx="18" ry="8"/><path v-else-if="style.id === 'book'" d="M22 6Q12 1 3 5v16q10-4 19 0 9-4 19 0V5q-9-4-19 1v15M22 6q10-7 14-4v14q-8 0-14 5"/><path v-else-if="style.id === 'tunnel'" d="m2 2 40 20M2 22 42 2M10 4h24v16H10zM17 8h10v8H17z"/><path v-else d="M2 12Q12 -2 22 12T42 12M2 20Q12 6 22 20T42 20"/></svg>
           {{ style.label }}
         </button>
       </nav>
+      <button ref="spatialOptionsButton" type="button" class="spatial-options-toggle" aria-label="更多观看方式" :aria-expanded="showSpatialOptions" aria-controls="spatial-options" @click="showSpatialOptions = !showSpatialOptions"><Icon name="grid" :size="18" /><span>更多</span></button>
+      </div>
+      <div v-if="showTheatreControls" id="spatial-options" class="spatial-options">
+        <div class="spatial-options-heading">
+          <button v-if="theatre.active || !stageActive" type="button" class="spatial-free-view" :disabled="theatreBusy" @click="switchExploration">{{ stageActive ? '返回展厅' : theatre.active ? '自由漫游' : '逐张欣赏' }}</button>
+          <span v-else>照片编排</span>
+          <button type="button" class="spatial-options-close" aria-label="收起观看选项" :disabled="theatreBusy" @click="closeSpatialOptions"><Icon name="x" :size="18" /></button>
+        </div>
+        <PhotoTheatreControls :state="theatre" :total="viewer.photos.value.length" :busy="theatreBusy" @command="sendTheatreCommand" />
+      </div>
+        <p v-if="viewer.error.value" class="pagination-error" role="alert">{{ viewer.error.value }}</p>
+        <button v-if="viewer.hasMore.value" class="load-more-floating" type="button" :disabled="viewer.loadingMore.value" @click="viewer.loadMore">
+          {{ viewer.loadingMore.value ? '正在加载…' : viewer.error.value ? '重试加载照片' : `继续浏览 · 还有 ${viewer.total.value - viewer.photos.value.length} 张` }}
+        </button>
+      </div>
       <template v-if="isImmersive">
         <button ref="immersiveExit" type="button" class="immersive-exit" aria-label="退出沉浸欣赏" @click="setImmersive(false)"><Icon name="x" :size="16" /><span>退出沉浸</span></button>
         <p class="immersive-help">{{ String(stageIndex + 1).padStart(2, '0') }} / {{ String(viewer.photos.value.length).padStart(2, '0') }}<span>拖动或使用方向键，慢慢欣赏</span></p>
@@ -900,22 +950,11 @@ function resetView() {
 
       <!-- Mode 1: 3D Spatial WebGL Canvas -->
       <div v-show="viewMode === '3d'" class="canvas-container" :class="{ 'has-theatre-controls': showTheatreControls, 'is-theatre-active': theatre.active }">
-        <canvas ref="canvasRef" class="webgl-canvas" tabindex="0" :aria-label="stageActive ? '照片空间，拖动、滚轮或左右方向键切换作品，Enter 查看大图。' : '照片空间，可拖动探索、滚动缩放。也可切换平面展览，用键盘逐张浏览照片。'"></canvas>
+        <canvas ref="canvasRef" class="webgl-canvas" tabindex="0" :data-has-more="viewer.hasMore.value || undefined" :aria-label="showPhotoDetails ? '照片空间，拖动、滚轮或左右方向键切换作品，Enter 查看大图。' : '照片空间，可拖动探索、滚动缩放。也可切换平面展览，用键盘逐张浏览照片。'"></canvas>
         <div v-if="!engineReady" class="scene-loading" role="status"><span class="scene-loading-line" aria-hidden="true"></span><span>正在布置展厅…</span><button type="button" @click="viewMode = '2d'">先看平面展览</button></div>
         <div v-else-if="!theatre.active" class="spatial-tips">
-          <p><span class="desktop-tip">{{ stageActive ? '拖动 / 方向键切换' : '拖动探索 · 滚动缩放' }}</span><span class="touch-tip">左右滑动浏览</span><span class="tip-separator" aria-hidden="true">·</span>点击作品查看大图</p>
+          <p><span class="desktop-tip">{{ showPhotoDetails ? '拖动 / 方向键切换' : '拖动探索 · 滚动缩放' }}</span><span class="touch-tip">左右滑动浏览</span><span class="tip-separator" aria-hidden="true">·</span>点击作品查看大图</p>
         </div>
-        <PhotoTheatreControls v-if="showTheatreControls" :state="theatre" :total="viewer.photos.value.length" :busy="theatreBusy" @command="sendTheatreCommand" />
-        <p v-if="viewer.error.value" class="pagination-error spatial-error" role="alert">{{ viewer.error.value }}</p>
-        <button
-          v-if="viewer.hasMore.value"
-          class="load-more-floating"
-          type="button"
-          :disabled="viewer.loadingMore.value"
-          @click="viewer.loadMore"
-        >
-          {{ viewer.loadingMore.value ? '正在加载…' : viewer.error.value ? '重试加载照片' : `继续浏览 · 还有 ${viewer.total.value - viewer.photos.value.length} 张` }}
-        </button>
       </div>
 
       <!-- Mode 2: 2D Editorial Curated Wall -->
