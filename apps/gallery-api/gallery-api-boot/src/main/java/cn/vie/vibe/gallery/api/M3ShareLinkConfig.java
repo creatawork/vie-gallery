@@ -40,7 +40,8 @@ public class M3ShareLinkConfig {
             TokenGenerator tokenGenerator,
             @Value("${gallery.public.base-url:http://localhost:5174}") String configuredPublicBaseUrl,
             SharePosterService sharePosterService,
-            WorkspaceAuthorizationPolicy authorization
+            WorkspaceAuthorizationPolicy authorization,
+            PhotoAssetVariantRepository posterVariants
     ) {
         return new ShareLinkFacade(
                 shareLinkRepository,
@@ -51,7 +52,8 @@ public class M3ShareLinkConfig {
                 tokenGenerator,
                 normalizePublicBaseUrl(configuredPublicBaseUrl),
                 sharePosterService,
-                authorization
+                authorization,
+                posterVariants
         );
     }
 

@@ -5,5 +5,13 @@ package cn.vie.vibe.gallery.application;
  */
 public record GenerateSharePosterCommand(
         String galleryId,
-        String template  // MINIMAL, ELEGANT, VIBRANT, CLASSIC, MODERN
-) {}
+        String template,
+        String format,
+        String title,
+        String description,
+        Integer focalPoint
+) {
+    public GenerateSharePosterCommand(String galleryId, String template) {
+        this(galleryId, template, null, null, null, null);
+    }
+}

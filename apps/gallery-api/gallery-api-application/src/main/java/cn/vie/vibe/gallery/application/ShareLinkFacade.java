@@ -4,6 +4,7 @@ import cn.vie.vibe.gallery.domain.*;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -20,6 +21,7 @@ public class ShareLinkFacade {
     private final WorkspaceAuthorizationPolicy authorization;
     private final ShortCodeGenerator shortCodeGenerator = new ShortCodeGenerator();
     private final SharePosterService sharePosterService;
+    private final PhotoAssetVariantRepository posterVariants;
 
     public ShareLinkFacade(
             ShareLinkRepository shareLinkRepository,
@@ -47,6 +49,22 @@ public class ShareLinkFacade {
             SharePosterService sharePosterService,
             WorkspaceAuthorizationPolicy authorization
     ) {
+        this(shareLinkRepository, galleryRepository, photoRepository, storageObjectRepository, objectStoragePort,
+                tokenGenerator, publicBaseUrl, sharePosterService, authorization, null);
+    }
+
+    public ShareLinkFacade(
+            ShareLinkRepository shareLinkRepository,
+            GalleryRepository galleryRepository,
+            PhotoRepository photoRepository,
+            StorageObjectRepository storageObjectRepository,
+            ObjectStoragePort objectStoragePort,
+            TokenGenerator tokenGenerator,
+            String publicBaseUrl,
+            SharePosterService sharePosterService,
+            WorkspaceAuthorizationPolicy authorization,
+            PhotoAssetVariantRepository posterVariants
+    ) {
         this.shareLinkRepository = shareLinkRepository;
         this.galleryRepository = galleryRepository;
         this.photoRepository = photoRepository;
@@ -56,6 +74,7 @@ public class ShareLinkFacade {
         this.publicBaseUrl = publicBaseUrl;
         this.sharePosterService = sharePosterService;
         this.authorization = authorization;
+        this.posterVariants = posterVariants;
     }
 
     /**
@@ -209,6 +228,33 @@ public class ShareLinkFacade {
      * 生成分享海报
      */
     public GenerateSharePosterResult generateSharePoster(GenerateSharePosterCommand command) {
+        PreparedPoster poster = preparePoster(command);
+        PosterAccess access = posterAccess(poster.gallery());
+        String url = sharePosterService.generatePoster(poster.info(), access.url(), poster.template(),
+                poster.format(), poster.focalPoint());
+        if (access.link() != null) shareLinkRepository.save(access.link());
+        return new GenerateSharePosterResult(url, poster.template().name());
+    }
+
+    /** Previewing has no storage or sharing side effects. Private QR access is minted only on export. */
+    public byte[] previewSharePoster(GenerateSharePosterCommand command) {
+        PreparedPoster poster = preparePoster(command);
+        String url = poster.gallery().visibility() == GalleryVisibility.PRIVATE ? null : galleryUrl(poster.gallery());
+        return sharePosterService.renderPosterPng(poster.info(), url, poster.template(),
+                poster.format(), poster.focalPoint(), true);
+    }
+
+    public byte[] downloadSharePoster(GenerateSharePosterCommand command) {
+        PreparedPoster poster = preparePoster(command);
+        PosterAccess access = posterAccess(poster.gallery());
+        byte[] png = sharePosterService.renderPosterPng(poster.info(), access.url(), poster.template(),
+                poster.format(), poster.focalPoint(), false);
+        // A failed render must not leave an invisible share link behind.
+        if (access.link() != null) shareLinkRepository.save(access.link());
+        return png;
+    }
+
+    private PreparedPoster preparePoster(GenerateSharePosterCommand command) {
         TenantContext context = authorization.requireOwner();
         UUID galleryId = UUID.fromString(command.galleryId());
 
@@ -224,19 +270,20 @@ public class ShareLinkFacade {
         if (gallery.coverPhotoId() != null) {
             Photo coverPhoto = photoRepository.findById(gallery.coverPhotoId())
                     .orElse(null);
-            if (coverPhoto != null && coverPhoto.status() == PhotoStatus.READY) {
-                // 使用缩略图URL（需要从StorageObject获取）
-                coverUrl = buildPhotoUrl(coverPhoto);
+            if (coverPhoto != null && coverPhoto.tenantId().equals(context.tenantId())
+                    && coverPhoto.galleryId().equals(galleryId) && coverPhoto.status() == PhotoStatus.READY) {
+                coverUrl = buildPosterCoverUrl(coverPhoto);
             }
         }
 
         // 如果没有封面，使用第一张就绪的照片
         if (coverUrl == null) {
-            List<Photo> photos = photoRepository.findByGalleryIdWithPagination(galleryId, 0, 10);
+            List<Photo> photos = photoRepository.findByGallery(context.tenantId(), galleryId);
             coverUrl = photos.stream()
-                    .filter(p -> p.status() == PhotoStatus.READY)
+                    .filter(p -> p.tenantId().equals(context.tenantId()) && p.status() == PhotoStatus.READY)
+                    .map(this::buildPosterCoverUrl)
+                    .filter(java.util.Objects::nonNull)
                     .findFirst()
-                    .map(this::buildPhotoUrl)
                     .orElse(null);
         }
 
@@ -245,39 +292,70 @@ public class ShareLinkFacade {
         }
 
         // 统计照片数量
-        int photoCount = photoRepository.countByGalleryId(galleryId);
+        int photoCount = photoRepository.countPublicReadyByGalleryId(context.tenantId(), galleryId);
 
-        // 构建分享URL
-        String shareUrl = String.format("%s/g/%s", publicBaseUrl, gallery.slug());
-
-        // 生成海报
+        SharePosterService.PosterTemplate template;
+        SharePosterService.PosterFormat format;
+        try {
+            template = command.template() == null ? SharePosterService.PosterTemplate.MINIMAL
+                    : SharePosterService.PosterTemplate.valueOf(command.template().toUpperCase(Locale.ROOT));
+            format = command.format() == null ? SharePosterService.PosterFormat.PORTRAIT
+                    : SharePosterService.PosterFormat.valueOf(command.format().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new DomainException("INVALID_POSTER_OPTIONS", "请选择有效的海报模板和尺寸。");
+        }
+        boolean defaultTitle = command.title() == null || command.title().isBlank();
+        String title = defaultTitle ? gallery.name() : command.title().strip();
+        if (defaultTitle && title.codePointCount(0, title.length()) > 80) {
+            title = title.substring(0, title.offsetByCodePoints(0, 80));
+        }
+        String description = command.description() == null ? "" : command.description().strip();
+        int focalPoint = command.focalPoint() == null ? 50 : command.focalPoint();
+        if (title.codePointCount(0, title.length()) > 80 || description.codePointCount(0, description.length()) > 160
+                || focalPoint < 0 || focalPoint > 100) {
+            throw new DomainException("INVALID_POSTER_OPTIONS", "标题最多80字，寄语最多160字，画面位置须在0至100之间。");
+        }
         SharePosterService.GalleryInfo galleryInfo = new SharePosterService.GalleryInfo(
                 gallery.id().toString(),
-                gallery.name(),
-                null, // 暂时没有描述字段
+                title,
+                description,
                 coverUrl,
                 photoCount
         );
 
-        SharePosterService.PosterTemplate template = command.template() != null
-                ? SharePosterService.PosterTemplate.valueOf(command.template().toUpperCase())
-                : SharePosterService.PosterTemplate.MINIMAL;
-
-        String posterUrl = sharePosterService.generatePoster(galleryInfo, shareUrl, template);
-
-        return new GenerateSharePosterResult(posterUrl, template.name());
+        return new PreparedPoster(gallery, galleryInfo, template, format, focalPoint);
     }
 
-    private String buildPhotoUrl(Photo photo) {
-        // 从 StorageObject 获取真实的图片 URL
+    private String galleryUrl(Gallery gallery) {
+        return String.format("%s/g/%s", publicBaseUrl, gallery.slug());
+    }
+
+    private PosterAccess posterAccess(Gallery gallery) {
+        if (gallery.visibility() != GalleryVisibility.PRIVATE) return new PosterAccess(galleryUrl(gallery), null);
+        String token = tokenGenerator.generateToken();
+        Instant now = Instant.now();
+        ShareLink link = new ShareLink(UUID.randomUUID(), gallery.id(), tokenGenerator.hashToken(token), null, token,
+                now.plusSeconds(30L * 24 * 60 * 60), null, null, now, now);
+        return new PosterAccess(galleryUrl(gallery) + "?t=" + token, link);
+    }
+
+    private String buildPosterCoverUrl(Photo photo) {
+        if (posterVariants != null) {
+            var medium = posterVariants.findReadyByPhotoAndKind(photo.tenantId(), photo.id(), VariantKind.MEDIUM);
+            if (medium.isPresent()) {
+                return objectStoragePort.createReadUrl(medium.get().objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
+            }
+        }
         return storageObjectRepository.findById(photo.tenantId(), photo.storageObjectId())
                 .filter(object -> object.status() == StorageObjectStatus.READY)
-                .map(object -> {
-                    String key = object.thumbnailKey() != null ? object.thumbnailKey() : object.objectKey();
-                    return objectStoragePort.createReadUrl(key, ObjectStoragePort.DEFAULT_READ_URL_TTL).toString();
-                })
+                .map(object -> objectStoragePort.createReadUrl(object.objectKey(), ObjectStoragePort.DEFAULT_READ_URL_TTL).toString())
                 .orElse(null);
     }
+
+    private record PreparedPoster(Gallery gallery, SharePosterService.GalleryInfo info,
+                                  SharePosterService.PosterTemplate template, SharePosterService.PosterFormat format,
+                                  int focalPoint) {}
+    private record PosterAccess(String url, ShareLink link) {}
 
     /**
      * 为已有分享链接生成短链接（幂等，可重复调用）

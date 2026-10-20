@@ -70,6 +70,8 @@ docs/                  # 当前规划、测试证据和历史归档
 
 ## 当前 API 概览
 
+分享海报的使用方式、访问规则和接口见 [海报创作说明](docs/share-poster-studio.md)。
+
 管理端：
 
 ```text

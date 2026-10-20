@@ -10,6 +10,7 @@ import cn.vie.vibe.gallery.domain.PhotoStatus;
 import cn.vie.vibe.gallery.domain.ShareLink;
 import cn.vie.vibe.gallery.domain.ShareLinkStatus;
 import cn.vie.vibe.gallery.domain.StorageObject;
+import cn.vie.vibe.gallery.domain.StorageObjectStatus;
 import cn.vie.vibe.gallery.domain.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,78 @@ class ShareLinkFacadeTest {
     @AfterEach
     void clearTenantContext() {
         TenantContextHolder.clear();
+    }
+
+    @Test
+    void privatePosterPreviewDoesNotCreateAccessAndDownloadCreatesThirtyDayRevocableAccess() {
+        UUID tenant = UUID.randomUUID();
+        Gallery gallery = gallery(tenant, "private-poster");
+        Fixture fixture = new Fixture(tenant, gallery);
+        fixture.addPosterCover(gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenant, MembershipRole.OWNER));
+        var command = new GenerateSharePosterCommand(gallery.id().toString(), "ELEGANT", "SQUARE", "自定标题", "自定寄语", 20);
+        fixture.facade.previewSharePoster(command);
+        assertEquals(0, fixture.links.values.size());
+        assertEquals(null, fixture.posterService.lastUrl);
+        assertTrue(fixture.posterService.preview);
+        assertEquals("自定标题", fixture.posterService.lastInfo.title());
+        assertEquals("自定寄语", fixture.posterService.lastInfo.description());
+        assertEquals(SharePosterService.PosterFormat.SQUARE, fixture.posterService.lastFormat);
+        assertEquals(20, fixture.posterService.lastFocalPoint);
+        assertTrue(fixture.posterService.lastInfo.coverUrl().contains("original.jpg"));
+        fixture.facade.downloadSharePoster(command);
+        assertFalse(fixture.posterService.preview);
+        assertEquals("https://viewer.test/g/private-poster?t=raw-token", fixture.posterService.lastUrl);
+        assertEquals(1, fixture.links.values.size());
+        ShareLink link = fixture.links.values.values().iterator().next();
+        assertEquals(30L * 86400, java.time.Duration.between(link.getCreatedAt(), link.getExpiresAt()).getSeconds());
+        fixture.facade.revokeShareLink(link.getId().toString());
+        assertEquals(ShareLinkStatus.REVOKED, fixture.links.values.get(link.getId()).getStatus(Instant.now()));
+    }
+
+    @Test
+    void publicAndPasswordPostersPreserveGalleryAccessMode() {
+        for (GalleryVisibility visibility : List.of(GalleryVisibility.PUBLIC, GalleryVisibility.PASSWORD)) {
+            UUID tenant = UUID.randomUUID();
+            Gallery gallery = new Gallery(UUID.randomUUID(), tenant, "poster", "展览".repeat(80), visibility,
+                    null, null, false, CREATED_AT, GalleryStatus.PUBLISHED, CREATED_AT);
+            Fixture fixture = new Fixture(tenant, gallery);
+            fixture.addPosterCover(gallery);
+            TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenant, MembershipRole.OWNER));
+            fixture.facade.downloadSharePoster(new GenerateSharePosterCommand(gallery.id().toString(), "MINIMAL"));
+            assertEquals("https://viewer.test/g/poster", fixture.posterService.lastUrl);
+            assertEquals(80, fixture.posterService.lastInfo.title().length());
+            assertTrue(fixture.links.values.isEmpty());
+        }
+    }
+
+    @Test
+    void failedPosterRenderDoesNotPersistPrivateLinkAndInvalidOptionsAreRejected() {
+        UUID tenant = UUID.randomUUID();
+        Gallery gallery = gallery(tenant, "failed-poster");
+        Fixture fixture = new Fixture(tenant, gallery);
+        fixture.addPosterCover(gallery);
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenant, MembershipRole.OWNER));
+        fixture.posterService.failRender = true;
+        assertThrows(IllegalStateException.class, () -> fixture.facade.downloadSharePoster(new GenerateSharePosterCommand(gallery.id().toString(), "CLASSIC")));
+        assertTrue(fixture.links.values.isEmpty());
+        assertCode("INVALID_POSTER_OPTIONS", () -> fixture.facade.previewSharePoster(new GenerateSharePosterCommand(gallery.id().toString(), "unknown")));
+        assertCode("INVALID_POSTER_OPTIONS", () -> fixture.facade.previewSharePoster(new GenerateSharePosterCommand(gallery.id().toString(), "MINIMAL", "SQUARE", "字".repeat(81), "", 50)));
+        assertCode("INVALID_POSTER_OPTIONS", () -> fixture.facade.previewSharePoster(new GenerateSharePosterCommand(gallery.id().toString(), "MINIMAL", "SQUARE", "标题", "寄语", 101)));
+    }
+
+    @Test
+    void posterEndpointsRequireOwnerAndTheCorrectTenant() {
+        UUID tenant = UUID.randomUUID();
+        Gallery gallery = gallery(tenant, "poster-authorization");
+        Fixture fixture = new Fixture(tenant, gallery);
+        var command = new GenerateSharePosterCommand(gallery.id().toString(), "MINIMAL");
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), tenant, MembershipRole.EDITOR));
+        assertCode(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, () -> fixture.facade.previewSharePoster(command));
+        assertCode(WorkspaceAuthorizationPolicy.ROLE_REQUIRED_CODE, () -> fixture.facade.downloadSharePoster(command));
+        TenantContextHolder.set(new TenantContext(UUID.randomUUID(), UUID.randomUUID(), MembershipRole.OWNER));
+        assertCode("GALLERY_NOT_FOUND", () -> fixture.facade.previewSharePoster(command));
+        assertCode("GALLERY_NOT_FOUND", () -> fixture.facade.downloadSharePoster(command));
     }
 
     @Test
@@ -337,6 +410,15 @@ class ShareLinkFacadeTest {
             galleries.values.put(gallery.id(), gallery);
         }
 
+        void addPosterCover(Gallery gallery) {
+            UUID objectId = UUID.randomUUID();
+            Photo photo = new Photo(UUID.randomUUID(), gallery.tenantId(), gallery.id(), objectId,
+                    "Cover", 0, true, PhotoStatus.READY, CREATED_AT);
+            photos.values.add(photo);
+            storageObjects.values.put(objectId, new StorageObject(objectId, gallery.tenantId(), "test", "original.jpg",
+                    "tiny-thumbnail.jpg", "image/jpeg", 1000, 1600, 1000, null, StorageObjectStatus.READY, CREATED_AT));
+        }
+
         ShareLink addLink(Gallery gallery, String rawToken, Instant expiresAt, Instant revokedAt) {
             UUID id = UUID.randomUUID();
             ShareLink link = new ShareLink(id, gallery.id(), tokens.hashToken(rawToken), null, rawToken,
@@ -461,8 +543,9 @@ class ShareLinkFacadeTest {
     }
 
     private static final class PhotoStore implements PhotoRepository {
+        final List<Photo> values = new ArrayList<>();
         public Photo save(Photo photo) { return photo; }
-        public List<Photo> findByGallery(UUID tenantId, UUID galleryId) { return List.of(); }
+        public List<Photo> findByGallery(UUID tenantId, UUID galleryId) { return values.stream().filter(p -> p.tenantId().equals(tenantId) && p.galleryId().equals(galleryId)).toList(); }
         public Optional<Photo> findById(UUID tenantId, UUID photoId) { return Optional.empty(); }
         public Optional<Photo> findById(UUID photoId) { return Optional.empty(); }
         public int countByGalleryId(UUID galleryId) { return 0; }
@@ -477,6 +560,12 @@ class ShareLinkFacadeTest {
     }
 
     private static final class NoOpSharePosterService extends SharePosterService {
+        String lastUrl;
+        GalleryInfo lastInfo;
+        PosterFormat lastFormat;
+        int lastFocalPoint;
+        boolean preview;
+        boolean failRender;
         public NoOpSharePosterService() {
             super(null, null);
         }
@@ -485,14 +574,21 @@ class ShareLinkFacadeTest {
             return "https://test.example.com/poster.png";
         }
         @Override
+        public byte[] renderPosterPng(GalleryInfo gallery, String url, PosterTemplate template, PosterFormat format, int focalPoint, boolean preview) {
+            if (failRender) throw new IllegalStateException("Rendering failed");
+            lastUrl = url; lastInfo = gallery; lastFormat = format; lastFocalPoint = focalPoint; this.preview = preview;
+            return new byte[]{1, 2, 3};
+        }
+        @Override
         public byte[] generateQrCodePng(String content) {
             return new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
         }
     }
 
     private static final class StorageObjectStore implements StorageObjectRepository {
+        final Map<UUID, StorageObject> values = new HashMap<>();
         public StorageObject save(StorageObject object) { return object; }
-        public Optional<StorageObject> findById(UUID tenantId, UUID objectId) { return Optional.empty(); }
+        public Optional<StorageObject> findById(UUID tenantId, UUID objectId) { return Optional.ofNullable(values.get(objectId)).filter(o -> o.tenantId().equals(tenantId)); }
         public int markReady(UUID tenantId, UUID objectId, String thumbnailKey, Integer width, Integer height) { return 0; }
         public int markFailed(UUID tenantId, UUID objectId) { return 0; }
         public int softDelete(UUID tenantId, UUID objectId) { return 0; }

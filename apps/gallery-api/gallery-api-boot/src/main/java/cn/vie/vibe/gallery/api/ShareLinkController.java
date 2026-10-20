@@ -125,24 +125,29 @@ public class ShareLinkController {
             @PathVariable("galleryId") String galleryId,
             @Valid @RequestBody(required = false) GenerateSharePosterRequest request
     ) {
-        try {
-            String template = request != null && request.template() != null
-                    ? request.template()
-                    : "MINIMAL";
+        GenerateSharePosterResult result = shareLinkFacade.generateSharePoster(posterCommand(galleryId, request));
+        return new GenerateSharePosterResponse(result.posterUrl(), result.template());
+    }
 
-            GenerateSharePosterCommand command = new GenerateSharePosterCommand(galleryId, template);
-            GenerateSharePosterResult result = shareLinkFacade.generateSharePoster(command);
+    @PostMapping(value = "/api/galleries/{galleryId}/share-poster/preview", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> previewSharePoster(@PathVariable("galleryId") String galleryId,
+            @RequestBody(required = false) GenerateSharePosterRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.IMAGE_PNG)
+                .body(shareLinkFacade.previewSharePoster(posterCommand(galleryId, request)));
+    }
 
-            return new GenerateSharePosterResponse(
-                    result.posterUrl(),
-                    result.template()
-            );
-        } catch (Exception e) {
-            // 记录详细错误日志
-            System.err.println("Failed to generate poster for gallery " + galleryId + ": " + e.getMessage());
-            e.printStackTrace();
-            throw e;
-        }
+    @PostMapping(value = "/api/galleries/{galleryId}/share-poster/download", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> downloadSharePoster(@PathVariable("galleryId") String galleryId,
+            @RequestBody(required = false) GenerateSharePosterRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.IMAGE_PNG)
+                .header("Content-Disposition", "attachment; filename=gallery-poster.png")
+                .body(shareLinkFacade.downloadSharePoster(posterCommand(galleryId, request)));
+    }
+
+    private GenerateSharePosterCommand posterCommand(String galleryId, GenerateSharePosterRequest request) {
+        return request == null ? new GenerateSharePosterCommand(galleryId, null)
+                : new GenerateSharePosterCommand(galleryId, request.template(), request.format(),
+                    request.title(), request.description(), request.focalPoint());
     }
 
     // Request & Response records
@@ -168,7 +173,8 @@ public class ShareLinkController {
             Instant createdAt
     ) {}
 
-    public record GenerateSharePosterRequest(String template) {}
+    public record GenerateSharePosterRequest(String template, String format, String title,
+                                              String description, Integer focalPoint) {}
 
     public record GenerateSharePosterResponse(
             String posterUrl,

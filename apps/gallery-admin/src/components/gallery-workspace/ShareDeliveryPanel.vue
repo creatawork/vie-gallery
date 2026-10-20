@@ -4,7 +4,7 @@ import type { Gallery, ShareLink } from '@vie/gallery-contracts'
 import Icon from '../Icon.vue'
 import ConfirmModal from '../ConfirmModal.vue'
 import ShareButtons from '../ShareButtons.vue'
-import { apiFetch } from '../../api'
+import PosterStudio from './PosterStudio.vue'
 import {
   useShareDelivery,
   formatRemaining,
@@ -59,10 +59,14 @@ const copied = ref(false)
 const linkToRevoke = ref<ShareLink | null>(null)
 const switchingVisibility = ref(false)
 
-// Poster generation state
-const generatingPoster = ref(false)
-const posterTemplate = ref<string>('MINIMAL')
-const generatedPosterUrl = ref<string | null>(null)
+const activeShareTab = ref<'link' | 'poster'>('link')
+function handleShareTabKey(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  activeShareTab.value = event.key === 'Home' ? 'link' : event.key === 'End' ? 'poster'
+    : activeShareTab.value === 'link' ? 'poster' : 'link'
+  document.getElementById(activeShareTab.value === 'link' ? 'share-link-tab' : 'share-poster-tab')?.focus()
+}
 const generatingShortFor = ref<string | null>(null)
 
 // 列表中展开分享按钮的链接（存当前可分享的短链接）
@@ -129,7 +133,7 @@ watch(() => props.show, (isShown) => {
     editingPassword.value = props.gallery.visibility === 'PASSWORD' && props.gallery.status !== 'PUBLISHED'
     newPasswordInput.value = ''
     copied.value = false
-    generatedPosterUrl.value = null
+    activeShareTab.value = 'link'
     sharingLink.value = null
     void loadShareLinks()
   }
@@ -142,30 +146,6 @@ async function handleGenerateLink() {
     toast.success('分享链接已生成！')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '生成分享链接失败。')
-  }
-}
-
-async function handleGeneratePoster() {
-  if (!props.gallery || generatingPoster.value) return
-  generatingPoster.value = true
-  try {
-    const res = await apiFetch(`/api/galleries/${props.gallery.id}/share-poster`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template: posterTemplate.value })
-    })
-    if (!res.ok) {
-      const errorText = await res.text()
-      throw new Error(errorText || '生成海报失败')
-    }
-    const data = await res.json() as { posterUrl: string; template: string }
-    generatedPosterUrl.value = data.posterUrl
-    toast.success('分享海报已生成！')
-  } catch (err) {
-    console.error('Poster generation error:', err)
-    toast.error(err instanceof Error ? err.message : '生成分享海报失败。')
-  } finally {
-    generatingPoster.value = false
   }
 }
 
@@ -238,7 +218,7 @@ function shareStatusLabel(status: string) {
 <template>
   <Transition name="modal-fade">
     <div v-if="show" class="modal-backdrop" @click.self="$emit('close')">
-      <div ref="modalRoot" class="share-modal-card" role="dialog" aria-modal="true" aria-labelledby="share-delivery-title" tabindex="-1">
+      <div ref="modalRoot" class="share-modal-card" :class="{ 'is-poster-studio': activeShareTab === 'poster' }" role="dialog" aria-modal="true" aria-labelledby="share-delivery-title" tabindex="-1">
         <!-- Header -->
         <header class="modal-header">
           <div class="header-title">
@@ -255,7 +235,22 @@ function shareStatusLabel(status: string) {
           </button>
         </header>
 
-        <div class="modal-body">
+        <div class="share-tabs" role="tablist" aria-label="分享方式">
+          <button id="share-link-tab" type="button" role="tab" :aria-selected="activeShareTab === 'link'" aria-controls="share-link-panel"
+            :tabindex="activeShareTab === 'link' ? 0 : -1" @click="activeShareTab = 'link'"
+            @keydown="handleShareTabKey">
+            <Icon name="link" :size="15" />链接分享
+          </button>
+          <button id="share-poster-tab" type="button" role="tab" :aria-selected="activeShareTab === 'poster'" aria-controls="share-poster-panel"
+            :tabindex="activeShareTab === 'poster' ? 0 : -1" @click="activeShareTab = 'poster'"
+            @keydown="handleShareTabKey">
+            <Icon name="image" :size="15" />海报创作
+          </button>
+        </div>
+        <div id="share-poster-panel" v-show="activeShareTab === 'poster'" role="tabpanel" aria-labelledby="share-poster-tab" class="modal-body">
+          <PosterStudio v-if="show && gallery" :gallery="gallery" :active="activeShareTab === 'poster'" :can-create="isOwner === true" @downloaded="loadShareLinks" />
+        </div>
+        <div id="share-link-panel" v-show="activeShareTab === 'link'" role="tabpanel" aria-labelledby="share-link-tab" class="modal-body">
           <section v-if="publicUrl" class="direct-share">
             <label for="public-gallery-link">展厅链接</label>
             <input id="public-gallery-link" :value="publicUrl" readonly @focus="($event.target as HTMLInputElement).select()" />
@@ -397,64 +392,6 @@ function shareStatusLabel(status: string) {
             </p>
           </section>
 
-          <!-- Generate Share Poster -->
-          <section class="delivery-section">
-            <h4 class="section-title">
-              <Icon name="image" :size="14" />
-              <span>生成分享海报</span>
-            </h4>
-            <div class="create-link-row">
-              <div class="expiry-select-group">
-                <label for="poster-template-select">海报风格：</label>
-                <select id="poster-template-select" v-model="posterTemplate" class="expiry-select">
-                  <option value="MINIMAL">极简风格</option>
-                  <option value="ELEGANT">优雅风格</option>
-                  <option value="VIBRANT">活力风格</option>
-                  <option value="CLASSIC">经典风格</option>
-                  <option value="MODERN">现代风格</option>
-                </select>
-              </div>
-              <button
-                class="btn btn-primary generate-btn"
-                type="button"
-                :disabled="generatingPoster || gallery?.status !== 'PUBLISHED'"
-                @click="handleGeneratePoster"
-              >
-                <Icon name="image" :size="14" />
-                <span>{{ generatingPoster ? '生成中…' : '生成分享海报' }}</span>
-              </button>
-            </div>
-            <p v-if="gallery?.status !== 'PUBLISHED'" class="warn-tip">
-              展厅目前处于草稿状态，请先发布展厅后再生成分享海报。
-            </p>
-          </section>
-
-          <!-- Poster Preview -->
-          <Transition name="fade">
-            <section v-if="generatedPosterUrl" class="confirmation-box">
-              <div class="confirmation-header">
-                <span class="confirm-tag">
-                  <Icon name="check" :size="12" stroke-width="3" />
-                  海报已生成
-                </span>
-                <span class="remaining-tag">{{ posterTemplate === 'MINIMAL' ? '极简' : posterTemplate === 'ELEGANT' ? '优雅' : posterTemplate === 'VIBRANT' ? '活力' : posterTemplate === 'CLASSIC' ? '经典' : '现代' }}风格</span>
-              </div>
-              <div class="poster-preview">
-                <img :src="generatedPosterUrl" alt="分享海报" class="poster-image" />
-              </div>
-              <div class="copy-url-bar">
-                <input readonly :value="generatedPosterUrl" class="url-input" />
-                <button class="btn btn-copy" type="button" @click="copyUrl(generatedPosterUrl)">
-                  <Icon :name="copied ? 'check' : 'copy'" :size="14" />
-                  <span>{{ copied ? '已复制' : '复制链接' }}</span>
-                </button>
-              </div>
-              <p class="delivery-note">
-                将海报图片下载或分享到社交媒体，访客扫描二维码即可进入展厅。
-              </p>
-            </section>
-          </Transition>
-
           <!-- Delivery Confirmation State -->
           <Transition name="fade">
             <section v-if="latestCreatedLink" class="confirmation-box">
@@ -595,6 +532,11 @@ function shareStatusLabel(status: string) {
 </template>
 
 <style scoped>
+.share-modal-card.is-poster-studio { width:min(980px, calc(100% - 32px)); }
+.share-tabs { display:flex; gap:22px; padding:0 24px; border-bottom:1px solid var(--border-default, #e0e7e2); flex-shrink:0; }
+.share-tabs button { display:flex; align-items:center; gap:7px; padding:14px 0; border:0; border-bottom:2px solid transparent; background:none; color:var(--text-secondary); font:inherit; font-size:13px; cursor:pointer; }
+.share-tabs button[aria-selected=true] { border-color:var(--brand-deep); color:var(--brand-deep); font-weight:650; }
+.share-tabs button:focus-visible { outline:2px solid var(--brand-deep); outline-offset:2px; }
 .direct-share { display:grid; gap:14px; padding-bottom:24px; }
 .direct-share label { color:var(--text-secondary); font-size:13px; }
 .direct-share input { width:100%; box-sizing:border-box; border:1px solid var(--border-strong); border-radius:10px; padding:14px; background:var(--bg-app); color:var(--text-primary); font-size:14px; font-family:var(--font-sans); }
@@ -974,21 +916,6 @@ function shareStatusLabel(status: string) {
 .full-url-text {
   font-size: 11px;
   color: var(--text-secondary);
-}
-
-.poster-preview {
-  margin: 16px 0;
-  padding: 12px;
-  background: #f5f5f7;
-  border-radius: 8px;
-  text-align: center;
-}
-
-.poster-image {
-  max-width: 100%;
-  max-height: 600px;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 /* Links list */
